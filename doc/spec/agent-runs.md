@@ -1,0 +1,654 @@
+# Agent Runs Subsystem Spec
+
+Status: Draft  
+Date: 2026-02-17  
+Audience: Product + Engineering  
+Scope: Agent execution runtime, adapter protocol, wakeup orchestration, and live status delivery
+
+## 1. Document Role
+
+This spec defines how Paperclip actually runs agents while staying runtime-agnostic.
+
+- `doc/SPEC-implementation.md` remains the V1 baseline contract.
+- This document adds concrete subsystem detail for agent execution, including local CLI adapters, runtime state persistence, wakeup scheduling, and browser live updates.
+- If this doc conflicts with current runtime behavior in code, this doc is the target behavior for upcoming implementation.
+
+## 2. Captured Intent (From Request)
+
+The following intentions are explicitly preserved in this spec:
+
+1. Paperclip is adapter-agnostic. The key is a protocol, not a specific runtime.
+2. We still need default built-ins to make the system useful immediately.
+3. First two built-ins are `claude-local` and `codex-local`.
+4. Those adapters run local CLIs directly on the host machine, unsandboxed.
+5. Agent config includes working directory and initial/default prompt.
+6. Heartbeats run the configured adapter process, Paperclip manages lifecycle, and on exit Paperclip parses JSON output and updates state.
+7. Session IDs and token usage must be persisted so later heartbeats can resume.
+8. Adapters should support status updates (short message + color) and optional streaming logs.
+9. UI should support prompt template "pills" for variable insertion.
+10. CLI errors must be visible in full (or as much as possible) in the UI.
+11. Status changes must live-update across task and agent views via server push.
+12. Wakeup triggers should be centralized by a heartbeat/wakeup service with at least:
+   - timer interval
+   - wake on task assignment
+   - explicit ping/request
+
+## 3. Goals and Non-Goals
+
+### 3.1 Goals
+
+1. Define a stable adapter protocol that supports multiple runtimes.
+2. Ship production-usable local adapters for Claude CLI and Codex CLI.
+3. Persist adapter runtime state (session IDs, token/cost usage, last errors).
+4. Centralize wakeup decisions and queueing in one service.
+5. Provide realtime run/task/agent updates to the browser.
+6. Preserve company scoping and existing governance invariants.
+
+### 3.2 Non-Goals (for this subsystem phase)
+
+1. Distributed execution workers across multiple hosts.
+2. Third-party adapter marketplace/plugin SDK.
+3. Perfect cost accounting for providers that do not emit cost.
+4. Long-term log archival strategy beyond basic retention.
+
+## 4. Baseline and Gaps (As of 2026-02-17)
+
+Current code already has:
+
+- `agents` with `adapterType` + `adapterConfig`.
+- `heartbeat_runs` with basic status tracking.
+- in-process `heartbeatService` that invokes `process` and `http`.
+- cancellation endpoints for active runs.
+
+Current gaps this spec addresses:
+
+1. No persistent per-agent runtime state for session resume.
+2. No queue/wakeup abstraction (invoke is immediate).
+3. No assignment-triggered or timer-triggered centralized wakeups.
+4. No websocket/SSE push path to browser.
+5. No persisted run event/log stream.
+6. No typed local adapter contracts for Claude/Codex session and usage extraction.
+7. No prompt-template variable/pill system in agent setup.
+
+## 5. Architecture Overview
+
+The subsystem introduces five cooperating components:
+
+1. `Adapter Registry`
+   - Maps `adapter_type` to implementation.
+   - Exposes capability metadata and config validation.
+
+2. `Wakeup Coordinator`
+   - Single entrypoint for all wakeups (`timer`, `assignment`, `ping`, `manual`).
+   - Applies dedupe/coalescing and queue rules.
+
+3. `Run Executor`
+   - Claims queued wakeups.
+   - Creates `heartbeat_runs`.
+   - Spawns/monitors child processes for local adapters.
+   - Handles timeout/cancel/graceful kill.
+
+4. `Runtime State Store`
+   - Persists resumable adapter state per agent.
+   - Persists run usage summaries and run event/log timeline.
+
+5. `Realtime Event Hub`
+   - Publishes run/agent/task updates over websocket.
+   - Supports selective subscription by company.
+
+Control flow (happy path):
+
+1. Trigger arrives (`timer`, `assignment`, or `ping`).
+2. Wakeup coordinator enqueues/merges wake request.
+3. Executor claims request, creates run row, marks agent `running`.
+4. Adapter executes, emits status/log/usage events.
+5. Events are persisted and pushed to websocket subscribers.
+6. Process exits, output parser updates run result + runtime state.
+7. Agent returns to `idle` or `error`; UI updates in real time.
+
+## 6. Agent Run Protocol (Version `agent-run/v1`)
+
+This protocol is runtime-agnostic and implemented by all adapters.
+
+```ts
+type RunOutcome = "succeeded" | "failed" | "cancelled" | "timed_out";
+type StatusColor = "neutral" | "blue" | "green" | "yellow" | "red";
+
+interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number;
+  cachedOutputTokens?: number;
+}
+
+interface AdapterInvokeInput {
+  protocolVersion: "agent-run/v1";
+  companyId: string;
+  agentId: string;
+  runId: string;
+  wakeupSource: "timer" | "assignment" | "ping" | "manual" | "callback" | "system";
+  cwd: string;
+  prompt: string;
+  adapterConfig: Record<string, unknown>;
+  runtimeState: Record<string, unknown>;
+  env: Record<string, string>;
+  timeoutSec: number;
+}
+
+interface AdapterHooks {
+  status?: (update: { message: string; color?: StatusColor }) => Promise<void>;
+  log?: (event: { stream: "stdout" | "stderr" | "system"; chunk: string }) => Promise<void>;
+  usage?: (usage: TokenUsage) => Promise<void>;
+  event?: (eventType: string, payload: Record<string, unknown>) => Promise<void>;
+}
+
+interface AdapterInvokeResult {
+  outcome: RunOutcome;
+  exitCode: number | null;
+  errorMessage?: string | null;
+  summary?: string | null;
+  sessionId?: string | null;
+  usage?: TokenUsage | null;
+  provider?: string | null;
+  model?: string | null;
+  costUsd?: number | null;
+  runtimeStatePatch?: Record<string, unknown>;
+  rawResult?: Record<string, unknown> | null;
+}
+
+interface AgentRunAdapter {
+  type: string;
+  protocolVersion: "agent-run/v1";
+  capabilities: {
+    resumableSession: boolean;
+    statusUpdates: boolean;
+    logStreaming: boolean;
+    tokenUsage: boolean;
+  };
+  validateConfig(config: unknown): { ok: true } | { ok: false; errors: string[] };
+  invoke(input: AdapterInvokeInput, hooks: AdapterHooks, signal: AbortSignal): Promise<AdapterInvokeResult>;
+}
+```
+
+### 6.1 Required Behavior
+
+1. `validateConfig` runs before saving or invoking.
+2. `invoke` must be deterministic for a given config + runtime state + prompt.
+3. Adapter must not mutate DB directly; it returns data via result/events only.
+4. Adapter must emit enough context for errors to be debuggable.
+5. If `invoke` throws, executor records run as `failed` with captured error text.
+
+### 6.2 Optional Behavior
+
+Adapters may omit status/log hooks. If omitted, runtime still emits system lifecycle statuses (`queued`, `running`, `finished`).
+
+### 6.3 Adapter identity and compatibility
+
+For V1 rollout, adapter identity is explicit:
+
+- `claude_local`
+- `codex_local`
+- `process` (generic existing behavior)
+- `http` (generic existing behavior)
+
+`claude_local` and `codex_local` are not wrappers around arbitrary `process`; they are typed adapters with known parser/resume semantics.
+
+## 7. Built-in Adapters (Phase 1)
+
+## 7.1 `claude-local`
+
+Runs local `claude` CLI directly.
+
+### Config
+
+```json
+{
+  "cwd": "/absolute/or/relative/path",
+  "promptTemplate": "You are agent {{agent.id}} ...",
+  "bootstrapPromptTemplate": "Initial setup instructions (optional)",
+  "model": "optional-model-id",
+  "maxTurnsPerRun": 80,
+  "dangerouslySkipPermissions": true,
+  "env": {"KEY": "VALUE"},
+  "extraArgs": [],
+  "timeoutSec": 1800,
+  "graceSec": 20
+}
+```
+
+### Invocation
+
+- Base command: `claude --print <prompt> --output-format json`
+- Resume: add `--resume <sessionId>` when runtime state has session ID
+- Unsandboxed mode: add `--dangerously-skip-permissions` when enabled
+
+### Output parsing
+
+1. Parse stdout JSON object.
+2. Extract `session_id` for resume.
+3. Extract usage fields:
+   - `usage.input_tokens`
+   - `usage.cache_read_input_tokens` (if present)
+   - `usage.output_tokens`
+4. Extract `total_cost_usd` when present.
+5. On non-zero exit: still attempt parse; if parse succeeds keep extracted state and mark run failed unless adapter explicitly reports success.
+
+## 7.2 `codex-local`
+
+Runs local `codex` CLI directly.
+
+### Config
+
+```json
+{
+  "cwd": "/absolute/or/relative/path",
+  "promptTemplate": "You are agent {{agent.id}} ...",
+  "bootstrapPromptTemplate": "Initial setup instructions (optional)",
+  "model": "optional-model-id",
+  "search": false,
+  "dangerouslyBypassApprovalsAndSandbox": true,
+  "env": {"KEY": "VALUE"},
+  "extraArgs": [],
+  "timeoutSec": 1800,
+  "graceSec": 20
+}
+```
+
+### Invocation
+
+- Base command: `codex exec --json <prompt>`
+- Resume form: `codex exec --json resume <sessionId> <prompt>`
+- Unsandboxed mode: add `--dangerously-bypass-approvals-and-sandbox` when enabled
+- Optional search mode: add `--search`
+
+### Output parsing
+
+Codex emits JSONL events. Parse line-by-line and extract:
+
+1. `thread.started.thread_id` -> session ID
+2. `item.completed` where item type is `agent_message` -> output text
+3. `turn.completed.usage`:
+   - `input_tokens`
+   - `cached_input_tokens`
+   - `output_tokens`
+
+Codex JSONL currently may not include cost; store token usage and leave cost null/unknown unless available.
+
+## 7.3 Common local adapter process handling
+
+Both local adapters must:
+
+1. Use `spawn(command, args, { shell: false, stdio: "pipe" })`.
+2. Capture stdout/stderr in stream chunks for events + persistence.
+3. Support graceful cancel: `SIGTERM`, then `SIGKILL` after `graceSec`.
+4. Enforce timeout using adapter `timeoutSec`.
+5. Return exit code + parsed result + diagnostic stderr.
+
+## 8. Heartbeat and Wakeup Coordinator
+
+## 8.1 Wakeup sources
+
+Supported sources:
+
+1. `timer`: periodic heartbeat per agent.
+2. `assignment`: issue assigned/reassigned to agent.
+3. `ping`: explicit wake request from board or system.
+4. `manual`: existing invoke endpoint.
+5. `callback`/`system`: reserved for internal/external automations.
+
+## 8.2 Central API
+
+All sources call one internal service:
+
+```ts
+enqueueWakeup({
+  companyId,
+  agentId,
+  source,
+  reason,
+  payload,
+  requestedBy,
+  idempotencyKey?
+})
+```
+
+No source invokes adapters directly.
+
+## 8.3 Queue semantics
+
+1. Max active run per agent remains `1`.
+2. If agent already has `queued`/`running` run:
+   - coalesce duplicate wakeups
+   - increment `coalescedCount`
+   - preserve latest reason/source metadata
+3. Queue is DB-backed for restart safety.
+4. Coordinator uses FIFO by `requested_at`, with optional priority:
+   - `manual/ping` > `assignment` > `timer`
+
+## 8.4 Agent heartbeat policy fields
+
+Agent-level control-plane settings (not adapter-specific):
+
+```json
+{
+  "heartbeat": {
+    "enabled": true,
+    "intervalSec": 300,
+    "wakeOnAssignment": true,
+    "wakeOnPing": true,
+    "cooldownSec": 10
+  }
+}
+```
+
+Defaults:
+
+- `enabled: true`
+- `intervalSec: null` (no timer until explicitly set) or product default `300` if desired globally
+- `wakeOnAssignment: true`
+- `wakeOnPing: true`
+
+## 8.5 Trigger integration rules
+
+1. Timer checks run on server worker interval and enqueue due agents.
+2. Issue assignment mutation enqueues wakeup when assignee changes and target agent has `wakeOnAssignment=true`.
+3. Ping endpoint enqueues wakeup when `wakeOnPing=true`.
+4. Paused/terminated agents do not receive new wakeups.
+5. Hard budget-stopped agents do not receive new wakeups.
+
+## 9. Persistence Model
+
+All tables remain company-scoped.
+
+## 9.0 Changes to `agents`
+
+1. Extend `adapter_type` domain to include `claude_local` and `codex_local` (alongside existing `process`, `http`).
+2. Keep `adapter_config` as adapter-owned config (CLI flags, cwd, prompt templates, env overrides).
+3. Add `runtime_config` jsonb for control-plane scheduling policy:
+   - heartbeat enable/interval
+   - wake-on-assignment
+   - wake-on-ping
+   - cooldown
+
+This separation keeps adapter config runtime-agnostic while allowing the heartbeat service to apply consistent scheduling logic.
+
+## 9.1 New table: `agent_runtime_state`
+
+One row per agent for resumable adapter state.
+
+- `agent_id` uuid pk fk `agents.id`
+- `company_id` uuid fk not null
+- `adapter_type` text not null
+- `session_id` text null
+- `state_json` jsonb not null default `{}`
+- `last_run_id` uuid fk `heartbeat_runs.id` null
+- `last_run_status` text null
+- `total_input_tokens` bigint not null default `0`
+- `total_output_tokens` bigint not null default `0`
+- `total_cached_input_tokens` bigint not null default `0`
+- `total_cost_cents` bigint not null default `0`
+- `last_error` text null
+- `updated_at` timestamptz not null
+
+Invariant: exactly one runtime state row per agent.
+
+## 9.2 New table: `agent_wakeup_requests`
+
+Queue + audit for wakeups.
+
+- `id` uuid pk
+- `company_id` uuid fk not null
+- `agent_id` uuid fk not null
+- `source` text not null (`timer|assignment|ping|manual|callback|system`)
+- `reason` text null
+- `payload` jsonb null
+- `status` text not null (`queued|claimed|coalesced|skipped|completed|failed|cancelled`)
+- `coalesced_count` int not null default `0`
+- `requested_by_actor_type` text null (`user|agent|system`)
+- `requested_by_actor_id` text null
+- `idempotency_key` text null
+- `run_id` uuid fk `heartbeat_runs.id` null
+- `requested_at` timestamptz not null
+- `claimed_at` timestamptz null
+- `finished_at` timestamptz null
+- `error` text null
+
+## 9.3 New table: `heartbeat_run_events`
+
+Append-only per-run event/log timeline.
+
+- `id` bigserial pk
+- `company_id` uuid fk not null
+- `run_id` uuid fk `heartbeat_runs.id` not null
+- `agent_id` uuid fk `agents.id` not null
+- `seq` int not null
+- `event_type` text not null (`lifecycle|status|log|usage|error|structured`)
+- `stream` text null (`stdout|stderr|system`)
+- `level` text null (`info|warn|error`)
+- `color` text null
+- `message` text null
+- `payload` jsonb null
+- `created_at` timestamptz not null
+
+## 9.4 Changes to `heartbeat_runs`
+
+Add fields required for result and diagnostics:
+
+- `wakeup_request_id` uuid fk `agent_wakeup_requests.id` null
+- `exit_code` int null
+- `signal` text null
+- `usage_json` jsonb null
+- `result_json` jsonb null
+- `session_id_before` text null
+- `session_id_after` text null
+- `stderr_excerpt` text null
+- `stdout_excerpt` text null
+- `error_code` text null
+
+This keeps per-run diagnostics queryable without loading all event chunks.
+
+## 10. Prompt Template and Pill System
+
+## 10.1 Template format
+
+- Mustache-style placeholders: `{{path.to.value}}`
+- No arbitrary code execution.
+- Unknown variable on save = validation error.
+
+## 10.2 Initial variable catalog
+
+- `company.id`
+- `company.name`
+- `agent.id`
+- `agent.name`
+- `agent.role`
+- `agent.title`
+- `run.id`
+- `run.source`
+- `run.startedAt`
+- `heartbeat.reason`
+- `paperclip.skill` (shared Paperclip skill text block)
+- `credentials.apiBaseUrl`
+- `credentials.apiKey` (optional, sensitive)
+
+## 10.3 Prompt fields
+
+1. `bootstrapPromptTemplate`
+   - Used when no session exists.
+2. `promptTemplate`
+   - Used on every wakeup.
+   - Can include run source/reason pills.
+
+If `bootstrapPromptTemplate` is omitted, `promptTemplate` is used for first run.
+
+## 10.4 UI requirements
+
+1. Agent setup/edit form includes prompt editors with pill insertion.
+2. Variables are shown as clickable pills for fast insertion.
+3. Save-time validation indicates unknown/missing variables.
+4. Sensitive pills (`credentials.*`) show explicit warning badge.
+
+## 10.5 Security notes for credentials
+
+1. Credentials in prompt are allowed for initial simplicity but discouraged.
+2. Preferred transport is env vars (`PAPERCLIP_*`) injected at runtime.
+3. Prompt preview and logs must redact sensitive values.
+
+## 11. Realtime Status Delivery
+
+## 11.1 Transport
+
+Primary transport: websocket channel per company.
+
+- Endpoint: `GET /api/companies/:companyId/events/ws`
+- Auth: board session or agent API key (company-bound)
+
+## 11.2 Event envelope
+
+```json
+{
+  "eventId": "uuid-or-monotonic-id",
+  "companyId": "uuid",
+  "type": "heartbeat.run.status",
+  "entityType": "heartbeat_run",
+  "entityId": "uuid",
+  "occurredAt": "2026-02-17T12:00:00Z",
+  "payload": {}
+}
+```
+
+## 11.3 Required event types
+
+1. `agent.status.changed`
+2. `heartbeat.run.queued`
+3. `heartbeat.run.started`
+4. `heartbeat.run.status` (short color+message updates)
+5. `heartbeat.run.log` (optional chunk stream)
+6. `heartbeat.run.finished`
+7. `issue.updated`
+8. `issue.comment.created`
+9. `activity.appended`
+
+## 11.4 UI behavior
+
+1. Agent detail view updates run timeline live.
+2. Task board reflects assignment/status/comment changes from agent activity without refresh.
+3. Org/agent list reflects status changes live.
+4. If websocket disconnects, client falls back to short polling until reconnect.
+
+## 12. Error Handling and Diagnostics
+
+## 12.1 Error classes
+
+- `adapter_not_installed`
+- `invalid_working_directory`
+- `spawn_failed`
+- `timeout`
+- `cancelled`
+- `nonzero_exit`
+- `output_parse_error`
+- `resume_session_invalid`
+- `budget_blocked`
+
+## 12.2 Logging requirements
+
+1. Persist stderr/stdout chunks in `heartbeat_run_events` (bounded).
+2. Preserve large error text for failed runs (best effort up to configured cap).
+3. Mark truncation explicitly when caps are exceeded.
+4. Redact secrets from logs and websocket payloads.
+
+## 12.3 Restart recovery
+
+On server startup:
+
+1. Find stale `queued`/`running` runs.
+2. Mark as `failed` with `error_code=control_plane_restart`.
+3. Set affected non-paused/non-terminated agents to `error` (or `idle` based on policy).
+4. Emit recovery events to websocket and activity log.
+
+## 13. API Surface Changes
+
+## 13.1 New/updated endpoints
+
+1. `POST /agents/:agentId/wakeup`
+   - enqueue wakeup with source/reason
+2. `POST /agents/:agentId/heartbeat/invoke`
+   - backward-compatible alias to wakeup API
+3. `GET /agents/:agentId/runtime-state`
+   - board-only debug view
+4. `POST /agents/:agentId/runtime-state/reset-session`
+   - clears stored session ID
+5. `GET /heartbeat-runs/:runId/events?afterSeq=:n`
+   - fetch persisted timeline
+6. `GET /api/companies/:companyId/events/ws`
+   - websocket stream
+
+## 13.2 Mutation logging
+
+All wakeup/run state mutations must create `activity_log` entries:
+
+- `wakeup.requested`
+- `wakeup.coalesced`
+- `heartbeat.started`
+- `heartbeat.finished`
+- `heartbeat.failed`
+- `heartbeat.cancelled`
+- `runtime_state.updated`
+
+## 14. Heartbeat Service Implementation Plan
+
+## Phase 1: Contracts and schema
+
+1. Add new DB tables/columns (`agent_runtime_state`, `agent_wakeup_requests`, `heartbeat_run_events`).
+2. Add shared types/constants/validators.
+3. Keep existing routes functional during migration.
+
+## Phase 2: Wakeup coordinator
+
+1. Implement DB-backed wakeup queue.
+2. Convert manual invoke route to enqueue.
+3. Add worker loop to claim and execute queued wakeups.
+
+## Phase 3: Local adapters
+
+1. Implement `claude-local` adapter.
+2. Implement `codex-local` adapter.
+3. Parse and persist session IDs and token usage.
+4. Wire cancel/timeout/grace behavior.
+
+## Phase 4: Realtime push
+
+1. Implement company websocket hub.
+2. Publish run/agent/issue events.
+3. Update UI pages to subscribe and invalidate/update relevant data.
+
+## Phase 5: Prompt pills and config UX
+
+1. Add adapter-specific config editor with prompt templates.
+2. Add pill insertion and variable validation.
+3. Add sensitive-variable warnings and redaction.
+
+## Phase 6: Hardening
+
+1. Add failure/restart recovery sweeps.
+2. Add run/log retention caps and pruning.
+3. Add integration/e2e coverage for wakeup triggers and live updates.
+
+## 15. Acceptance Criteria
+
+1. Agent with `claude-local` or `codex-local` can run, exit, and persist run result.
+2. Session ID is persisted and used for next run resume automatically.
+3. Token usage is persisted per run and accumulated per agent runtime state.
+4. Timer, assignment, and ping wakeups all enqueue through one coordinator.
+5. Pause/terminate interrupts running local process and prevents new wakeups.
+6. Browser receives live websocket updates for run status/logs and task/agent changes.
+7. Failed runs expose rich CLI diagnostics in UI (with truncation marker when capped).
+8. All actions remain company-scoped and auditable.
+
+## 16. Open Questions
+
+1. Should timer default be `null` (off until enabled) or `300` seconds by default?
+2. For invalid resume session errors, should default behavior be fail-fast or auto-reset-and-retry-once?
+3. What retention policy should we use for `heartbeat_run_events` in V1 (days and per-run size cap)?
+4. Should agent API credentials be allowed in prompt templates by default, or require explicit opt-in toggle?
+5. Should websocket be the only realtime channel, or should we also expose SSE for simpler clients?
