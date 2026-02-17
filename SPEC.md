@@ -140,7 +140,7 @@ Each agent publishes a short description of their responsibilities and capabilit
 
 ### Cross-Team Work
 
-Agents can create tasks and assign them to agents outside their reporting line. This is the mechanism for cross-team collaboration.
+Agents can create tasks and assign them to agents outside their reporting line. This is the mechanism for cross-team collaboration. These rules are primarily encoded in the Paperclip SKILL.md which is recommended for all agents. Paperclip the app enforces the tooling and some light governance, but the cross-team rules below are mainly implemented by agent decisions.
 
 #### Task Acceptance Rules
 
@@ -257,8 +257,6 @@ There is no separate messaging or chat system. Tasks are the communication chann
 
 ### Task Hierarchy Mapping
 
-The company goal is **not a special entity** — it's a regular Initiative (as defined in doc/TASKS.md). When a user creates a company, the UX creates the first Initiative for them (the company's goal). But structurally it's the same as any other initiative.
-
 Full hierarchy: **Initiative** (company goal) → Projects → Milestones → Issues → Sub-issues. Everything traces back to an initiative, and the "company goal" is just the first/primary initiative.
 
 ---
@@ -274,7 +272,7 @@ Fully-instrumented agents report token/API usage back to Paperclip. Costs are tr
 - **Per project** — how much is this deliverable costing?
 - **Per company** — total burn rate
 
-Costs can be denominated in **tokens or dollars** (configurable).
+Costs should be denominated in both **tokens and dollars**.
 
 Billing codes on tasks (see Org Structure) enable cost attribution across teams — when Agent A requests work from Agent B, B's costs roll up to A's request.
 
@@ -332,6 +330,7 @@ A skill definition that teaches agents how to interact with Paperclip. Provides:
 - Status reporting (check in, report progress)
 - Company context (read goal, org chart, current state)
 - Cost reporting (log token/API usage)
+- Inter-agent communication rules
 
 This skill is adapter-agnostic — it can be loaded into Claude Code, injected into prompts, or used as API documentation for custom agents.
 
@@ -388,6 +387,8 @@ Agents can create tasks assigned to humans. The board member (or any human with 
 
 When a human completes a task, if the requesting agent's adapter supports **pingbacks** (e.g. OpenClaw hooks), Paperclip sends a notification to wake that agent. This keeps humans rare but possible participants in the workflow.
 
+The agents are discouraged from assigning tasks to humans in the Paperclip SKILL, but sometimes it's unavoidable.
+
 ### API Design
 
 **Single unified REST API.** The same API serves both the frontend UI and agents. Authentication determines permissions — board auth has full access, agent API keys have scoped access (their own tasks, cost reporting, company context).
@@ -435,7 +436,7 @@ This isn't a V1 deliverable (we're not building a plugin framework upfront), but
 Each is a distinct page/route:
 
 1. **Org Chart** — the org tree with live status indicators (running/idle/paused/error) per agent. Real-time activity feed of what agents are doing.
-2. **Task Board** — Linear-style task management. Kanban and list views. Filter by team, agent, project, status.
+2. **Task Board** — Task management. Kanban and list views. Filter by team, agent, project, status.
 3. **Dashboard** — high-level metrics: agent count, active tasks, costs, goal progress, burn rate. The "glance" view from GOAL.md.
 4. **Agent Detail** — deep dive on a single agent: their tasks, activity, costs, configuration, status history.
 5. **Project/Initiative Views** — progress tracking against milestones and goals.
@@ -472,14 +473,14 @@ Each is a distinct page/route:
 - [ ] **Web UI** — React/Vite: org chart, task board, dashboard, cost views
 - [ ] **Agent auth** — registration, board approval, API keys
 - [ ] **One-command dev setup** — embedded Postgres, everything local
+- [ ] **Multiple adapter types** (HTTP adapter, OpenClaw adapter)
 
 ### Not V1
 
-- Multiple adapter types (HTTP adapter, OpenClaw adapter — V2)
 - Template export/import
-- Knowledge base
+- Knowledge base - a future plugin
 - Advanced governance models (hiring budgets, multi-member boards)
-- Revenue/expense tracking beyond token costs
+- Revenue/expense tracking beyond token costs - a future plugin
 - Public job board / open company features
 
 ---
