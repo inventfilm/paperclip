@@ -3,50 +3,62 @@ import { issuesApi } from "../api/issues";
 import { useApi } from "../hooks/useApi";
 import { StatusBadge } from "../components/StatusBadge";
 import { cn } from "../lib/utils";
+import { useCompany } from "../context/CompanyContext";
+import { Card, CardContent } from "@/components/ui/card";
 
 const priorityColors: Record<string, string> = {
-  critical: "text-red-700 bg-red-50",
-  high: "text-orange-700 bg-orange-50",
-  medium: "text-yellow-700 bg-yellow-50",
-  low: "text-gray-600 bg-gray-50",
+  critical: "text-red-300 bg-red-900/50",
+  high: "text-orange-300 bg-orange-900/50",
+  medium: "text-yellow-300 bg-yellow-900/50",
+  low: "text-neutral-400 bg-neutral-800",
 };
 
 export function Issues() {
-  const fetcher = useCallback(() => issuesApi.list(), []);
+  const { selectedCompanyId } = useCompany();
+
+  const fetcher = useCallback(() => {
+    if (!selectedCompanyId) return Promise.resolve([]);
+    return issuesApi.list(selectedCompanyId);
+  }, [selectedCompanyId]);
+
   const { data: issues, loading, error } = useApi(fetcher);
+
+  if (!selectedCompanyId) {
+    return <p className="text-muted-foreground">Select a company first.</p>;
+  }
 
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-4">Issues</h2>
-      {loading && <p className="text-gray-500">Loading...</p>}
-      {error && <p className="text-red-600">{error.message}</p>}
-      {issues && issues.length === 0 && <p className="text-gray-500">No issues yet.</p>}
+      <h2 className="text-2xl font-bold mb-4">Tasks</h2>
+      {loading && <p className="text-muted-foreground">Loading...</p>}
+      {error && <p className="text-destructive">{error.message}</p>}
+      {issues && issues.length === 0 && <p className="text-muted-foreground">No tasks yet.</p>}
       {issues && issues.length > 0 && (
         <div className="grid gap-4">
           {issues.map((issue) => (
-            <div key={issue.id} className="bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold">{issue.title}</h3>
-                  {issue.description && (
-                    <p className="text-sm text-gray-500 mt-1 line-clamp-1">
-                      {issue.description}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                      priorityColors[issue.priority] ?? "text-gray-600 bg-gray-50"
+            <Card key={issue.id}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">{issue.title}</h3>
+                    {issue.description && (
+                      <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{issue.description}</p>
                     )}
-                  >
-                    {issue.priority}
-                  </span>
-                  <StatusBadge status={issue.status} />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
+                        priorityColors[issue.priority] ?? "text-neutral-400 bg-neutral-800",
+                      )}
+                    >
+                      {issue.priority}
+                    </span>
+                    <StatusBadge status={issue.status} />
+                  </div>
                 </div>
-              </div>
-            </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
       )}
