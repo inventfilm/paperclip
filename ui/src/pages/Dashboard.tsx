@@ -6,6 +6,7 @@ import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
+import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { MetricCard } from "../components/MetricCard";
@@ -54,7 +55,8 @@ function getStaleIssues(issues: Issue[]): Issue[] {
 }
 
 export function Dashboard() {
-  const { selectedCompanyId, selectedCompany } = useCompany();
+  const { selectedCompanyId, selectedCompany, companies } = useCompany();
+  const { openOnboarding } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
 
@@ -94,6 +96,16 @@ export function Dashboard() {
   };
 
   if (!selectedCompanyId) {
+    if (companies.length === 0) {
+      return (
+        <EmptyState
+          icon={LayoutDashboard}
+          message="Welcome to Paperclip. Set up your first company and agent to get started."
+          action="Get Started"
+          onAction={openOnboarding}
+        />
+      );
+    }
     return (
       <EmptyState icon={LayoutDashboard} message="Create or select a company to view the dashboard." />
     );

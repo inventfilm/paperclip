@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useDialog } from "../context/DialogContext";
@@ -17,28 +17,27 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  Maximize2,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@/components/ui/tooltip";
+import {
   Minimize2,
-  Bot,
-  User,
+  Maximize2,
   Shield,
+  User,
   ChevronDown,
   ChevronRight,
+  Heart,
+  HelpCircle,
+  FolderOpen,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
 const roleLabels: Record<string, string> = {
-  ceo: "CEO",
-  cto: "CTO",
-  cmo: "CMO",
-  cfo: "CFO",
-  engineer: "Engineer",
-  designer: "Designer",
-  pm: "PM",
-  qa: "QA",
-  devops: "DevOps",
-  researcher: "Researcher",
-  general: "General",
+  ceo: "CEO", cto: "CTO", cmo: "CMO", cfo: "CFO",
+  engineer: "Engineer", designer: "Designer", pm: "PM",
+  qa: "QA", devops: "DevOps", researcher: "Researcher", general: "General",
 };
 
 const adapterLabels: Record<string, string> = {
@@ -48,34 +47,53 @@ const adapterLabels: Record<string, string> = {
   http: "HTTP",
 };
 
+/* ---- Help text for (?) tooltips ---- */
+const help: Record<string, string> = {
+  name: "Display name for this agent.",
+  title: "Job title shown in the org chart.",
+  role: "Organizational role. Determines position and capabilities.",
+  reportsTo: "The agent this one reports to in the org hierarchy.",
+  adapterType: "How this agent runs: local CLI (Claude/Codex), spawned process, or HTTP webhook.",
+  cwd: "The working directory where the agent operates. Should be an absolute path on the server.",
+  promptTemplate: "The prompt sent to the agent on each heartbeat. Supports {{ agent.id }}, {{ agent.name }}, {{ agent.role }} variables.",
+  model: "Override the default model used by the adapter.",
+  dangerouslySkipPermissions: "Run Claude without permission prompts. Required for unattended operation.",
+  dangerouslyBypassSandbox: "Run Codex without sandbox restrictions. Required for filesystem/network access.",
+  search: "Enable Codex web search capability during runs.",
+  bootstrapPrompt: "Prompt used only on the first run (no existing session). Used for initial agent setup.",
+  maxTurnsPerRun: "Maximum number of agentic turns (tool calls) per heartbeat run.",
+  command: "The command to execute (e.g. node, python).",
+  args: "Command-line arguments, comma-separated.",
+  webhookUrl: "The URL that receives POST requests when the agent is invoked.",
+  heartbeatInterval: "Run this agent automatically on a timer. Useful for periodic tasks like checking for new work.",
+  intervalSec: "Seconds between automatic heartbeat invocations.",
+};
+
 export function NewAgentDialog() {
   const { newAgentOpen, closeNewAgent } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
 
   // Identity
   const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [role, setRole] = useState("general");
   const [reportsTo, setReportsTo] = useState("");
-  const [capabilities, setCapabilities] = useState("");
 
   // Adapter
   const [adapterType, setAdapterType] = useState<string>("claude_local");
   const [cwd, setCwd] = useState("");
   const [promptTemplate, setPromptTemplate] = useState("");
-  const [bootstrapPrompt, setBootstrapPrompt] = useState("");
   const [model, setModel] = useState("");
 
   // claude_local specific
-  const [maxTurnsPerRun, setMaxTurnsPerRun] = useState(80);
-  const [dangerouslySkipPermissions, setDangerouslySkipPermissions] = useState(true);
+  const [dangerouslySkipPermissions, setDangerouslySkipPermissions] = useState(false);
 
   // codex_local specific
   const [search, setSearch] = useState(false);
-  const [dangerouslyBypassSandbox, setDangerouslyBypassSandbox] = useState(true);
+  const [dangerouslyBypassSandbox, setDangerouslyBypassSandbox] = useState(false);
 
   // process specific
   const [command, setCommand] = useState("");
@@ -84,29 +102,22 @@ export function NewAgentDialog() {
   // http specific
   const [url, setUrl] = useState("");
 
-  // Heartbeat
-  const [heartbeatEnabled, setHeartbeatEnabled] = useState(true);
-  const [intervalSec, setIntervalSec] = useState(300);
-  const [wakeOnAssignment, setWakeOnAssignment] = useState(true);
-  const [wakeOnOnDemand, setWakeOnOnDemand] = useState(true);
-  const [wakeOnAutomation, setWakeOnAutomation] = useState(true);
-  const [cooldownSec, setCooldownSec] = useState(10);
+  // Advanced adapter fields
+  const [bootstrapPrompt, setBootstrapPrompt] = useState("");
+  const [maxTurnsPerRun, setMaxTurnsPerRun] = useState(80);
 
-  // Runtime
-  const [contextMode, setContextMode] = useState("thin");
-  const [budgetMonthlyCents, setBudgetMonthlyCents] = useState(0);
-  const [timeoutSec, setTimeoutSec] = useState(900);
-  const [graceSec, setGraceSec] = useState(15);
+  // Heartbeat
+  const [heartbeatEnabled, setHeartbeatEnabled] = useState(false);
+  const [intervalSec, setIntervalSec] = useState(300);
 
   // Sections
-  const [adapterOpen, setAdapterOpen] = useState(true);
+  const [adapterAdvancedOpen, setAdapterAdvancedOpen] = useState(false);
   const [heartbeatOpen, setHeartbeatOpen] = useState(false);
-  const [runtimeOpen, setRuntimeOpen] = useState(false);
 
   // Popover states
   const [roleOpen, setRoleOpen] = useState(false);
   const [reportsToOpen, setReportsToOpen] = useState(false);
-  const [adapterTypeOpen, setAdapterTypeOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -114,8 +125,22 @@ export function NewAgentDialog() {
     enabled: !!selectedCompanyId && newAgentOpen,
   });
 
+  const { data: adapterModels } = useQuery({
+    queryKey: ["adapter-models", adapterType],
+    queryFn: () => agentsApi.adapterModels(adapterType),
+    enabled: newAgentOpen,
+  });
+
   const isFirstAgent = !agents || agents.length === 0;
   const effectiveRole = isFirstAgent ? "ceo" : role;
+
+  // Auto-fill for CEO
+  useEffect(() => {
+    if (newAgentOpen && isFirstAgent) {
+      if (!name) setName("CEO");
+      if (!title) setTitle("CEO");
+    }
+  }, [newAgentOpen, isFirstAgent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const createAgent = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
@@ -133,33 +158,23 @@ export function NewAgentDialog() {
     setTitle("");
     setRole("general");
     setReportsTo("");
-    setCapabilities("");
     setAdapterType("claude_local");
     setCwd("");
     setPromptTemplate("");
-    setBootstrapPrompt("");
     setModel("");
-    setMaxTurnsPerRun(80);
-    setDangerouslySkipPermissions(true);
+    setDangerouslySkipPermissions(false);
     setSearch(false);
-    setDangerouslyBypassSandbox(true);
+    setDangerouslyBypassSandbox(false);
     setCommand("");
     setArgs("");
     setUrl("");
-    setHeartbeatEnabled(true);
+    setBootstrapPrompt("");
+    setMaxTurnsPerRun(80);
+    setHeartbeatEnabled(false);
     setIntervalSec(300);
-    setWakeOnAssignment(true);
-    setWakeOnOnDemand(true);
-    setWakeOnAutomation(true);
-    setCooldownSec(10);
-    setContextMode("thin");
-    setBudgetMonthlyCents(0);
-    setTimeoutSec(900);
-    setGraceSec(15);
-    setExpanded(false);
-    setAdapterOpen(true);
+    setExpanded(true);
+    setAdapterAdvancedOpen(false);
     setHeartbeatOpen(false);
-    setRuntimeOpen(false);
   }
 
   function buildAdapterConfig() {
@@ -168,8 +183,8 @@ export function NewAgentDialog() {
     if (promptTemplate) config.promptTemplate = promptTemplate;
     if (bootstrapPrompt) config.bootstrapPromptTemplate = bootstrapPrompt;
     if (model) config.model = model;
-    config.timeoutSec = timeoutSec;
-    config.graceSec = graceSec;
+    config.timeoutSec = 0;
+    config.graceSec = 15;
 
     if (adapterType === "claude_local") {
       config.maxTurnsPerRun = maxTurnsPerRun;
@@ -193,21 +208,20 @@ export function NewAgentDialog() {
       role: effectiveRole,
       ...(title.trim() ? { title: title.trim() } : {}),
       ...(reportsTo ? { reportsTo } : {}),
-      ...(capabilities.trim() ? { capabilities: capabilities.trim() } : {}),
       adapterType,
       adapterConfig: buildAdapterConfig(),
       runtimeConfig: {
         heartbeat: {
           enabled: heartbeatEnabled,
           intervalSec,
-          wakeOnAssignment,
-          wakeOnOnDemand,
-          wakeOnAutomation,
-          cooldownSec,
+          wakeOnAssignment: true,
+          wakeOnOnDemand: true,
+          wakeOnAutomation: true,
+          cooldownSec: 10,
         },
       },
-      contextMode,
-      budgetMonthlyCents,
+      contextMode: "thin",
+      budgetMonthlyCents: 0,
     });
   }
 
@@ -218,16 +232,14 @@ export function NewAgentDialog() {
     }
   }
 
-  const currentAgent = (agents ?? []).find((a) => a.id === reportsTo);
+  const currentReportsTo = (agents ?? []).find((a) => a.id === reportsTo);
+  const selectedModel = (adapterModels ?? []).find((m) => m.id === model);
 
   return (
     <Dialog
       open={newAgentOpen}
       onOpenChange={(open) => {
-        if (!open) {
-          reset();
-          closeNewAgent();
-        }
+        if (!open) { reset(); closeNewAgent(); }
       }}
     >
       <DialogContent
@@ -247,26 +259,16 @@ export function NewAgentDialog() {
             <span>New agent</span>
           </div>
           <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground"
-              onClick={() => setExpanded(!expanded)}
-            >
+            <Button variant="ghost" size="icon-xs" className="text-muted-foreground" onClick={() => setExpanded(!expanded)}>
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="text-muted-foreground"
-              onClick={() => { reset(); closeNewAgent(); }}
-            >
+            <Button variant="ghost" size="icon-xs" className="text-muted-foreground" onClick={() => { reset(); closeNewAgent(); }}>
               <span className="text-lg leading-none">&times;</span>
             </Button>
           </div>
         </div>
 
-        <div className={cn("overflow-y-auto", expanded ? "max-h-[70vh]" : "max-h-[50vh]")}>
+        <div className="overflow-y-auto max-h-[70vh]">
           {/* Name */}
           <div className="px-4 pt-3">
             <input
@@ -288,7 +290,7 @@ export function NewAgentDialog() {
             />
           </div>
 
-          {/* Property chips */}
+          {/* Property chips: Role + Reports To */}
           <div className="flex items-center gap-1.5 px-4 py-2 border-t border-border flex-wrap">
             {/* Role */}
             <Popover open={roleOpen} onOpenChange={setRoleOpen}>
@@ -331,7 +333,12 @@ export function NewAgentDialog() {
                   disabled={isFirstAgent}
                 >
                   <User className="h-3 w-3 text-muted-foreground" />
-                  {currentAgent ? currentAgent.name : isFirstAgent ? "N/A (CEO)" : "Reports to"}
+                  {currentReportsTo
+                    ? `Reports to ${currentReportsTo.name}`
+                    : isFirstAgent
+                      ? "Reports to: N/A (CEO)"
+                      : "Reports to..."
+                  }
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-48 p-1" align="start">
@@ -359,124 +366,126 @@ export function NewAgentDialog() {
                 ))}
               </PopoverContent>
             </Popover>
+          </div>
 
-            {/* Adapter type */}
-            <Popover open={adapterTypeOpen} onOpenChange={setAdapterTypeOpen}>
-              <PopoverTrigger asChild>
-                <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
-                  <Bot className="h-3 w-3 text-muted-foreground" />
-                  {adapterLabels[adapterType] ?? adapterType}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-40 p-1" align="start">
-                {AGENT_ADAPTER_TYPES.map((t) => (
-                  <button
-                    key={t}
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                      t === adapterType && "bg-accent"
-                    )}
-                    onClick={() => { setAdapterType(t); setAdapterTypeOpen(false); }}
-                  >
-                    {adapterLabels[t] ?? t}
+          {/* Adapter type dropdown (above config section) */}
+          <div className="px-4 py-2.5 border-t border-border">
+            <Field label="Adapter" hint={help.adapterType}>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
+                    <span>{adapterLabels[adapterType] ?? adapterType}</span>
+                    <ChevronDown className="h-3 w-3 text-muted-foreground" />
                   </button>
-                ))}
-              </PopoverContent>
-            </Popover>
+                </PopoverTrigger>
+                <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
+                  {AGENT_ADAPTER_TYPES.map((t) => (
+                    <button
+                      key={t}
+                      className={cn(
+                        "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+                        t === adapterType && "bg-accent"
+                      )}
+                      onClick={() => setAdapterType(t)}
+                    >
+                      {adapterLabels[t] ?? t}
+                    </button>
+                  ))}
+                </PopoverContent>
+              </Popover>
+            </Field>
           </div>
 
-          {/* Capabilities */}
-          <div className="px-4 py-2 border-t border-border">
-            <input
-              className="w-full bg-transparent outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/40"
-              placeholder="Capabilities (what can this agent do?)"
-              value={capabilities}
-              onChange={(e) => setCapabilities(e.target.value)}
-            />
-          </div>
-
-          {/* Adapter Config Section */}
-          <CollapsibleSection
-            title="Adapter Configuration"
-            open={adapterOpen}
-            onToggle={() => setAdapterOpen(!adapterOpen)}
-          >
-            <div className="space-y-3">
-              <Field label="Working directory">
-                <input
-                  className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
-                  placeholder="/path/to/project"
-                  value={cwd}
-                  onChange={(e) => setCwd(e.target.value)}
-                />
-              </Field>
-              <Field label="Prompt template">
-                <textarea
-                  className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none min-h-[60px]"
-                  placeholder="You are agent {{ agent.name }}..."
-                  value={promptTemplate}
-                  onChange={(e) => setPromptTemplate(e.target.value)}
-                />
-              </Field>
-              <Field label="Bootstrap prompt (first run)">
-                <textarea
-                  className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none min-h-[40px]"
-                  placeholder="Optional initial setup prompt"
-                  value={bootstrapPrompt}
-                  onChange={(e) => setBootstrapPrompt(e.target.value)}
-                />
-              </Field>
-              <Field label="Model">
-                <input
-                  className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
-                  placeholder="e.g. claude-sonnet-4-5-20250929"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                />
-              </Field>
-
-              {adapterType === "claude_local" && (
-                <>
-                  <Field label="Max turns per run">
+          {/* Adapter Configuration (always open) */}
+          <div className="border-t border-border">
+            <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
+              Adapter Configuration
+            </div>
+            <div className="px-4 pb-3 space-y-3">
+              {/* Working directory — basic, shown for local adapters */}
+              {(adapterType === "claude_local" || adapterType === "codex_local") && (
+                <Field label="Working directory" hint={help.cwd}>
+                  <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
+                    <FolderOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <input
-                      type="number"
-                      className="w-full bg-transparent outline-none text-sm font-mono"
-                      value={maxTurnsPerRun}
-                      onChange={(e) => setMaxTurnsPerRun(Number(e.target.value))}
+                      className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
+                      placeholder="/path/to/project"
+                      value={cwd}
+                      onChange={(e) => setCwd(e.target.value)}
                     />
-                  </Field>
-                  <ToggleField
-                    label="Skip permissions"
-                    checked={dangerouslySkipPermissions}
-                    onChange={setDangerouslySkipPermissions}
-                  />
-                </>
+                    <button
+                      type="button"
+                      className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 transition-colors shrink-0"
+                      onClick={async () => {
+                        try {
+                          // @ts-expect-error -- showDirectoryPicker is not in all TS lib defs yet
+                          const handle = await window.showDirectoryPicker({ mode: "read" });
+                          setCwd(handle.name);
+                        } catch {
+                          // user cancelled or API unsupported
+                        }
+                      }}
+                    >
+                      Choose
+                    </button>
+                  </div>
+                </Field>
               )}
 
+              {/* Prompt template — basic, auto-expanding */}
+              {(adapterType === "claude_local" || adapterType === "codex_local") && (
+                <Field label="Prompt template" hint={help.promptTemplate}>
+                  <AutoExpandTextarea
+                    placeholder="You are agent {{ agent.name }}. Your role is {{ agent.role }}..."
+                    value={promptTemplate}
+                    onChange={setPromptTemplate}
+                    minRows={4}
+                  />
+                </Field>
+              )}
+
+              {/* Skip permissions — basic for claude */}
+              {adapterType === "claude_local" && (
+                <ToggleField
+                  label="Skip permissions"
+                  hint={help.dangerouslySkipPermissions}
+                  checked={dangerouslySkipPermissions}
+                  onChange={setDangerouslySkipPermissions}
+                />
+              )}
+
+              {/* Bypass sandbox + search — basic for codex */}
               {adapterType === "codex_local" && (
                 <>
-                  <ToggleField label="Enable search" checked={search} onChange={setSearch} />
                   <ToggleField
                     label="Bypass sandbox"
+                    hint={help.dangerouslyBypassSandbox}
                     checked={dangerouslyBypassSandbox}
                     onChange={setDangerouslyBypassSandbox}
                   />
+                  <ToggleField
+                    label="Enable search"
+                    hint={help.search}
+                    checked={search}
+                    onChange={setSearch}
+                  />
                 </>
               )}
 
+              {/* Process-specific fields */}
               {adapterType === "process" && (
                 <>
-                  <Field label="Command">
+                  <Field label="Command" hint={help.command}>
                     <input
-                      className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
+                      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
                       placeholder="e.g. node, python"
                       value={command}
                       onChange={(e) => setCommand(e.target.value)}
                     />
                   </Field>
-                  <Field label="Args (comma-separated)">
+                  <Field label="Args (comma-separated)" hint={help.args}>
                     <input
-                      className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
+                      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
                       placeholder="e.g. script.js, --flag"
                       value={args}
                       onChange={(e) => setArgs(e.target.value)}
@@ -485,98 +494,111 @@ export function NewAgentDialog() {
                 </>
               )}
 
+              {/* HTTP-specific fields */}
               {adapterType === "http" && (
-                <Field label="Webhook URL">
+                <Field label="Webhook URL" hint={help.webhookUrl}>
                   <input
-                    className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
+                    className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
                     placeholder="https://..."
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
                   />
                 </Field>
               )}
-            </div>
-          </CollapsibleSection>
 
-          {/* Heartbeat Policy Section */}
+              {/* Advanced section for local adapters */}
+              {(adapterType === "claude_local" || adapterType === "codex_local") && (
+                <CollapsibleSection
+                  title="Advanced Adapter Configuration"
+                  open={adapterAdvancedOpen}
+                  onToggle={() => setAdapterAdvancedOpen(!adapterAdvancedOpen)}
+                >
+                  <div className="space-y-3">
+                    {/* Model dropdown */}
+                    <Field label="Model" hint={help.model}>
+                      <Popover open={modelOpen} onOpenChange={setModelOpen}>
+                        <PopoverTrigger asChild>
+                          <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
+                            <span className={cn(!model && "text-muted-foreground")}>
+                              {selectedModel ? selectedModel.label : model || "Default"}
+                            </span>
+                            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
+                          <button
+                            className={cn(
+                              "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+                              !model && "bg-accent"
+                            )}
+                            onClick={() => { setModel(""); setModelOpen(false); }}
+                          >
+                            Default
+                          </button>
+                          {(adapterModels ?? []).map((m) => (
+                            <button
+                              key={m.id}
+                              className={cn(
+                                "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+                                m.id === model && "bg-accent"
+                              )}
+                              onClick={() => { setModel(m.id); setModelOpen(false); }}
+                            >
+                              <span>{m.label}</span>
+                              <span className="text-xs text-muted-foreground font-mono">{m.id}</span>
+                            </button>
+                          ))}
+                        </PopoverContent>
+                      </Popover>
+                    </Field>
+
+                    {/* Bootstrap prompt */}
+                    <Field label="Bootstrap prompt (first run)" hint={help.bootstrapPrompt}>
+                      <AutoExpandTextarea
+                        placeholder="Optional initial setup prompt for the first run"
+                        value={bootstrapPrompt}
+                        onChange={setBootstrapPrompt}
+                        minRows={2}
+                      />
+                    </Field>
+
+                    {/* Max turns — claude only */}
+                    {adapterType === "claude_local" && (
+                      <Field label="Max turns per run" hint={help.maxTurnsPerRun}>
+                        <input
+                          type="number"
+                          className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono"
+                          value={maxTurnsPerRun}
+                          onChange={(e) => setMaxTurnsPerRun(Number(e.target.value))}
+                        />
+                      </Field>
+                    )}
+                  </div>
+                </CollapsibleSection>
+              )}
+            </div>
+          </div>
+
+          {/* Heartbeat Policy */}
           <CollapsibleSection
             title="Heartbeat Policy"
+            icon={<Heart className="h-3 w-3" />}
             open={heartbeatOpen}
             onToggle={() => setHeartbeatOpen(!heartbeatOpen)}
+            bordered
           >
             <div className="space-y-3">
-              <ToggleField label="Enabled" checked={heartbeatEnabled} onChange={setHeartbeatEnabled} />
-              <Field label="Interval (seconds)">
-                <input
-                  type="number"
-                  className="w-full bg-transparent outline-none text-sm font-mono"
-                  value={intervalSec}
-                  onChange={(e) => setIntervalSec(Number(e.target.value))}
-                />
-              </Field>
-              <ToggleField label="Wake on assignment" checked={wakeOnAssignment} onChange={setWakeOnAssignment} />
-              <ToggleField label="Wake on on-demand" checked={wakeOnOnDemand} onChange={setWakeOnOnDemand} />
-              <ToggleField label="Wake on automation" checked={wakeOnAutomation} onChange={setWakeOnAutomation} />
-              <Field label="Cooldown (seconds)">
-                <input
-                  type="number"
-                  className="w-full bg-transparent outline-none text-sm font-mono"
-                  value={cooldownSec}
-                  onChange={(e) => setCooldownSec(Number(e.target.value))}
-                />
-              </Field>
-            </div>
-          </CollapsibleSection>
-
-          {/* Runtime Section */}
-          <CollapsibleSection
-            title="Runtime"
-            open={runtimeOpen}
-            onToggle={() => setRuntimeOpen(!runtimeOpen)}
-          >
-            <div className="space-y-3">
-              <Field label="Context mode">
-                <div className="flex gap-2">
-                  {(["thin", "fat"] as const).map((m) => (
-                    <button
-                      key={m}
-                      className={cn(
-                        "px-2 py-1 text-xs rounded border",
-                        m === contextMode
-                          ? "border-foreground bg-accent"
-                          : "border-border hover:bg-accent/50"
-                      )}
-                      onClick={() => setContextMode(m)}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              </Field>
-              <Field label="Monthly budget (cents)">
-                <input
-                  type="number"
-                  className="w-full bg-transparent outline-none text-sm font-mono"
-                  value={budgetMonthlyCents}
-                  onChange={(e) => setBudgetMonthlyCents(Number(e.target.value))}
-                />
-              </Field>
-              <Field label="Timeout (seconds)">
-                <input
-                  type="number"
-                  className="w-full bg-transparent outline-none text-sm font-mono"
-                  value={timeoutSec}
-                  onChange={(e) => setTimeoutSec(Number(e.target.value))}
-                />
-              </Field>
-              <Field label="Grace period (seconds)">
-                <input
-                  type="number"
-                  className="w-full bg-transparent outline-none text-sm font-mono"
-                  value={graceSec}
-                  onChange={(e) => setGraceSec(Number(e.target.value))}
-                />
-              </Field>
+              <ToggleWithNumber
+                label="Heartbeat on interval"
+                hint={help.heartbeatInterval}
+                checked={heartbeatEnabled}
+                onCheckedChange={setHeartbeatEnabled}
+                number={intervalSec}
+                onNumberChange={setIntervalSec}
+                numberLabel="sec"
+                numberHint={help.intervalSec}
+                showNumber={heartbeatEnabled}
+              />
             </div>
           </CollapsibleSection>
         </div>
@@ -599,35 +621,30 @@ export function NewAgentDialog() {
   );
 }
 
-function CollapsibleSection({
-  title,
-  open,
-  onToggle,
-  children,
-}: {
-  title: string;
-  open: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
+/* ---- Reusable components ---- */
+
+function HintIcon({ text }: { text: string }) {
   return (
-    <div className="border-t border-border">
-      <button
-        className="flex items-center gap-2 w-full px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent/30 transition-colors"
-        onClick={onToggle}
-      >
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        {title}
-      </button>
-      {open && <div className="px-4 pb-3">{children}</div>}
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" className="inline-flex text-muted-foreground/50 hover:text-muted-foreground transition-colors">
+          <HelpCircle className="h-3 w-3" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        {text}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="text-xs text-muted-foreground mb-1 block">{label}</label>
+      <div className="flex items-center gap-1.5 mb-1">
+        <label className="text-xs text-muted-foreground">{label}</label>
+        {hint && <HintIcon text={hint} />}
+      </div>
       {children}
     </div>
   );
@@ -635,16 +652,21 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function ToggleField({
   label,
+  hint,
   checked,
   onChange,
 }: {
   label: string;
+  hint?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-muted-foreground">{label}</span>
+        {hint && <HintIcon text={hint} />}
+      </div>
       <button
         className={cn(
           "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
@@ -660,5 +682,132 @@ function ToggleField({
         />
       </button>
     </div>
+  );
+}
+
+function ToggleWithNumber({
+  label,
+  hint,
+  checked,
+  onCheckedChange,
+  number,
+  onNumberChange,
+  numberLabel,
+  numberHint,
+  showNumber,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onCheckedChange: (v: boolean) => void;
+  number: number;
+  onNumberChange: (v: number) => void;
+  numberLabel: string;
+  numberHint?: string;
+  showNumber: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">{label}</span>
+          {hint && <HintIcon text={hint} />}
+        </div>
+        <button
+          className={cn(
+            "relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0",
+            checked ? "bg-green-600" : "bg-muted"
+          )}
+          onClick={() => onCheckedChange(!checked)}
+        >
+          <span
+            className={cn(
+              "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+              checked ? "translate-x-4.5" : "translate-x-0.5"
+            )}
+          />
+        </button>
+      </div>
+      {showNumber && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span>Run heartbeat every</span>
+          <input
+            type="number"
+            className="w-16 rounded-md border border-border px-2 py-0.5 bg-transparent outline-none text-xs font-mono text-center"
+            value={number}
+            onChange={(e) => onNumberChange(Number(e.target.value))}
+          />
+          <span>{numberLabel}</span>
+          {numberHint && <HintIcon text={numberHint} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CollapsibleSection({
+  title,
+  icon,
+  open,
+  onToggle,
+  bordered,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  bordered?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={cn(bordered && "border-t border-border")}>
+      <button
+        className="flex items-center gap-2 w-full px-4 py-2 text-xs font-medium text-muted-foreground hover:bg-accent/30 transition-colors"
+        onClick={onToggle}
+      >
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {icon}
+        {title}
+      </button>
+      {open && <div className="px-4 pb-3">{children}</div>}
+    </div>
+  );
+}
+
+function AutoExpandTextarea({
+  value,
+  onChange,
+  placeholder,
+  minRows,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  minRows?: number;
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const rows = minRows ?? 3;
+  const lineHeight = 20; // approx line height in px for text-sm mono
+  const minHeight = rows * lineHeight;
+
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.max(minHeight, el.scrollHeight)}px`;
+  }, [minHeight]);
+
+  useEffect(() => { adjustHeight(); }, [value, adjustHeight]);
+
+  return (
+    <textarea
+      ref={textareaRef}
+      className="w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40 resize-none overflow-hidden"
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ minHeight }}
+    />
   );
 }

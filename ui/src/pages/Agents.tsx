@@ -118,7 +118,7 @@ export function Agents() {
       {agents && agents.length === 0 && (
         <EmptyState
           icon={Bot}
-          message="No agents yet."
+          message="Create your first agent to get started."
           action="New Agent"
           onAction={openNewAgent}
         />

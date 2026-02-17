@@ -1,6 +1,11 @@
 import type { Agent, AgentKeyCreated, AgentRuntimeState, HeartbeatRun } from "@paperclip/shared";
 import { api } from "./client";
 
+export interface AdapterModel {
+  id: string;
+  label: string;
+}
+
 export interface OrgNode {
   id: string;
   name: string;
@@ -22,6 +27,7 @@ export const agentsApi = {
   createKey: (id: string, name: string) => api.post<AgentKeyCreated>(`/agents/${id}/keys`, { name }),
   runtimeState: (id: string) => api.get<AgentRuntimeState>(`/agents/${id}/runtime-state`),
   resetSession: (id: string) => api.post<void>(`/agents/${id}/runtime-state/reset-session`, {}),
+  adapterModels: (type: string) => api.get<AdapterModel[]>(`/adapters/${type}/models`),
   invoke: (id: string) => api.post<HeartbeatRun>(`/agents/${id}/heartbeat/invoke`, {}),
   wakeup: (
     id: string,

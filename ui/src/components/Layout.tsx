@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
@@ -7,15 +7,27 @@ import { CommandPalette } from "./CommandPalette";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
+import { OnboardingWizard } from "./OnboardingWizard";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
+import { useCompany } from "../context/CompanyContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { cn } from "../lib/utils";
 
 export function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const { openNewIssue } = useDialog();
+  const { openNewIssue, openOnboarding } = useDialog();
   const { panelContent, closePanel } = usePanel();
+  const { companies, loading: companiesLoading } = useCompany();
+  const onboardingTriggered = useRef(false);
+
+  useEffect(() => {
+    if (companiesLoading || onboardingTriggered.current) return;
+    if (companies.length === 0) {
+      onboardingTriggered.current = true;
+      openOnboarding();
+    }
+  }, [companies, companiesLoading, openOnboarding]);
 
   const toggleSidebar = useCallback(() => setSidebarOpen((v) => !v), []);
   const togglePanel = useCallback(() => {
@@ -51,6 +63,7 @@ export function Layout() {
       <NewIssueDialog />
       <NewProjectDialog />
       <NewAgentDialog />
+      <OnboardingWizard />
     </div>
   );
 }

@@ -1,0 +1,616 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { useDialog } from "../context/DialogContext";
+import { useCompany } from "../context/CompanyContext";
+import { companiesApi } from "../api/companies";
+import { goalsApi } from "../api/goals";
+import { agentsApi } from "../api/agents";
+import { issuesApi } from "../api/issues";
+import { queryKeys } from "../lib/queryKeys";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { cn } from "../lib/utils";
+import {
+  Building2,
+  Bot,
+  ListTodo,
+  Rocket,
+  ArrowLeft,
+  ArrowRight,
+  Terminal,
+  Globe,
+  Sparkles,
+  Check,
+  Loader2,
+} from "lucide-react";
+
+type Step = 1 | 2 | 3 | 4;
+type AdapterType = "claude_local" | "process" | "http";
+
+export function OnboardingWizard() {
+  const { onboardingOpen, closeOnboarding } = useDialog();
+  const { setSelectedCompanyId } = useCompany();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  const [step, setStep] = useState<Step>(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Step 1
+  const [companyName, setCompanyName] = useState("");
+  const [companyGoal, setCompanyGoal] = useState("");
+
+  // Step 2
+  const [agentName, setAgentName] = useState("CEO");
+  const [adapterType, setAdapterType] = useState<AdapterType>("claude_local");
+  const [cwd, setCwd] = useState("");
+  const [model, setModel] = useState("");
+  const [command, setCommand] = useState("");
+  const [args, setArgs] = useState("");
+  const [url, setUrl] = useState("");
+
+  // Step 3
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+
+  // Created entity IDs
+  const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(null);
+  const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
+
+  function reset() {
+    setStep(1);
+    setLoading(false);
+    setError(null);
+    setCompanyName("");
+    setCompanyGoal("");
+    setAgentName("CEO");
+    setAdapterType("claude_local");
+    setCwd("");
+    setModel("");
+    setCommand("");
+    setArgs("");
+    setUrl("");
+    setTaskTitle("");
+    setTaskDescription("");
+    setCreatedCompanyId(null);
+    setCreatedAgentId(null);
+  }
+
+  function buildAdapterConfig(): Record<string, unknown> {
+    if (adapterType === "claude_local") {
+      return {
+        ...(cwd ? { cwd } : {}),
+        ...(model ? { model } : {}),
+        timeoutSec: 900,
+        graceSec: 15,
+        maxTurnsPerRun: 80,
+        dangerouslySkipPermissions: true,
+      };
+    }
+    if (adapterType === "process") {
+      return {
+        ...(command ? { command } : {}),
+        args: args
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        timeoutSec: 900,
+        graceSec: 15,
+      };
+    }
+    // http
+    return {
+      ...(url ? { url } : {}),
+      method: "POST",
+      timeoutMs: 15000,
+    };
+  }
+
+  async function handleStep1Next() {
+    setLoading(true);
+    setError(null);
+    try {
+      const company = await companiesApi.create({ name: companyName.trim() });
+      setCreatedCompanyId(company.id);
+      setSelectedCompanyId(company.id);
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+
+      if (companyGoal.trim()) {
+        await goalsApi.create(company.id, {
+          title: companyGoal.trim(),
+          level: "company",
+          status: "active",
+        });
+        queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(company.id) });
+      }
+
+      setStep(2);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create company");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleStep2Next() {
+    if (!createdCompanyId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const agent = await agentsApi.create(createdCompanyId, {
+        name: agentName.trim(),
+        role: "ceo",
+        adapterType,
+        adapterConfig: buildAdapterConfig(),
+        runtimeConfig: {
+          heartbeat: {
+            enabled: true,
+            intervalSec: 300,
+            wakeOnAssignment: true,
+            wakeOnOnDemand: true,
+            wakeOnAutomation: true,
+            cooldownSec: 10,
+          },
+        },
+      });
+      setCreatedAgentId(agent.id);
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.agents.list(createdCompanyId),
+      });
+      setStep(3);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create agent");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleStep3Next() {
+    if (!createdCompanyId || !createdAgentId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await issuesApi.create(createdCompanyId, {
+        title: taskTitle.trim(),
+        ...(taskDescription.trim() ? { description: taskDescription.trim() } : {}),
+        assigneeAgentId: createdAgentId,
+        status: "todo",
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.issues.list(createdCompanyId),
+      });
+      setStep(4);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create task");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLaunch() {
+    if (!createdAgentId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await agentsApi.invoke(createdAgentId);
+    } catch {
+      // Agent may already be running from auto-wake — that's fine
+    }
+    setLoading(false);
+    reset();
+    closeOnboarding();
+    navigate(`/agents/${createdAgentId}`);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if (step === 1 && companyName.trim()) handleStep1Next();
+      else if (step === 2 && agentName.trim()) handleStep2Next();
+      else if (step === 3 && taskTitle.trim()) handleStep3Next();
+      else if (step === 4) handleLaunch();
+    }
+  }
+
+  const stepIcons = [Building2, Bot, ListTodo, Rocket];
+
+  return (
+    <Dialog
+      open={onboardingOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          reset();
+          closeOnboarding();
+        }
+      }}
+    >
+      <DialogContent
+        showCloseButton={false}
+        className="p-0 gap-0 overflow-hidden sm:max-w-lg"
+        onKeyDown={handleKeyDown}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+          <div className="flex items-center gap-2 text-sm">
+            <Sparkles className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">Get Started</span>
+            <span className="text-muted-foreground/60">
+              Step {step} of 4
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {[1, 2, 3, 4].map((s) => (
+              <div
+                key={s}
+                className={cn(
+                  "h-1.5 w-6 rounded-full transition-colors",
+                  s < step
+                    ? "bg-green-500"
+                    : s === step
+                      ? "bg-foreground"
+                      : "bg-muted"
+                )}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-y-auto max-h-[60vh]">
+          {step === 1 && (
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="rounded-lg bg-muted/50 p-2">
+                  <Building2 className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <h3 className="font-medium">Name your company</h3>
+                  <p className="text-xs text-muted-foreground">
+                    This is the organization your agents will work for.
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  Company name
+                </label>
+                <input
+                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                  placeholder="Acme Corp"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  Mission / goal (optional)
+                </label>
+                <textarea
+                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-[60px]"
+                  placeholder="What is this company trying to achieve?"
+                  value={companyGoal}
+                  onChange={(e) => setCompanyGoal(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="rounded-lg bg-muted/50 p-2">
+                  <Bot className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <h3 className="font-medium">Create your first agent</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Choose how this agent will run tasks.
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  Agent name
+                </label>
+                <input
+                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                  placeholder="CEO"
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              {/* Adapter type radio cards */}
+              <div>
+                <label className="text-xs text-muted-foreground mb-2 block">
+                  Adapter type
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    {
+                      value: "claude_local" as const,
+                      label: "Claude Code",
+                      icon: Sparkles,
+                      desc: "Local Claude agent",
+                    },
+                    {
+                      value: "process" as const,
+                      label: "Shell Command",
+                      icon: Terminal,
+                      desc: "Run a process",
+                    },
+                    {
+                      value: "http" as const,
+                      label: "HTTP Webhook",
+                      icon: Globe,
+                      desc: "Call an endpoint",
+                    },
+                  ] as const).map((opt) => (
+                    <button
+                      key={opt.value}
+                      className={cn(
+                        "flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors",
+                        adapterType === opt.value
+                          ? "border-foreground bg-accent"
+                          : "border-border hover:bg-accent/50"
+                      )}
+                      onClick={() => setAdapterType(opt.value)}
+                    >
+                      <opt.icon className="h-4 w-4" />
+                      <span className="font-medium">{opt.label}</span>
+                      <span className="text-muted-foreground text-[10px]">
+                        {opt.desc}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Conditional adapter fields */}
+              {adapterType === "claude_local" && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">
+                      Working directory
+                    </label>
+                    <input
+                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                      placeholder="/path/to/project"
+                      value={cwd}
+                      onChange={(e) => setCwd(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">
+                      Model
+                    </label>
+                    <input
+                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                      placeholder="claude-sonnet-4-5-20250929"
+                      value={model}
+                      onChange={(e) => setModel(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {adapterType === "process" && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">
+                      Command
+                    </label>
+                    <input
+                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                      placeholder="e.g. node, python"
+                      value={command}
+                      onChange={(e) => setCommand(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-muted-foreground mb-1 block">
+                      Args (comma-separated)
+                    </label>
+                    <input
+                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                      placeholder="e.g. script.js, --flag"
+                      value={args}
+                      onChange={(e) => setArgs(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {adapterType === "http" && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">
+                    Webhook URL
+                  </label>
+                  <input
+                    className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                    placeholder="https://..."
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="rounded-lg bg-muted/50 p-2">
+                  <ListTodo className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <h3 className="font-medium">Give it something to do</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Give your agent a small task to start with — a bug fix, a
+                    research question, writing a script.
+                  </p>
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  Task title
+                </label>
+                <input
+                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                  placeholder="e.g. Research competitor pricing"
+                  value={taskTitle}
+                  onChange={(e) => setTaskTitle(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  Description (optional)
+                </label>
+                <textarea
+                  className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-[80px]"
+                  placeholder="Add more detail about what the agent should do..."
+                  value={taskDescription}
+                  onChange={(e) => setTaskDescription(e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="rounded-lg bg-muted/50 p-2">
+                  <Rocket className="h-5 w-5 text-muted-foreground" />
+                </div>
+                <div>
+                  <h3 className="font-medium">Ready to launch</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Everything is set up. Launch your agent and watch it work.
+                  </p>
+                </div>
+              </div>
+              <div className="rounded-md border border-border divide-y divide-border">
+                <div className="flex items-center gap-3 px-3 py-2.5">
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{companyName}</p>
+                    <p className="text-xs text-muted-foreground">Company</p>
+                  </div>
+                  <Check className="h-4 w-4 text-green-500 shrink-0" />
+                </div>
+                <div className="flex items-center gap-3 px-3 py-2.5">
+                  <Bot className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{agentName}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {adapterType === "claude_local"
+                        ? "Claude Code"
+                        : adapterType === "process"
+                          ? "Shell Command"
+                          : "HTTP Webhook"}
+                    </p>
+                  </div>
+                  <Check className="h-4 w-4 text-green-500 shrink-0" />
+                </div>
+                <div className="flex items-center gap-3 px-3 py-2.5">
+                  <ListTodo className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{taskTitle}</p>
+                    <p className="text-xs text-muted-foreground">Task</p>
+                  </div>
+                  <Check className="h-4 w-4 text-green-500 shrink-0" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div className="px-4 pb-2">
+            <p className="text-xs text-destructive">{error}</p>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
+          <div>
+            {step > 1 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep((step - 1) as Step)}
+                disabled={loading}
+              >
+                <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                Back
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {step < 4 && "Cmd+Enter to continue"}
+            </span>
+            {step === 1 && (
+              <Button
+                size="sm"
+                disabled={!companyName.trim() || loading}
+                onClick={handleStep1Next}
+              >
+                {loading ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                )}
+                {loading ? "Creating..." : "Next"}
+              </Button>
+            )}
+            {step === 2 && (
+              <Button
+                size="sm"
+                disabled={!agentName.trim() || loading}
+                onClick={handleStep2Next}
+              >
+                {loading ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                )}
+                {loading ? "Creating..." : "Next"}
+              </Button>
+            )}
+            {step === 3 && (
+              <Button
+                size="sm"
+                disabled={!taskTitle.trim() || loading}
+                onClick={handleStep3Next}
+              >
+                {loading ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                )}
+                {loading ? "Creating..." : "Next"}
+              </Button>
+            )}
+            {step === 4 && (
+              <Button size="sm" disabled={loading} onClick={handleLaunch}>
+                {loading ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                ) : (
+                  <Rocket className="h-3.5 w-3.5 mr-1" />
+                )}
+                {loading ? "Launching..." : "Launch Agent"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

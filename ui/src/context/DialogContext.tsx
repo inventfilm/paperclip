@@ -17,6 +17,9 @@ interface DialogContextValue {
   newAgentOpen: boolean;
   openNewAgent: () => void;
   closeNewAgent: () => void;
+  onboardingOpen: boolean;
+  openOnboarding: () => void;
+  closeOnboarding: () => void;
 }
 
 const DialogContext = createContext<DialogContextValue | null>(null);
@@ -26,6 +29,7 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const [newIssueDefaults, setNewIssueDefaults] = useState<NewIssueDefaults>({});
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newAgentOpen, setNewAgentOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
 
   const openNewIssue = useCallback((defaults: NewIssueDefaults = {}) => {
     setNewIssueDefaults(defaults);
@@ -53,6 +57,14 @@ export function DialogProvider({ children }: { children: ReactNode }) {
     setNewAgentOpen(false);
   }, []);
 
+  const openOnboarding = useCallback(() => {
+    setOnboardingOpen(true);
+  }, []);
+
+  const closeOnboarding = useCallback(() => {
+    setOnboardingOpen(false);
+  }, []);
+
   return (
     <DialogContext.Provider
       value={{
@@ -66,6 +78,9 @@ export function DialogProvider({ children }: { children: ReactNode }) {
         newAgentOpen,
         openNewAgent,
         closeNewAgent,
+        onboardingOpen,
+        openOnboarding,
+        closeOnboarding,
       }}
     >
       {children}
