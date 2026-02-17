@@ -14,4 +14,5 @@ export const heartbeatsApi = {
     api.get<{ runId: string; store: string; logRef: string; content: string; nextOffset?: number }>(
       `/heartbeat-runs/${runId}/log?offset=${encodeURIComponent(String(offset))}&limitBytes=${encodeURIComponent(String(limitBytes))}`,
     ),
+  cancel: (runId: string) => api.post<void>(`/heartbeat-runs/${runId}/cancel`, {}),
 };

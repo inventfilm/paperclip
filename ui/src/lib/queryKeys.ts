@@ -6,6 +6,7 @@ export const queryKeys = {
   agents: {
     list: (companyId: string) => ["agents", companyId] as const,
     detail: (id: string) => ["agents", "detail", id] as const,
+    runtimeState: (id: string) => ["agents", "runtime-state", id] as const,
   },
   issues: {
     list: (companyId: string) => ["issues", companyId] as const,

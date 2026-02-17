@@ -34,7 +34,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
-  const { openNewIssue } = useDialog();
+  const { openNewIssue, openNewAgent } = useDialog();
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -133,7 +133,12 @@ export function CommandPalette() {
             Create new issue
             <span className="ml-auto text-xs text-muted-foreground">C</span>
           </CommandItem>
-          <CommandItem onSelect={() => go("/agents")}>
+          <CommandItem
+            onSelect={() => {
+              setOpen(false);
+              openNewAgent();
+            }}
+          >
             <Plus className="mr-2 h-4 w-4" />
             Create new agent
           </CommandItem>

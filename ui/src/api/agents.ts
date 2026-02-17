@@ -1,4 +1,4 @@
-import type { Agent, AgentKeyCreated, HeartbeatRun } from "@paperclip/shared";
+import type { Agent, AgentKeyCreated, AgentRuntimeState, HeartbeatRun } from "@paperclip/shared";
 import { api } from "./client";
 
 export interface OrgNode {
@@ -20,6 +20,8 @@ export const agentsApi = {
   resume: (id: string) => api.post<Agent>(`/agents/${id}/resume`, {}),
   terminate: (id: string) => api.post<Agent>(`/agents/${id}/terminate`, {}),
   createKey: (id: string, name: string) => api.post<AgentKeyCreated>(`/agents/${id}/keys`, { name }),
+  runtimeState: (id: string) => api.get<AgentRuntimeState>(`/agents/${id}/runtime-state`),
+  resetSession: (id: string) => api.post<void>(`/agents/${id}/runtime-state/reset-session`, {}),
   invoke: (id: string) => api.post<HeartbeatRun>(`/agents/${id}/heartbeat/invoke`, {}),
   wakeup: (
     id: string,

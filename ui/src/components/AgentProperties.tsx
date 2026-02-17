@@ -1,11 +1,19 @@
-import type { Agent } from "@paperclip/shared";
+import type { Agent, AgentRuntimeState } from "@paperclip/shared";
 import { StatusBadge } from "./StatusBadge";
 import { formatCents, formatDate } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
 
 interface AgentPropertiesProps {
   agent: Agent;
+  runtimeState?: AgentRuntimeState;
 }
+
+const adapterLabels: Record<string, string> = {
+  claude_local: "Claude (local)",
+  codex_local: "Codex (local)",
+  process: "Process",
+  http: "HTTP",
+};
 
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -16,7 +24,7 @@ function PropertyRow({ label, children }: { label: string; children: React.React
   );
 }
 
-export function AgentProperties({ agent }: AgentPropertiesProps) {
+export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
   return (
     <div className="space-y-4">
       <div className="space-y-1">
@@ -32,7 +40,7 @@ export function AgentProperties({ agent }: AgentPropertiesProps) {
           </PropertyRow>
         )}
         <PropertyRow label="Adapter">
-          <span className="text-sm font-mono">{agent.adapterType}</span>
+          <span className="text-sm font-mono">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span>
         </PropertyRow>
         <PropertyRow label="Context">
           <span className="text-sm">{agent.contextMode}</span>
@@ -60,6 +68,16 @@ export function AgentProperties({ agent }: AgentPropertiesProps) {
       <Separator />
 
       <div className="space-y-1">
+        {runtimeState?.sessionId && (
+          <PropertyRow label="Session">
+            <span className="text-xs font-mono">{runtimeState.sessionId.slice(0, 12)}...</span>
+          </PropertyRow>
+        )}
+        {runtimeState?.lastError && (
+          <PropertyRow label="Last error">
+            <span className="text-xs text-red-400 truncate max-w-[160px]">{runtimeState.lastError}</span>
+          </PropertyRow>
+        )}
         {agent.lastHeartbeatAt && (
           <PropertyRow label="Last Heartbeat">
             <span className="text-sm">{formatDate(agent.lastHeartbeatAt)}</span>
