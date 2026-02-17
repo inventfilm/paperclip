@@ -32,7 +32,7 @@ export function IssueDetail() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: "Issues", href: "/tasks" },
+      { label: "Issues", href: "/issues" },
       { label: issue?.title ?? issueId ?? "Issue" },
     ]);
   }, [setBreadcrumbs, issue, issueId]);

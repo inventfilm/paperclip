@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { issuesApi } from "../api/issues";
 import { useApi } from "../hooks/useApi";
+import { useAgents } from "../hooks/useAgents";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -43,6 +44,7 @@ export function Issues() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const [tab, setTab] = useState<TabFilter>("all");
+  const { data: agents } = useAgents(selectedCompanyId);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Issues" }]);
@@ -54,6 +56,11 @@ export function Issues() {
   }, [selectedCompanyId]);
 
   const { data: issues, loading, error, reload } = useApi(fetcher);
+
+  const agentName = (id: string | null) => {
+    if (!id || !agents) return null;
+    return agents.find((a) => a.id === id)?.name ?? null;
+  };
 
   async function handleStatusChange(issue: Issue, status: string) {
     await issuesApi.update(issue.id, { status });
@@ -135,9 +142,16 @@ export function Issues() {
                   </>
                 }
                 trailing={
-                  <span className="text-xs text-muted-foreground">
-                    {formatDate(issue.createdAt)}
-                  </span>
+                  <div className="flex items-center gap-3">
+                    {issue.assigneeAgentId && (
+                      <span className="text-xs text-muted-foreground">
+                        {agentName(issue.assigneeAgentId) ?? issue.assigneeAgentId.slice(0, 8)}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(issue.createdAt)}
+                    </span>
+                  </div>
                 }
               />
             ))}

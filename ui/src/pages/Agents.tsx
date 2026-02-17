@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAgents } from "../hooks/useAgents";
 import { useCompany } from "../context/CompanyContext";
@@ -21,17 +21,6 @@ export function Agents() {
     setBreadcrumbs([{ label: "Agents" }]);
   }, [setBreadcrumbs]);
 
-  async function invoke(e: React.MouseEvent, agentId: string) {
-    e.stopPropagation();
-    setActionError(null);
-    try {
-      await agentsApi.invoke(agentId);
-      reload();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to invoke agent");
-    }
-  }
-
   if (!selectedCompanyId) {
     return <EmptyState icon={Bot} message="Select a company to view agents." />;
   }
@@ -45,7 +34,10 @@ export function Agents() {
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       {agents && agents.length === 0 && (
-        <EmptyState icon={Bot} message="No agents yet." />
+        <EmptyState
+          icon={Bot}
+          message="No agents yet. Agents are created via the API or templates."
+        />
       )}
 
       {agents && agents.length > 0 && (

@@ -36,7 +36,12 @@ export function Goals() {
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {goals && goals.length === 0 && (
-        <EmptyState icon={Target} message="No goals yet." />
+        <EmptyState
+          icon={Target}
+          message="No goals yet."
+          action="Add Goal"
+          onAction={() => {/* TODO: goal creation */}}
+        />
       )}
 
       {goals && goals.length > 0 && (

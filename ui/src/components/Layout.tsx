@@ -5,6 +5,7 @@ import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
 import { NewIssueDialog } from "./NewIssueDialog";
+import { NewProjectDialog } from "./NewProjectDialog";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
@@ -27,18 +28,18 @@ export function Layout() {
   });
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden">
       <div
         className={cn(
-          "transition-all duration-200 ease-in-out shrink-0 overflow-hidden",
+          "transition-all duration-200 ease-in-out shrink-0 h-full overflow-hidden",
           sidebarOpen ? "w-60" : "w-0"
         )}
       >
         <Sidebar />
       </div>
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 h-full">
         <BreadcrumbBar />
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 min-h-0">
           <main className="flex-1 overflow-auto p-6">
             <Outlet />
           </main>
@@ -47,6 +48,7 @@ export function Layout() {
       </div>
       <CommandPalette />
       <NewIssueDialog />
+      <NewProjectDialog />
     </div>
   );
 }

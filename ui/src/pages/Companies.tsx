@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCompany } from "../context/CompanyContext";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { companiesApi } from "../api/companies";
 import { formatCents } from "../lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Pencil, Check, X } from "lucide-react";
 
 export function Companies() {
   const {
@@ -15,11 +18,21 @@ export function Companies() {
     error,
     reloadCompanies,
   } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [budget, setBudget] = useState("0");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Inline edit state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Companies" }]);
+  }, [setBreadcrumbs]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -44,16 +57,38 @@ export function Companies() {
     }
   }
 
+  function startEdit(companyId: string, currentName: string) {
+    setEditingId(companyId);
+    setEditName(currentName);
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editName.trim()) return;
+    setEditSaving(true);
+    try {
+      await companiesApi.update(editingId, { name: editName.trim() });
+      await reloadCompanies();
+      setEditingId(null);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setEditName("");
+  }
+
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold">Companies</h2>
-        <p className="text-muted-foreground">Create and select the company you are operating.</p>
+        <h2 className="text-lg font-semibold">Companies</h2>
+        <p className="text-sm text-muted-foreground">Create and manage your companies.</p>
       </div>
 
       <Card>
         <CardContent className="p-4 space-y-3">
-          <h3 className="font-semibold">Create Company</h3>
+          <h3 className="text-sm font-semibold">Create Company</h3>
           <form onSubmit={onSubmit} className="space-y-3">
             <div className="grid md:grid-cols-3 gap-3">
               <Input
@@ -73,31 +108,72 @@ export function Companies() {
               />
             </div>
             {submitError && <p className="text-sm text-destructive">{submitError}</p>}
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" size="sm" disabled={submitting}>
               {submitting ? "Creating..." : "Create Company"}
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      {loading && <p className="text-muted-foreground">Loading companies...</p>}
-      {error && <p className="text-destructive">{error.message}</p>}
+      {loading && <p className="text-sm text-muted-foreground">Loading companies...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       <div className="grid gap-3">
         {companies.map((company) => {
           const selected = company.id === selectedCompanyId;
+          const isEditing = editingId === company.id;
+
           return (
             <button
               key={company.id}
               onClick={() => setSelectedCompanyId(company.id)}
-              className={`text-left bg-card border rounded-lg p-4 ${
-                selected ? "border-primary ring-1 ring-primary" : "border-border"
+              className={`text-left bg-card border rounded-lg p-4 transition-colors ${
+                selected ? "border-primary ring-1 ring-primary" : "border-border hover:border-muted-foreground/30"
               }`}
             >
               <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold">{company.name}</h3>
-                  {company.description && (
+                <div className="flex-1 min-w-0">
+                  {isEditing ? (
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <Input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="h-7 text-sm"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit();
+                          if (e.key === "Escape") cancelEdit();
+                        }}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={saveEdit}
+                        disabled={editSaving}
+                      >
+                        <Check className="h-3.5 w-3.5 text-green-500" />
+                      </Button>
+                      <Button variant="ghost" size="icon-xs" onClick={cancelEdit}>
+                        <X className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold">{company.name}</h3>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="text-muted-foreground opacity-0 group-hover:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEdit(company.id, company.name);
+                        }}
+                      >
+                        <Pencil className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
+                  {company.description && !isEditing && (
                     <p className="text-sm text-muted-foreground mt-1">{company.description}</p>
                   )}
                 </div>

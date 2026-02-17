@@ -1,7 +1,10 @@
 import type { Issue } from "@paperclip/shared";
+import { useCompany } from "../context/CompanyContext";
+import { useAgents } from "../hooks/useAgents";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { formatDate } from "../lib/utils";
+import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 
 interface IssuePropertiesProps {
@@ -27,6 +30,15 @@ function priorityLabel(priority: string): string {
 }
 
 export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
+  const { selectedCompanyId } = useCompany();
+  const { data: agents } = useAgents(selectedCompanyId);
+
+  const agentName = (id: string | null) => {
+    if (!id || !agents) return null;
+    const agent = agents.find((a) => a.id === id);
+    return agent?.name ?? id.slice(0, 8);
+  };
+
   return (
     <div className="space-y-4">
       <div className="space-y-1">
@@ -46,30 +58,37 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
           <span className="text-sm">{priorityLabel(issue.priority)}</span>
         </PropertyRow>
 
-        {issue.assigneeAgentId && (
-          <PropertyRow label="Assignee">
-            <span className="text-sm font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>
-          </PropertyRow>
-        )}
+        <PropertyRow label="Assignee">
+          <span className="text-sm">
+            {issue.assigneeAgentId ? agentName(issue.assigneeAgentId) : "Unassigned"}
+          </span>
+        </PropertyRow>
 
-        {issue.projectId && (
-          <PropertyRow label="Project">
-            <span className="text-sm font-mono">{issue.projectId.slice(0, 8)}</span>
-          </PropertyRow>
-        )}
+        <PropertyRow label="Project">
+          <span className="text-sm text-muted-foreground">
+            {issue.projectId ? issue.projectId.slice(0, 8) : "None"}
+          </span>
+        </PropertyRow>
       </div>
 
       <Separator />
 
       <div className="space-y-1">
-        <PropertyRow label="ID">
-          <span className="text-sm font-mono">{issue.id.slice(0, 8)}</span>
-        </PropertyRow>
+        {issue.startedAt && (
+          <PropertyRow label="Started">
+            <span className="text-sm">{formatDate(issue.startedAt)}</span>
+          </PropertyRow>
+        )}
+        {issue.completedAt && (
+          <PropertyRow label="Completed">
+            <span className="text-sm">{formatDate(issue.completedAt)}</span>
+          </PropertyRow>
+        )}
         <PropertyRow label="Created">
           <span className="text-sm">{formatDate(issue.createdAt)}</span>
         </PropertyRow>
         <PropertyRow label="Updated">
-          <span className="text-sm">{formatDate(issue.updatedAt)}</span>
+          <span className="text-sm">{timeAgo(issue.updatedAt)}</span>
         </PropertyRow>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
@@ -8,7 +8,6 @@ import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { ChevronRight, GitBranch } from "lucide-react";
 import { cn } from "../lib/utils";
-import { useState } from "react";
 
 function OrgTree({
   nodes,
@@ -113,7 +112,10 @@ export function Org() {
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {data && data.length === 0 && (
-        <EmptyState icon={GitBranch} message="No agents in the organization." />
+        <EmptyState
+          icon={GitBranch}
+          message="No agents in the organization. Create agents to build your org chart."
+        />
       )}
 
       {data && data.length > 0 && (

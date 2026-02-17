@@ -12,6 +12,7 @@ import {
   SquarePen,
   Building2,
   ListTodo,
+  LayoutList,
 } from "lucide-react";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { SidebarSection } from "./SidebarSection";
@@ -29,16 +30,15 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-60 border-r border-border bg-card flex flex-col shrink-0">
-      <div className="p-3">
-        <CompanySwitcher />
-      </div>
-
-      <div className="flex items-center gap-1 px-3 pb-2">
+    <aside className="w-60 h-full border-r border-border bg-card flex flex-col">
+      <div className="flex items-center gap-1 p-3">
+        <div className="flex-1 min-w-0">
+          <CompanySwitcher />
+        </div>
         <Button
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground"
+          className="text-muted-foreground shrink-0"
           onClick={openSearch}
         >
           <Search className="h-4 w-4" />
@@ -46,7 +46,7 @@ export function Sidebar() {
         <Button
           variant="ghost"
           size="icon-sm"
-          className="text-muted-foreground"
+          className="text-muted-foreground shrink-0"
           onClick={() => openNewIssue()}
         >
           <SquarePen className="h-4 w-4" />
@@ -63,13 +63,13 @@ export function Sidebar() {
           </div>
 
           <SidebarSection label="Work">
-            <SidebarNavItem to="/tasks" label="Issues" icon={CircleDot} />
+            <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
             <SidebarNavItem to="/projects" label="Projects" icon={Hexagon} />
             <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           </SidebarSection>
 
           <SidebarSection label="Company">
-            <SidebarNavItem to="/" label="Dashboard" icon={LayoutDashboard} end />
+            <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} />
             <SidebarNavItem to="/org" label="Org Chart" icon={GitBranch} />
             <SidebarNavItem to="/agents" label="Agents" icon={Bot} />
             <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />

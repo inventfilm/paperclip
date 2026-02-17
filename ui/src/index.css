@@ -120,3 +120,8 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Expandable dialog transition for max-width changes */
+[data-slot="dialog-content"] {
+  transition: max-width 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}

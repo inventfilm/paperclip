@@ -3,15 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { projectsApi } from "../api/projects";
 import { useApi } from "../hooks/useApi";
 import { useCompany } from "../context/CompanyContext";
+import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { EntityRow } from "../components/EntityRow";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { formatDate } from "../lib/utils";
-import { Hexagon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Hexagon, Plus } from "lucide-react";
 
 export function Projects() {
   const { selectedCompanyId } = useCompany();
+  const { openNewProject } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
 
@@ -32,13 +35,24 @@ export function Projects() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Projects</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Projects</h2>
+        <Button size="sm" onClick={openNewProject}>
+          <Plus className="h-4 w-4 mr-1" />
+          Add Project
+        </Button>
+      </div>
 
       {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {projects && projects.length === 0 && (
-        <EmptyState icon={Hexagon} message="No projects yet." />
+        <EmptyState
+          icon={Hexagon}
+          message="No projects yet."
+          action="Add Project"
+          onAction={openNewProject}
+        />
       )}
 
       {projects && projects.length > 0 && (

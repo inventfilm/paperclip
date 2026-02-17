@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { Companies } from "./pages/Companies";
@@ -21,14 +21,15 @@ export function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<Dashboard />} />
         <Route path="companies" element={<Companies />} />
         <Route path="org" element={<Org />} />
         <Route path="agents" element={<Agents />} />
         <Route path="agents/:agentId" element={<AgentDetail />} />
         <Route path="projects" element={<Projects />} />
         <Route path="projects/:projectId" element={<ProjectDetail />} />
-        <Route path="tasks" element={<Issues />} />
+        <Route path="issues" element={<Issues />} />
         <Route path="issues/:issueId" element={<IssueDetail />} />
         <Route path="goals" element={<Goals />} />
         <Route path="goals/:goalId" element={<GoalDetail />} />

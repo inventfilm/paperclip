@@ -1,25 +1,51 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
+import { projectsApi } from "../api/projects";
+import { useAgents } from "../hooks/useAgents";
+import { useApi } from "../hooks/useApi";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  CircleDot,
+  Minus,
+  ArrowUp,
+  ArrowDown,
+  AlertTriangle,
+  User,
+  Hexagon,
+  Tag,
+  Calendar,
+} from "lucide-react";
+import { cn } from "../lib/utils";
+import type { Project, Agent } from "@paperclip/shared";
+
+const statuses = [
+  { value: "backlog", label: "Backlog", color: "text-muted-foreground" },
+  { value: "todo", label: "Todo", color: "text-blue-400" },
+  { value: "in_progress", label: "In Progress", color: "text-yellow-400" },
+  { value: "in_review", label: "In Review", color: "text-violet-400" },
+  { value: "done", label: "Done", color: "text-green-400" },
+];
+
+const priorities = [
+  { value: "critical", label: "Critical", icon: AlertTriangle, color: "text-red-400" },
+  { value: "high", label: "High", icon: ArrowUp, color: "text-orange-400" },
+  { value: "medium", label: "Medium", icon: Minus, color: "text-yellow-400" },
+  { value: "low", label: "Low", icon: ArrowDown, color: "text-blue-400" },
+];
 
 interface NewIssueDialogProps {
   onCreated?: () => void;
@@ -27,22 +53,50 @@ interface NewIssueDialogProps {
 
 export function NewIssueDialog({ onCreated }: NewIssueDialogProps) {
   const { newIssueOpen, newIssueDefaults, closeNewIssue } = useDialog();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [status, setStatus] = useState(newIssueDefaults.status ?? "todo");
-  const [priority, setPriority] = useState(newIssueDefaults.priority ?? "medium");
+  const [status, setStatus] = useState("todo");
+  const [priority, setPriority] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Popover states
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [priorityOpen, setPriorityOpen] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const { data: agents } = useAgents(selectedCompanyId);
+
+  const projectsFetcher = useCallback(() => {
+    if (!selectedCompanyId) return Promise.resolve([] as Project[]);
+    return projectsApi.list(selectedCompanyId);
+  }, [selectedCompanyId]);
+  const { data: projects } = useApi(projectsFetcher);
+
+  useEffect(() => {
+    if (newIssueOpen) {
+      setStatus(newIssueDefaults.status ?? "todo");
+      setPriority(newIssueDefaults.priority ?? "");
+      setProjectId(newIssueDefaults.projectId ?? "");
+    }
+  }, [newIssueOpen, newIssueDefaults]);
 
   function reset() {
     setTitle("");
     setDescription("");
     setStatus("todo");
-    setPriority("medium");
+    setPriority("");
+    setAssigneeId("");
+    setProjectId("");
+    setExpanded(false);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSubmit() {
     if (!selectedCompanyId || !title.trim()) return;
 
     setSubmitting(true);
@@ -51,7 +105,9 @@ export function NewIssueDialog({ onCreated }: NewIssueDialogProps) {
         title: title.trim(),
         description: description.trim() || undefined,
         status,
-        priority,
+        priority: priority || "medium",
+        ...(assigneeId ? { assigneeAgentId: assigneeId } : {}),
+        ...(projectId ? { projectId } : {}),
       });
       reset();
       closeNewIssue();
@@ -60,6 +116,18 @@ export function NewIssueDialog({ onCreated }: NewIssueDialogProps) {
       setSubmitting(false);
     }
   }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      handleSubmit();
+    }
+  }
+
+  const currentStatus = statuses.find((s) => s.value === status) ?? statuses[1]!;
+  const currentPriority = priorities.find((p) => p.value === priority);
+  const currentAssignee = (agents ?? []).find((a) => a.id === assigneeId);
+  const currentProject = (projects ?? []).find((p) => p.id === projectId);
 
   return (
     <Dialog
@@ -71,71 +139,232 @@ export function NewIssueDialog({ onCreated }: NewIssueDialogProps) {
         }
       }}
     >
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>New Issue</DialogTitle>
-        </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="issue-title">Title</Label>
-            <Input
-              id="issue-title"
-              placeholder="Issue title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-            />
+      <DialogContent
+        showCloseButton={false}
+        className={cn(
+          "p-0 gap-0",
+          expanded ? "sm:max-w-2xl" : "sm:max-w-lg"
+        )}
+        onKeyDown={handleKeyDown}
+      >
+        {/* Header bar */}
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {selectedCompany && (
+              <span className="bg-muted px-1.5 py-0.5 rounded text-xs font-medium">
+                {selectedCompany.name.slice(0, 3).toUpperCase()}
+              </span>
+            )}
+            <span className="text-muted-foreground/60">&rsaquo;</span>
+            <span>New issue</span>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="issue-desc">Description</Label>
-            <Textarea
-              id="issue-desc"
-              placeholder="Add a description..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-            />
-          </div>
-          <div className="flex gap-4">
-            <div className="space-y-2 flex-1">
-              <Label>Status</Label>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="backlog">Backlog</SelectItem>
-                  <SelectItem value="todo">Todo</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="in_review">In Review</SelectItem>
-                  <SelectItem value="done">Done</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2 flex-1">
-              <Label>Priority</Label>
-              <Select value={priority} onValueChange={setPriority}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={closeNewIssue}>
-              Cancel
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              onClick={() => setExpanded(!expanded)}
+            >
+              {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </Button>
-            <Button type="submit" disabled={!title.trim() || submitting}>
-              {submitting ? "Creating..." : "Create Issue"}
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground"
+              onClick={() => { reset(); closeNewIssue(); }}
+            >
+              <span className="text-lg leading-none">&times;</span>
             </Button>
-          </DialogFooter>
-        </form>
+          </div>
+        </div>
+
+        {/* Title */}
+        <div className="px-4 pt-3">
+          <input
+            className="w-full text-base font-medium bg-transparent outline-none placeholder:text-muted-foreground/50"
+            placeholder="Issue title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            autoFocus
+          />
+        </div>
+
+        {/* Description */}
+        <div className="px-4 pb-2">
+          <textarea
+            className={cn(
+              "w-full bg-transparent outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/40 resize-none",
+              expanded ? "min-h-[200px]" : "min-h-[60px]"
+            )}
+            placeholder="Add description..."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+        </div>
+
+        {/* Property chips bar */}
+        <div className="flex items-center gap-1.5 px-4 py-2 border-t border-border flex-wrap">
+          {/* Status chip */}
+          <Popover open={statusOpen} onOpenChange={setStatusOpen}>
+            <PopoverTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                <CircleDot className={cn("h-3 w-3", currentStatus.color)} />
+                {currentStatus.label}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-36 p-1" align="start">
+              {statuses.map((s) => (
+                <button
+                  key={s.value}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    s.value === status && "bg-accent"
+                  )}
+                  onClick={() => { setStatus(s.value); setStatusOpen(false); }}
+                >
+                  <CircleDot className={cn("h-3 w-3", s.color)} />
+                  {s.label}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+
+          {/* Priority chip */}
+          <Popover open={priorityOpen} onOpenChange={setPriorityOpen}>
+            <PopoverTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                {currentPriority ? (
+                  <>
+                    <currentPriority.icon className={cn("h-3 w-3", currentPriority.color)} />
+                    {currentPriority.label}
+                  </>
+                ) : (
+                  <>
+                    <Minus className="h-3 w-3 text-muted-foreground" />
+                    Priority
+                  </>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-36 p-1" align="start">
+              {priorities.map((p) => (
+                <button
+                  key={p.value}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    p.value === priority && "bg-accent"
+                  )}
+                  onClick={() => { setPriority(p.value); setPriorityOpen(false); }}
+                >
+                  <p.icon className={cn("h-3 w-3", p.color)} />
+                  {p.label}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+
+          {/* Assignee chip */}
+          <Popover open={assigneeOpen} onOpenChange={setAssigneeOpen}>
+            <PopoverTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                <User className="h-3 w-3 text-muted-foreground" />
+                {currentAssignee ? currentAssignee.name : "Assignee"}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-44 p-1" align="start">
+              <button
+                className={cn(
+                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                  !assigneeId && "bg-accent"
+                )}
+                onClick={() => { setAssigneeId(""); setAssigneeOpen(false); }}
+              >
+                No assignee
+              </button>
+              {(agents ?? []).map((a) => (
+                <button
+                  key={a.id}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    a.id === assigneeId && "bg-accent"
+                  )}
+                  onClick={() => { setAssigneeId(a.id); setAssigneeOpen(false); }}
+                >
+                  {a.name}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+
+          {/* Project chip */}
+          <Popover open={projectOpen} onOpenChange={setProjectOpen}>
+            <PopoverTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                <Hexagon className="h-3 w-3 text-muted-foreground" />
+                {currentProject ? currentProject.name : "Project"}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-44 p-1" align="start">
+              <button
+                className={cn(
+                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                  !projectId && "bg-accent"
+                )}
+                onClick={() => { setProjectId(""); setProjectOpen(false); }}
+              >
+                No project
+              </button>
+              {(projects ?? []).map((p) => (
+                <button
+                  key={p.id}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    p.id === projectId && "bg-accent"
+                  )}
+                  onClick={() => { setProjectId(p.id); setProjectOpen(false); }}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+
+          {/* Labels chip (placeholder) */}
+          <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
+            <Tag className="h-3 w-3" />
+            Labels
+          </button>
+
+          {/* More (dates) */}
+          <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+            <PopoverTrigger asChild>
+              <button className="inline-flex items-center justify-center rounded-md border border-border p-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
+                <MoreHorizontal className="h-3 w-3" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-44 p-1" align="start">
+              <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
+                <Calendar className="h-3 w-3" />
+                Start date
+              </button>
+              <button className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground">
+                <Calendar className="h-3 w-3" />
+                Due date
+              </button>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end px-4 py-2.5 border-t border-border">
+          <Button
+            size="sm"
+            disabled={!title.trim() || submitting}
+            onClick={handleSubmit}
+          >
+            {submitting ? "Creating..." : "Create issue"}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );
