@@ -4,7 +4,7 @@ import { goals } from "@paperclip/db";
 
 export function goalService(db: Db) {
   return {
-    list: () => db.select().from(goals),
+    list: (companyId: string) => db.select().from(goals).where(eq(goals.companyId, companyId)),
 
     getById: (id: string) =>
       db
@@ -13,10 +13,10 @@ export function goalService(db: Db) {
         .where(eq(goals.id, id))
         .then((rows) => rows[0] ?? null),
 
-    create: (data: typeof goals.$inferInsert) =>
+    create: (companyId: string, data: Omit<typeof goals.$inferInsert, "companyId">) =>
       db
         .insert(goals)
-        .values(data)
+        .values({ ...data, companyId })
         .returning()
         .then((rows) => rows[0]),
 

@@ -1,5 +1,11 @@
+export { companyService } from "./companies.js";
 export { agentService } from "./agents.js";
 export { projectService } from "./projects.js";
-export { issueService } from "./issues.js";
+export { issueService, type IssueFilters } from "./issues.js";
 export { goalService } from "./goals.js";
 export { activityService, type ActivityFilters } from "./activity.js";
+export { approvalService } from "./approvals.js";
+export { costService } from "./costs.js";
+export { heartbeatService } from "./heartbeat.js";
+export { dashboardService } from "./dashboard.js";
+export { logActivity, type LogActivityInput } from "./activity-log.js";
