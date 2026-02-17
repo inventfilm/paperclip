@@ -20,14 +20,13 @@ A company has:
 Every employee is an agent. When you create a company, you start by defining the CEO, then build out from there.
 
 Each employee has:
-- **SOUL.md** — who they are, their ultimate objective, their personality, their operating principles. This is the agent's identity and mission.
-- **HEARTBEAT.md** — what they do on their main loop. Every time the agent "wakes up," this defines what they review, what they check, what actions they take.
-- **Agent configuration** — how this specific agent runs (see Agent Execution below)
+- **Adapter type + config** — how this agent runs and what defines its identity/behavior. This is adapter-specific (e.g., an OpenClaw agent might use SOUL.md and HEARTBEAT.md files; a Claude Code agent might use CLAUDE.md; a bare script might use CLI args). Paperclip doesn't prescribe the format — the adapter does.
 - **Role & reporting** — their title, who they report to, who reports to them
+- **Capabilities description** — a short paragraph on what this agent does and when they're relevant (helps other agents discover who can help with what)
 
-Example: A CEO's SOUL.md says "achieve $1M MRR with an AI note-taking app in 3 months." Their HEARTBEAT.md says "every loop: review what your executives are doing, check company metrics, reprioritize if needed, assign new strategic initiatives."
+Example: A CEO agent's adapter config tells it to "review what your executives are doing, check company metrics, reprioritize if needed, assign new strategic initiatives" on each heartbeat. An engineer's config tells it to "check assigned tasks, pick the highest priority, and work it."
 
-Then you define who reports to the CEO: a CTO managing programmers, a CMO managing the marketing team, and so on. Every agent in the tree gets their own SOUL.md and HEARTBEAT.md.
+Then you define who reports to the CEO: a CTO managing programmers, a CMO managing the marketing team, and so on. Every agent in the tree gets their own adapter configuration.
 
 ### Agent Execution
 
@@ -61,7 +60,7 @@ More detailed task structure TBD.
 
 2. **Company is the unit of organization.** Everything lives under a company. One Paperclip instance, many companies.
 
-3. **Soul + Heartbeat define an agent.** Every agent has an identity (SOUL.md) and a loop (HEARTBEAT.md). This is the minimum contract.
+3. **Adapter config defines the agent.** Every agent has an adapter type and configuration that controls its identity and behavior. The minimum contract is just "be callable."
 
 4. **All work traces to the goal.** Hierarchical task management means nothing exists in isolation. If you can't explain why a task matters to the company goal, it shouldn't exist.
 
@@ -72,18 +71,15 @@ More detailed task structure TBD.
 1. Open Paperclip, create a new company
 2. Define the company's goal: "Create the #1 AI note-taking app, $1M MRR in 3 months"
 3. Create the CEO
-   - Write their SOUL.md (objective, personality, operating style)
-   - Write their HEARTBEAT.md (the loop — review executives, check metrics, reprioritize)
-   - Configure agent execution (e.g., Claude Code session, OpenClaw bot, custom script)
+   - Choose an adapter (e.g., process adapter for Claude Code, HTTP adapter for OpenClaw)
+   - Configure the adapter (agent identity, loop behavior, execution settings)
+   - CEO proposes strategic breakdown → board approves
 4. Define the CEO's reports: CTO, CMO, CFO, etc.
-   - Each gets their own SOUL.md, HEARTBEAT.md, and agent config
+   - Each gets their own adapter config and role definition
 5. Define their reports: engineers under CTO, marketers under CMO, etc.
 6. Set budgets, define initial strategic tasks
 7. Hit go — agents start their heartbeats and the company runs
 
-## Open Questions
+## Further Detail
 
-- Agent configuration interface — what exactly is the schema? What are the levels of integration (basic script vs. fully integrated with cost tracking)?
-- Task management detail — what fields does a task have? Assignment, status workflow, dependencies beyond parentage?
-- Communication protocol — how do agents talk to each other? Through tasks only, or direct messaging?
-- Revenue/expense tracking — how does this integrate? Manual entry, API connections, agent-reported?
+See [SPEC.md](./SPEC.md) for the full technical specification and [doc/TASKS.md](./doc/TASKS.md) for the task management data model.
