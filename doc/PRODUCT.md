@@ -82,4 +82,4 @@ More detailed task structure TBD.
 
 ## Further Detail
 
-See [SPEC.md](./SPEC.md) for the full technical specification and [doc/TASKS.md](./doc/TASKS.md) for the task management data model.
+See [SPEC.md](./SPEC.md) for the full technical specification and [TASKS.md](./TASKS.md) for the task management data model.
