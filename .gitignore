@@ -7,3 +7,5 @@ drizzle/meta/
 coverage/
 .DS_Store
 data/
+.paperclip/
+.pnpm-store/

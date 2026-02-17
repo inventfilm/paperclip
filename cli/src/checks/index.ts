@@ -1,0 +1,14 @@
+export interface CheckResult {
+  name: string;
+  status: "pass" | "warn" | "fail";
+  message: string;
+  canRepair?: boolean;
+  repair?: () => void | Promise<void>;
+  repairHint?: string;
+}
+
+export { configCheck } from "./config-check.js";
+export { databaseCheck } from "./database-check.js";
+export { llmCheck } from "./llm-check.js";
+export { logCheck } from "./log-check.js";
+export { portCheck } from "./port-check.js";

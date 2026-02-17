@@ -1,0 +1,36 @@
+#!/usr/bin/env node
+import { Command } from "commander";
+import { onboard } from "./commands/onboard.js";
+import { doctor } from "./commands/doctor.js";
+import { configure } from "./commands/configure.js";
+
+const program = new Command();
+
+program
+  .name("paperclip")
+  .description("Paperclip CLI — setup, diagnose, and configure your instance")
+  .version("0.0.1");
+
+program
+  .command("onboard")
+  .description("Interactive first-run setup wizard")
+  .option("-c, --config <path>", "Path to config file")
+  .action(onboard);
+
+program
+  .command("doctor")
+  .description("Run diagnostic checks on your Paperclip setup")
+  .option("-c, --config <path>", "Path to config file")
+  .option("--repair", "Attempt to repair issues automatically")
+  .alias("--fix")
+  .option("-y, --yes", "Skip repair confirmation prompts")
+  .action(doctor);
+
+program
+  .command("configure")
+  .description("Update configuration sections")
+  .option("-c, --config <path>", "Path to config file")
+  .option("-s, --section <section>", "Section to configure (llm, database, logging, server)")
+  .action(configure);
+
+program.parse();

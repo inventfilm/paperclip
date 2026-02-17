@@ -128,10 +128,18 @@ export function Companies() {
           const isEditing = editingId === company.id;
 
           return (
-            <button
+            <div
               key={company.id}
+              role="button"
+              tabIndex={0}
               onClick={() => setSelectedCompanyId(company.id)}
-              className={`group text-left bg-card border rounded-lg p-4 transition-colors ${
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedCompanyId(company.id);
+                }
+              }}
+              className={`group text-left bg-card border rounded-lg p-4 transition-colors cursor-pointer ${
                 selected ? "border-primary ring-1 ring-primary" : "border-border hover:border-muted-foreground/30"
               }`}
             >
@@ -185,7 +193,7 @@ export function Companies() {
                   {formatCents(company.spentMonthlyCents)} / {formatCents(company.budgetMonthlyCents)}
                 </div>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
