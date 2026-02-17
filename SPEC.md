@@ -10,13 +10,13 @@ A company is a first-order object. One Paperclip instance runs multiple companie
 
 ### Fields (Draft)
 
-| Field | Type | Notes |
-| --- | --- | --- |
-| `id` | uuid | Primary key |
-| `name` | string | Company name |
-| `goal` | text/markdown | The company's top-level objective |
-| `createdAt` | timestamp | |
-| `updatedAt` | timestamp | |
+| Field       | Type          | Notes                             |
+| ----------- | ------------- | --------------------------------- |
+| `id`        | uuid          | Primary key                       |
+| `name`      | string        | Company name                      |
+| `goal`      | text/markdown | The company's top-level objective |
+| `createdAt` | timestamp     |                                   |
+| `updatedAt` | timestamp     |                                   |
 
 ### Board Governance [DRAFT]
 
@@ -42,6 +42,7 @@ The board has **unrestricted access** to the entire system at all times:
 The board is not just an approval gate — it's a live control surface. The human can intervene at any level at any time.
 
 **Future governance models** (not V1):
+
 - Hiring budgets (auto-approve hires within $X/month)
 - Multi-member boards
 - Delegated authority (CEO can hire within limits)
@@ -104,7 +105,7 @@ Configurable per agent. Two ends of the spectrum:
 
 #### Minimum Contract
 
-The minimum requirement to be a Paperclip agent: **be callable.** That's it. Paperclip can invoke you via command or webhook. No requirement to report back — Paperclip infers basic status from process liveness.
+The minimum requirement to be a Paperclip agent: **be callable.** That's it. Paperclip can invoke you via command or webhook. No requirement to report back — Paperclip infers basic status from process liveness when it can.
 
 #### Integration Levels
 
@@ -182,10 +183,10 @@ The heartbeat is a protocol, not a runtime. Paperclip defines how to initiate an
 
 Agent configuration includes an **adapter** that defines how Paperclip invokes the agent. Initial adapters:
 
-| Adapter | Mechanism | Example |
-| --- | --- | --- |
-| `process` | Execute a child process | `python run_agent.py --agent-id {id}` |
-| `http` | Send an HTTP request | `POST https://openclaw.example.com/hook/{id}` |
+| Adapter   | Mechanism               | Example                                       |
+| --------- | ----------------------- | --------------------------------------------- |
+| `process` | Execute a child process | `python run_agent.py --agent-id {id}`         |
+| `http`    | Send an HTTP request    | `POST https://openclaw.example.com/hook/{id}` |
 
 More adapters can be added.
 
@@ -355,6 +356,7 @@ The key constraint: it must be trivial to go from "I'm trying this on my machine
 Agents need to register and authenticate with the Paperclip server to get an API key that identifies them.
 
 Flow:
+
 1. Agent "signs up" — requests access to the Paperclip instance
 2. Human board member approves/onboards the agent
 3. Agent receives credentials (API key) and can now interact with the control plane
@@ -363,12 +365,12 @@ This is the same pattern as agent hiring — an agent can't just show up, it nee
 
 ### Tech Stack
 
-| Layer | Technology |
-| --- | --- |
-| Frontend | React + Vite |
-| Backend | TypeScript + Hono (REST API, not tRPC — need non-TS clients) |
-| Database | PostgreSQL (embedded for dev, hosted for production) |
-| Auth | Standard React auth library (not Supabase-dependent) |
+| Layer    | Technology                                                   |
+| -------- | ------------------------------------------------------------ |
+| Frontend | React + Vite                                                 |
+| Backend  | TypeScript + Hono (REST API, not tRPC — need non-TS clients) |
+| Database | PostgreSQL (embedded for dev, hosted for production)         |
+| Auth     | Standard React auth library (not Supabase-dependent)         |
 
 ### Concurrency Model: Atomic Task Checkout
 
