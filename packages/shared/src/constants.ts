@@ -14,7 +14,7 @@ export type AgentStatus = (typeof AGENT_STATUSES)[number];
 export const AGENT_CONTEXT_MODES = ["thin", "fat"] as const;
 export type AgentContextMode = (typeof AGENT_CONTEXT_MODES)[number];
 
-export const AGENT_ADAPTER_TYPES = ["process", "http"] as const;
+export const AGENT_ADAPTER_TYPES = ["process", "http", "claude_local", "codex_local"] as const;
 export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
 
 export const AGENT_ROLES = [
@@ -67,8 +67,27 @@ export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 export const APPROVAL_STATUSES = ["pending", "approved", "rejected", "cancelled"] as const;
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
 
-export const HEARTBEAT_INVOCATION_SOURCES = ["scheduler", "manual", "callback"] as const;
+export const HEARTBEAT_INVOCATION_SOURCES = [
+  "timer",
+  "assignment",
+  "on_demand",
+  "automation",
+] as const;
 export type HeartbeatInvocationSource = (typeof HEARTBEAT_INVOCATION_SOURCES)[number];
+
+export const WAKEUP_TRIGGER_DETAILS = ["manual", "ping", "callback", "system"] as const;
+export type WakeupTriggerDetail = (typeof WAKEUP_TRIGGER_DETAILS)[number];
+
+export const WAKEUP_REQUEST_STATUSES = [
+  "queued",
+  "claimed",
+  "coalesced",
+  "skipped",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+export type WakeupRequestStatus = (typeof WAKEUP_REQUEST_STATUSES)[number];
 
 export const HEARTBEAT_RUN_STATUSES = [
   "queued",
@@ -79,3 +98,13 @@ export const HEARTBEAT_RUN_STATUSES = [
   "timed_out",
 ] as const;
 export type HeartbeatRunStatus = (typeof HEARTBEAT_RUN_STATUSES)[number];
+
+export const LIVE_EVENT_TYPES = [
+  "heartbeat.run.queued",
+  "heartbeat.run.status",
+  "heartbeat.run.event",
+  "heartbeat.run.log",
+  "agent.status",
+  "activity.logged",
+] as const;
+export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];

@@ -8,6 +8,20 @@
       "when": 1771300567463,
       "tag": "0000_mature_masked_marvel",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1771349039633,
+      "tag": "0001_fast_northstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771349403162,
+      "tag": "0002_big_zaladane",
+      "breakpoints": true
     }
   ]
 }

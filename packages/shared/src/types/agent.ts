@@ -16,6 +16,7 @@ export interface Agent {
   capabilities: string | null;
   adapterType: AgentAdapterType;
   adapterConfig: Record<string, unknown>;
+  runtimeConfig: Record<string, unknown>;
   contextMode: AgentContextMode;
   budgetMonthlyCents: number;
   spentMonthlyCents: number;

@@ -14,6 +14,7 @@ export const createAgentSchema = z.object({
   capabilities: z.string().optional().nullable(),
   adapterType: z.enum(AGENT_ADAPTER_TYPES).optional().default("process"),
   adapterConfig: z.record(z.unknown()).optional().default({}),
+  runtimeConfig: z.record(z.unknown()).optional().default({}),
   contextMode: z.enum(AGENT_CONTEXT_MODES).optional().default("thin"),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
   metadata: z.record(z.unknown()).optional().nullable(),
@@ -35,3 +36,13 @@ export const createAgentKeySchema = z.object({
 });
 
 export type CreateAgentKey = z.infer<typeof createAgentKeySchema>;
+
+export const wakeAgentSchema = z.object({
+  source: z.enum(["timer", "assignment", "on_demand", "automation"]).optional().default("on_demand"),
+  triggerDetail: z.enum(["manual", "ping", "callback", "system"]).optional(),
+  reason: z.string().optional().nullable(),
+  payload: z.record(z.unknown()).optional().nullable(),
+  idempotencyKey: z.string().optional().nullable(),
+});
+
+export type WakeAgent = z.infer<typeof wakeAgentSchema>;

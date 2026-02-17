@@ -9,9 +9,11 @@ export {
   createAgentSchema,
   updateAgentSchema,
   createAgentKeySchema,
+  wakeAgentSchema,
   type CreateAgent,
   type UpdateAgent,
   type CreateAgentKey,
+  type WakeAgent,
 } from "./agent.js";
 
 export {

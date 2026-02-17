@@ -13,6 +13,9 @@ export {
   APPROVAL_STATUSES,
   HEARTBEAT_INVOCATION_SOURCES,
   HEARTBEAT_RUN_STATUSES,
+  WAKEUP_TRIGGER_DETAILS,
+  WAKEUP_REQUEST_STATUSES,
+  LIVE_EVENT_TYPES,
   type CompanyStatus,
   type AgentStatus,
   type AgentContextMode,
@@ -27,6 +30,9 @@ export {
   type ApprovalStatus,
   type HeartbeatInvocationSource,
   type HeartbeatRunStatus,
+  type WakeupTriggerDetail,
+  type WakeupRequestStatus,
+  type LiveEventType,
 } from "./constants.js";
 
 export type {
@@ -41,6 +47,10 @@ export type {
   CostEvent,
   CostSummary,
   HeartbeatRun,
+  HeartbeatRunEvent,
+  AgentRuntimeState,
+  AgentWakeupRequest,
+  LiveEvent,
   DashboardSummary,
   ActivityEvent,
 } from "./types/index.js";
@@ -53,9 +63,11 @@ export {
   createAgentSchema,
   updateAgentSchema,
   createAgentKeySchema,
+  wakeAgentSchema,
   type CreateAgent,
   type UpdateAgent,
   type CreateAgentKey,
+  type WakeAgent,
   createProjectSchema,
   updateProjectSchema,
   type CreateProject,
