@@ -1,12 +1,14 @@
-import type { GoalLevel } from "../constants.js";
+import type { GoalLevel, GoalStatus } from "../constants.js";
 
 export interface Goal {
   id: string;
+  companyId: string;
   title: string;
   description: string | null;
   level: GoalLevel;
+  status: GoalStatus;
   parentId: string | null;
-  ownerId: string | null;
+  ownerAgentId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -1,12 +1,22 @@
-import { pgTable, uuid, text, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { companies } from "./companies.js";
 import { agents } from "./agents.js";
 
-export const activityLog = pgTable("activity_log", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  action: text("action").notNull(),
-  entityType: text("entity_type").notNull(),
-  entityId: uuid("entity_id").notNull(),
-  agentId: uuid("agent_id").references(() => agents.id),
-  details: jsonb("details"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const activityLog = pgTable(
+  "activity_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id),
+    actorType: text("actor_type").notNull().default("system"),
+    actorId: text("actor_id").notNull(),
+    action: text("action").notNull(),
+    entityType: text("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    agentId: uuid("agent_id").references(() => agents.id),
+    details: jsonb("details").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    companyCreatedIdx: index("activity_log_company_created_idx").on(table.companyId, table.createdAt),
+  }),
+);

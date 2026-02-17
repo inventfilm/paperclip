@@ -1,5 +1,11 @@
+export { companies } from "./companies.js";
 export { agents } from "./agents.js";
+export { agentApiKeys } from "./agent_api_keys.js";
 export { projects } from "./projects.js";
 export { goals } from "./goals.js";
 export { issues } from "./issues.js";
+export { issueComments } from "./issue_comments.js";
+export { heartbeatRuns } from "./heartbeat_runs.js";
+export { costEvents } from "./cost_events.js";
+export { approvals } from "./approvals.js";
 export { activityLog } from "./activity_log.js";
