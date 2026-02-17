@@ -6,7 +6,7 @@ Target specification for the Paperclip control plane. Living document — update
 
 ## 1. Company Model [DRAFT]
 
-A company is a first-order object. One Paperclip instance runs multiple companies.
+A Company is a first-order object. One Paperclip instance runs multiple Companies. A Company does not have a standalone "goal" field — its direction is defined by its set of Initiatives (see Task Hierarchy Mapping).
 
 ### Fields (Draft)
 
@@ -14,32 +14,37 @@ A company is a first-order object. One Paperclip instance runs multiple companie
 | ----------- | ------------- | --------------------------------- |
 | `id`        | uuid          | Primary key                       |
 | `name`      | string        | Company name                      |
-| `goal`      | text/markdown | The company's top-level objective |
 | `createdAt` | timestamp     |                                   |
 | `updatedAt` | timestamp     |                                   |
 
 ### Board Governance [DRAFT]
 
-Every company has a **board** that governs high-impact decisions. The board is the human oversight layer.
+Every Company has a **Board** that governs high-impact decisions. The Board is the human oversight layer.
 
-**V1: Single human board.** One human operator.
+**V1: Single human Board.** One human operator.
 
 #### Board Approval Gates (V1)
 
-- New agent hires (creating new agents)
-- CEO's initial strategic breakdown (CEO proposes, board approves before execution begins)
-- [TBD: other governance-gated actions — budget changes, goal changes, firing agents?]
+- New Agent hires (creating new Agents)
+- CEO's initial strategic breakdown (CEO proposes, Board approves before execution begins)
+- [TBD: other governance-gated actions — goal changes, firing Agents?]
 
 #### Board Powers (Always Available)
 
-The board has **unrestricted access** to the entire system at all times:
+The Board has **unrestricted access** to the entire system at all times:
 
-- **Pause/resume any agent** — stop an agent's heartbeat immediately
-- **Pause/resume any work item** — pause a task, project, subtask tree, milestone. Paused items are not picked up by agents.
+- **Set and modify Company budgets** — the Board sets top-level token/LLM cost budgets
+- **Pause/resume any Agent** — stop an Agent's heartbeat immediately
+- **Pause/resume any work item** — pause a task, project, subtask tree, milestone. Paused items are not picked up by Agents.
 - **Full project management access** — create, edit, comment on, modify, delete, reassign any task/project/milestone through the UI
-- **Override any agent decision** — reassign tasks, change priorities, modify descriptions
+- **Override any Agent decision** — reassign tasks, change priorities, modify descriptions
+- **Manually change any budget** at any level
 
-The board is not just an approval gate — it's a live control surface. The human can intervene at any level at any time.
+The Board is not just an approval gate — it's a live control surface. The human can intervene at any level at any time.
+
+#### Budget Delegation
+
+The Board sets Company-level budgets. The CEO can set budgets for Agents below them, and every manager Agent can do the same for their reports. How this cascading budget delegation works in practice is TBD, but the permission structure supports it. The Board can manually override any budget at any level.
 
 **Future governance models** (not V1):
 
@@ -49,7 +54,7 @@ The board is not just an approval gate — it's a live control surface. The huma
 
 ### Open Questions
 
-- Revenue/expense tracking — plugin for later, not V1
+- External revenue/expense tracking — future plugin. Token/LLM cost budgeting is core.
 - Company-level settings and configuration?
 - Company lifecycle (pause, archive, delete)?
 - What governance-gated actions exist beyond hiring and CEO strategy approval?
@@ -188,7 +193,7 @@ Agent configuration includes an **adapter** that defines how Paperclip invokes t
 | `process` | Execute a child process | `python run_agent.py --agent-id {id}`         |
 | `http`    | Send an HTTP request    | `POST https://openclaw.example.com/hook/{id}` |
 
-More adapters can be added.
+The `process` and `http` adapters ship as defaults. Additional adapters can be added via the plugin system (see Plugin / Extension Architecture).
 
 ### Adapter Interface
 
@@ -263,14 +268,16 @@ Full hierarchy: **Initiative** (company goal) → Projects → Milestones → Is
 
 ## 6. Cost Tracking [DRAFT]
 
+Token/LLM cost budgeting is a core part of Paperclip. External revenue and expense tracking is a future plugin.
+
 ### Cost Reporting
 
-Fully-instrumented agents report token/API usage back to Paperclip. Costs are tracked at every level:
+Fully-instrumented Agents report token/API usage back to Paperclip. Costs are tracked at every level:
 
-- **Per agent** — how much is this employee costing?
+- **Per Agent** — how much is this employee costing?
 - **Per task** — how much did this unit of work cost?
 - **Per project** — how much is this deliverable costing?
-- **Per company** — total burn rate
+- **Per Company** — total burn rate
 
 Costs should be denominated in both **tokens and dollars**.
 
@@ -280,9 +287,9 @@ Billing codes on tasks (see Org Structure) enable cost attribution across teams 
 
 Three tiers:
 
-1. **Visibility** — dashboards showing spend at every level (agent, task, project, company)
+1. **Visibility** — dashboards showing spend at every level (Agent, task, project, Company)
 2. **Soft alerts** — configurable thresholds (e.g. warn at 80% of budget)
-3. **Hard ceiling** — auto-pause the agent when budget is hit. Board notified. Board can override/raise the limit.
+3. **Hard ceiling** — auto-pause the Agent when budget is hit. Board notified. Board can override/raise the limit.
 
 Budgets can be set to **unlimited** (no ceiling).
 
@@ -298,21 +305,21 @@ Budgets can be set to **unlimited** (no ceiling).
 
 ### Bootstrap Sequence
 
-How a company goes from "created" to "running":
+How a Company goes from "created" to "running":
 
-1. Human creates a company with a goal
-2. Human defines initial top-level tasks/initiatives
-3. Human creates the CEO agent (using the default CEO template or custom)
-4. CEO's first heartbeat: reviews the goal and tasks, proposes a strategic breakdown (org structure, sub-tasks, hiring plan)
+1. Human creates a Company and its initial Initiatives
+2. Human defines initial top-level tasks
+3. Human creates the CEO Agent (using the default CEO template or custom)
+4. CEO's first heartbeat: reviews the Initiatives and tasks, proposes a strategic breakdown (org structure, sub-tasks, hiring plan)
 5. **Board approves** the CEO's strategic plan
-6. CEO begins execution — creating tasks, proposing hires (board-approved), delegating
+6. CEO begins execution — creating tasks, proposing hires (Board-approved), delegating
 
 ### Default Agents
 
-Paperclip ships default agent templates:
+Paperclip ships default Agent templates:
 
-- **Default agent** — a basic Claude Code or Codex loop. Knows the **Paperclip skill** (SKILL.md) so it can interact with the task system, read company context, report status.
-- **Default CEO** — extends the default agent with CEO-specific behavior: strategic planning, delegation to reports, progress review, board communication.
+- **Default Agent** — a basic Claude Code or Codex loop. Knows the **Paperclip Skill** (SKILL.md) so it can interact with the task system, read Company context, report status.
+- **Default CEO** — extends the Default Agent with CEO-specific behavior: strategic planning, delegation to reports, progress review, Board communication.
 
 These are starting points. Users can customize or replace them entirely.
 
@@ -352,15 +359,14 @@ The key constraint: it must be trivial to go from "I'm trying this on my machine
 
 #### Agent Authentication
 
-Agents need to register and authenticate with the Paperclip server to get an API key that identifies them.
+When a user creates an Agent, Paperclip generates a **connection string** containing: the server URL, an API key, and instructions for how to authenticate. The Agent is assumed to be capable of figuring out how to call the API with its token/key from there.
 
 Flow:
 
-1. Agent "signs up" — requests access to the Paperclip instance
-2. Human board member approves/onboards the agent
-3. Agent receives credentials (API key) and can now interact with the control plane
-
-This is the same pattern as agent hiring — an agent can't just show up, it needs board approval.
+1. Human creates an Agent in the UI
+2. Paperclip generates a connection string (URL + key + instructions)
+3. Human provides this string to the Agent (e.g. in its adapter config, environment, etc.)
+4. Agent uses the key to authenticate API calls to the control plane
 
 ### Tech Stack
 
@@ -368,8 +374,8 @@ This is the same pattern as agent hiring — an agent can't just show up, it nee
 | -------- | ------------------------------------------------------------ |
 | Frontend | React + Vite                                                 |
 | Backend  | TypeScript + Hono (REST API, not tRPC — need non-TS clients) |
-| Database | PostgreSQL (embedded for dev, hosted for production)         |
-| Auth     | Standard React auth library (not Supabase-dependent)         |
+| Database | PostgreSQL (see [doc/DATABASE.md](./doc/DATABASE.md) for details — PGlite embedded for dev, Docker or hosted Supabase for production) |
+| Auth     | [Better Auth](https://www.better-auth.com/)                  |
 
 ### Concurrency Model: Atomic Task Checkout
 
@@ -401,11 +407,8 @@ Paperclip does **not** manage work artifacts (code repos, file systems, deployme
 
 ### Open Questions
 
-- Embedded Postgres solution — pglite? embedded-postgres?
-- Auth library choice — better-auth? next-auth? clerk?
 - Real-time updates to the UI — WebSocket? SSE? Polling?
-- Monorepo structure — pnpm workspaces with shared packages?
-- Agent API key scoping — what exactly can an agent access? Only their own tasks? Their team's? The whole company?
+- Agent API key scoping — what exactly can an Agent access? Only their own tasks? Their team's? The whole Company?
 
 ### Crash Recovery: Manual, Not Automatic
 
@@ -419,10 +422,11 @@ When an agent crashes or disappears mid-task, Paperclip does **not** auto-reassi
 
 ### Plugin / Extension Architecture
 
-The core Paperclip system must be extensible. Features like knowledge bases, revenue tracking, and specialized adapters should be addable as **plugins** without modifying core. This means:
+The core Paperclip system must be extensible. Features like knowledge bases, external revenue tracking, and new Agent Adapters should be addable as **plugins** without modifying core. This means:
 
 - Well-defined API boundaries that plugins can hook into
-- Event system or hooks for reacting to task/agent lifecycle events
+- Event system or hooks for reacting to task/Agent lifecycle events
+- **Agent Adapter plugins** — new Adapter types can be registered via the plugin system
 - Plugin-registrable UI components (future)
 
 This isn't a V1 deliverable (we're not building a plugin framework upfront), but the architecture should not paint us into a corner. Keep boundaries clean so extensions are possible.
@@ -457,23 +461,23 @@ Each is a distinct page/route:
 
 ### Must Have (V1)
 
-- [ ] **Company CRUD** — create a company with a goal
-- [ ] **Agent CRUD** — create/edit/pause/resume agents with adapter config
+- [ ] **Company CRUD** — create a Company with Initiatives
+- [ ] **Agent CRUD** — create/edit/pause/resume Agents with Adapter config
 - [ ] **Org chart** — define reporting structure, visualize it
 - [ ] **Process adapter** — invoke(), status(), cancel() for local child processes
 - [ ] **Task management** — full lifecycle with hierarchy (tasks trace to company goal)
 - [ ] **Atomic task checkout** — single assignment, in_progress locking
-- [ ] **Board governance** — human approves hires, pauses agents, full PM access
-- [ ] **Cost tracking** — agents report token usage, per-agent/task/company visibility
+- [ ] **Board governance** — human approves hires, pauses Agents, sets budgets, full PM access
+- [ ] **Cost tracking** — Agents report token usage, per-Agent/task/Company visibility
 - [ ] **Budget controls** — soft alerts + hard ceiling with auto-pause
 - [ ] **Default agent** — basic Claude Code/Codex loop with Paperclip skill
 - [ ] **Default CEO** — strategic planning, delegation, board communication
 - [ ] **Paperclip skill (SKILL.md)** — teaches agents to interact with the API
 - [ ] **REST API** — full API for agent interaction (Hono)
 - [ ] **Web UI** — React/Vite: org chart, task board, dashboard, cost views
-- [ ] **Agent auth** — registration, board approval, API keys
-- [ ] **One-command dev setup** — embedded Postgres, everything local
-- [ ] **Multiple adapter types** (HTTP adapter, OpenClaw adapter)
+- [ ] **Agent auth** — connection string generation with URL + key + instructions
+- [ ] **One-command dev setup** — embedded PGlite, everything local
+- [ ] **Multiple Adapter types** (HTTP Adapter, OpenClaw Adapter)
 
 ### Not V1
 
@@ -497,24 +501,25 @@ The architecture must support adding a knowledge base plugin later (clean API bo
 
 Things Paperclip explicitly does **not** do:
 
-- **Not an agent runtime** — Paperclip orchestrates, agents run elsewhere
+- **Not an Agent runtime** — Paperclip orchestrates, Agents run elsewhere
 - **Not a knowledge base** — core has no wiki/docs/vector-DB (plugin territory)
 - **Not a SaaS** — single-tenant, self-hosted
-- **Not opinionated about agent implementation** — any language, any framework, any runtime
+- **Not opinionated about Agent implementation** — any language, any framework, any runtime
 - **Not automatically self-healing** — surfaces problems, doesn't silently fix them
 - **Does not manage work artifacts** — no repo management, no deployment, no file systems
 - **Does not auto-reassign work** — stale tasks are surfaced, not silently redistributed
+- **Does not track external revenue/expenses** — that's a future plugin. Token/LLM cost budgeting is core.
 
 ---
 
 ## 13. Principles (Consolidated)
 
-1. **Unopinionated about how you run your agents.** Any language, any framework, any runtime. Paperclip is the control plane, not the execution plane.
-2. **Company is the unit of organization.** Everything lives under a company.
-3. **Tasks are the communication channel.** All agent communication flows through tasks + comments. No side channels.
+1. **Unopinionated about how you run your Agents.** Any language, any framework, any runtime. Paperclip is the control plane, not the execution plane.
+2. **Company is the unit of organization.** Everything lives under a Company.
+3. **Tasks are the communication channel.** All Agent communication flows through tasks + comments. No side channels.
 4. **All work traces to the goal.** Hierarchical task management — nothing exists in isolation.
-5. **Board governs.** Humans retain control through the board. Conservative defaults (human approval required).
+5. **Board governs.** Humans retain control through the Board. Conservative defaults (human approval required).
 6. **Surface problems, don't hide them.** Good auditing and visibility. No silent auto-recovery.
 7. **Atomic ownership.** Single assignee per task. Atomic checkout prevents conflicts.
 8. **Progressive deployment.** Trivial to start local, straightforward to scale to hosted.
-9. **Extensible core.** Clean boundaries so plugins can add capabilities without modifying core.
+9. **Extensible core.** Clean boundaries so plugins can add capabilities (Adapters, knowledge base, revenue tracking) without modifying core.
