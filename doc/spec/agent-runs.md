@@ -42,7 +42,8 @@ The following intentions are explicitly preserved in this spec:
 3. Persist adapter runtime state (session IDs, token/cost usage, last errors).
 4. Centralize wakeup decisions and queueing in one service.
 5. Provide realtime run/task/agent updates to the browser.
-6. Preserve company scoping and existing governance invariants.
+6. Support deployment-specific full-log storage without bloating Postgres.
+7. Preserve company scoping and existing governance invariants.
 
 ### 3.2 Non-Goals (for this subsystem phase)
 
@@ -66,20 +67,21 @@ Current gaps this spec addresses:
 2. No queue/wakeup abstraction (invoke is immediate).
 3. No assignment-triggered or timer-triggered centralized wakeups.
 4. No websocket/SSE push path to browser.
-5. No persisted run event/log stream.
+5. No persisted run event timeline or external full-log storage contract.
 6. No typed local adapter contracts for Claude/Codex session and usage extraction.
 7. No prompt-template variable/pill system in agent setup.
+8. No deployment-aware adapter for full run log storage (disk/object store/etc).
 
 ## 5. Architecture Overview
 
-The subsystem introduces five cooperating components:
+The subsystem introduces six cooperating components:
 
 1. `Adapter Registry`
    - Maps `adapter_type` to implementation.
    - Exposes capability metadata and config validation.
 
 2. `Wakeup Coordinator`
-   - Single entrypoint for all wakeups (`timer`, `assignment`, `ping`, `manual`).
+   - Single entrypoint for all wakeups (`timer`, `assignment`, `on_demand`, `automation`).
    - Applies dedupe/coalescing and queue rules.
 
 3. `Run Executor`
@@ -90,19 +92,23 @@ The subsystem introduces five cooperating components:
 
 4. `Runtime State Store`
    - Persists resumable adapter state per agent.
-   - Persists run usage summaries and run event/log timeline.
+   - Persists run usage summaries and lightweight run-event timeline.
 
-5. `Realtime Event Hub`
+5. `Run Log Store`
+   - Persists full stdout/stderr streams via pluggable storage adapter.
+   - Returns stable `logRef` for retrieval (local path, object key, or DB reference).
+
+6. `Realtime Event Hub`
    - Publishes run/agent/task updates over websocket.
    - Supports selective subscription by company.
 
 Control flow (happy path):
 
-1. Trigger arrives (`timer`, `assignment`, or `ping`).
+1. Trigger arrives (`timer`, `assignment`, `on_demand`, or `automation`).
 2. Wakeup coordinator enqueues/merges wake request.
 3. Executor claims request, creates run row, marks agent `running`.
 4. Adapter executes, emits status/log/usage events.
-5. Events are persisted and pushed to websocket subscribers.
+5. Full logs stream to `RunLogStore`; metadata/events are persisted to DB and pushed to websocket subscribers.
 6. Process exits, output parser updates run result + runtime state.
 7. Agent returns to `idle` or `error`; UI updates in real time.
 
@@ -126,7 +132,8 @@ interface AdapterInvokeInput {
   companyId: string;
   agentId: string;
   runId: string;
-  wakeupSource: "timer" | "assignment" | "ping" | "manual" | "callback" | "system";
+  wakeupSource: "timer" | "assignment" | "on_demand" | "automation";
+  triggerDetail?: "manual" | "ping" | "callback" | "system";
   cwd: string;
   prompt: string;
   adapterConfig: Record<string, unknown>;
@@ -182,7 +189,43 @@ interface AgentRunAdapter {
 
 Adapters may omit status/log hooks. If omitted, runtime still emits system lifecycle statuses (`queued`, `running`, `finished`).
 
-### 6.3 Adapter identity and compatibility
+### 6.3 Run log storage protocol
+
+Full run logs are managed by a separate pluggable store (not by the agent adapter).
+
+```ts
+type RunLogStoreType = "local_file" | "object_store" | "postgres";
+
+interface RunLogHandle {
+  store: RunLogStoreType;
+  logRef: string; // opaque provider reference (path, key, uri, row id)
+}
+
+interface RunLogStore {
+  begin(input: { companyId: string; agentId: string; runId: string }): Promise<RunLogHandle>;
+  append(
+    handle: RunLogHandle,
+    event: { stream: "stdout" | "stderr" | "system"; chunk: string; ts: string },
+  ): Promise<void>;
+  finalize(
+    handle: RunLogHandle,
+    summary: { bytes: number; sha256?: string; compressed: boolean },
+  ): Promise<void>;
+  read(
+    handle: RunLogHandle,
+    opts?: { offset?: number; limitBytes?: number },
+  ): Promise<{ content: string; nextOffset?: number }>;
+  delete?(handle: RunLogHandle): Promise<void>;
+}
+```
+
+V1 deployment defaults:
+
+1. Dev/local default: `local_file` (write to `data/run-logs/...`).
+2. Cloud/serverless default: `object_store` (S3/R2/GCS compatible).
+3. Optional fallback: `postgres` with strict size caps.
+
+### 6.4 Adapter identity and compatibility
 
 For V1 rollout, adapter identity is explicit:
 
@@ -279,10 +322,12 @@ Codex JSONL currently may not include cost; store token usage and leave cost nul
 Both local adapters must:
 
 1. Use `spawn(command, args, { shell: false, stdio: "pipe" })`.
-2. Capture stdout/stderr in stream chunks for events + persistence.
-3. Support graceful cancel: `SIGTERM`, then `SIGKILL` after `graceSec`.
-4. Enforce timeout using adapter `timeoutSec`.
-5. Return exit code + parsed result + diagnostic stderr.
+2. Capture stdout/stderr in stream chunks and forward to `RunLogStore`.
+3. Maintain rolling stdout/stderr tail excerpts in memory for DB diagnostic fields.
+4. Emit live log events to websocket subscribers (optional to throttle/chunk).
+5. Support graceful cancel: `SIGTERM`, then `SIGKILL` after `graceSec`.
+6. Enforce timeout using adapter `timeoutSec`.
+7. Return exit code + parsed result + diagnostic stderr.
 
 ## 8. Heartbeat and Wakeup Coordinator
 
@@ -292,9 +337,8 @@ Supported sources:
 
 1. `timer`: periodic heartbeat per agent.
 2. `assignment`: issue assigned/reassigned to agent.
-3. `ping`: explicit wake request from board or system.
-4. `manual`: existing invoke endpoint.
-5. `callback`/`system`: reserved for internal/external automations.
+3. `on_demand`: explicit wake request path (board/manual click or API ping).
+4. `automation`: non-interactive wake path (external callback or internal system automation).
 
 ## 8.2 Central API
 
@@ -305,6 +349,7 @@ enqueueWakeup({
   companyId,
   agentId,
   source,
+  triggerDetail, // optional: manual|ping|callback|system
   reason,
   payload,
   requestedBy,
@@ -323,7 +368,7 @@ No source invokes adapters directly.
    - preserve latest reason/source metadata
 3. Queue is DB-backed for restart safety.
 4. Coordinator uses FIFO by `requested_at`, with optional priority:
-   - `manual/ping` > `assignment` > `timer`
+   - `on_demand` > `assignment` > `timer`/`automation`
 
 ## 8.4 Agent heartbeat policy fields
 
@@ -335,7 +380,8 @@ Agent-level control-plane settings (not adapter-specific):
     "enabled": true,
     "intervalSec": 300,
     "wakeOnAssignment": true,
-    "wakeOnPing": true,
+    "wakeOnOnDemand": true,
+    "wakeOnAutomation": true,
     "cooldownSec": 10
   }
 }
@@ -346,15 +392,17 @@ Defaults:
 - `enabled: true`
 - `intervalSec: null` (no timer until explicitly set) or product default `300` if desired globally
 - `wakeOnAssignment: true`
-- `wakeOnPing: true`
+- `wakeOnOnDemand: true`
+- `wakeOnAutomation: true`
 
 ## 8.5 Trigger integration rules
 
 1. Timer checks run on server worker interval and enqueue due agents.
 2. Issue assignment mutation enqueues wakeup when assignee changes and target agent has `wakeOnAssignment=true`.
-3. Ping endpoint enqueues wakeup when `wakeOnPing=true`.
-4. Paused/terminated agents do not receive new wakeups.
-5. Hard budget-stopped agents do not receive new wakeups.
+3. On-demand endpoint enqueues wakeup with `source=on_demand` and `triggerDetail=manual|ping` when `wakeOnOnDemand=true`.
+4. Callback/system automations enqueue wakeup with `source=automation` and `triggerDetail=callback|system` when `wakeOnAutomation=true`.
+5. Paused/terminated agents do not receive new wakeups.
+6. Hard budget-stopped agents do not receive new wakeups.
 
 ## 9. Persistence Model
 
@@ -367,7 +415,8 @@ All tables remain company-scoped.
 3. Add `runtime_config` jsonb for control-plane scheduling policy:
    - heartbeat enable/interval
    - wake-on-assignment
-   - wake-on-ping
+   - wake-on-on-demand
+   - wake-on-automation
    - cooldown
 
 This separation keeps adapter config runtime-agnostic while allowing the heartbeat service to apply consistent scheduling logic.
@@ -399,7 +448,8 @@ Queue + audit for wakeups.
 - `id` uuid pk
 - `company_id` uuid fk not null
 - `agent_id` uuid fk not null
-- `source` text not null (`timer|assignment|ping|manual|callback|system`)
+- `source` text not null (`timer|assignment|on_demand|automation`)
+- `trigger_detail` text null (`manual|ping|callback|system`)
 - `reason` text null
 - `payload` jsonb null
 - `status` text not null (`queued|claimed|coalesced|skipped|completed|failed|cancelled`)
@@ -415,15 +465,15 @@ Queue + audit for wakeups.
 
 ## 9.3 New table: `heartbeat_run_events`
 
-Append-only per-run event/log timeline.
+Append-only per-run lightweight event timeline (no full raw log chunks).
 
 - `id` bigserial pk
 - `company_id` uuid fk not null
 - `run_id` uuid fk `heartbeat_runs.id` not null
 - `agent_id` uuid fk `agents.id` not null
 - `seq` int not null
-- `event_type` text not null (`lifecycle|status|log|usage|error|structured`)
-- `stream` text null (`stdout|stderr|system`)
+- `event_type` text not null (`lifecycle|status|usage|error|structured`)
+- `stream` text null (`system|stdout|stderr`) (summarized events only, not full stream chunks)
 - `level` text null (`info|warn|error`)
 - `color` text null
 - `message` text null
@@ -441,11 +491,39 @@ Add fields required for result and diagnostics:
 - `result_json` jsonb null
 - `session_id_before` text null
 - `session_id_after` text null
+- `log_store` text null (`local_file|object_store|postgres`)
+- `log_ref` text null (opaque provider reference; path/key/uri/row id)
+- `log_bytes` bigint null
+- `log_sha256` text null
+- `log_compressed` boolean not null default false
 - `stderr_excerpt` text null
 - `stdout_excerpt` text null
 - `error_code` text null
 
-This keeps per-run diagnostics queryable without loading all event chunks.
+This keeps per-run diagnostics queryable without storing full logs in Postgres.
+
+## 9.5 Log storage adapter configuration
+
+Runtime log storage is deployment-configured (not per-agent by default).
+
+```json
+{
+  "runLogStore": {
+    "type": "local_file | object_store | postgres",
+    "basePath": "./data/run-logs",
+    "bucket": "paperclip-run-logs",
+    "prefix": "runs/",
+    "compress": true,
+    "maxInlineExcerptBytes": 32768
+  }
+}
+```
+
+Rules:
+
+1. `log_ref` must be opaque and provider-neutral at API boundaries.
+2. UI/API must not assume local filesystem semantics.
+3. Provider-specific secrets/credentials stay in server config, never in agent config.
 
 ## 10. Prompt Template and Pill System
 
@@ -523,7 +601,7 @@ Primary transport: websocket channel per company.
 2. `heartbeat.run.queued`
 3. `heartbeat.run.started`
 4. `heartbeat.run.status` (short color+message updates)
-5. `heartbeat.run.log` (optional chunk stream)
+5. `heartbeat.run.log` (optional live chunk stream; full persistence handled by `RunLogStore`)
 6. `heartbeat.run.finished`
 7. `issue.updated`
 8. `issue.comment.created`
@@ -552,12 +630,20 @@ Primary transport: websocket channel per company.
 
 ## 12.2 Logging requirements
 
-1. Persist stderr/stdout chunks in `heartbeat_run_events` (bounded).
-2. Preserve large error text for failed runs (best effort up to configured cap).
-3. Mark truncation explicitly when caps are exceeded.
-4. Redact secrets from logs and websocket payloads.
+1. Persist full stdout/stderr stream to configured `RunLogStore`.
+2. Persist only lightweight run metadata/events in Postgres (`heartbeat_runs`, `heartbeat_run_events`).
+3. Persist bounded `stdout_excerpt` and `stderr_excerpt` in Postgres for quick diagnostics.
+4. Mark truncation explicitly when excerpts are capped.
+5. Redact secrets from logs, excerpts, and websocket payloads.
 
-## 12.3 Restart recovery
+## 12.3 Log retention and lifecycle
+
+1. `RunLogStore` retention is configurable by deployment (for example 7/30/90 days).
+2. Postgres run metadata can outlive full log objects.
+3. Deletion/pruning jobs must handle orphaned metadata/log-object references safely.
+4. If full log object is gone, APIs still return metadata and excerpts with `log_unavailable` status.
+
+## 12.4 Restart recovery
 
 On server startup:
 
@@ -579,8 +665,10 @@ On server startup:
 4. `POST /agents/:agentId/runtime-state/reset-session`
    - clears stored session ID
 5. `GET /heartbeat-runs/:runId/events?afterSeq=:n`
-   - fetch persisted timeline
-6. `GET /api/companies/:companyId/events/ws`
+   - fetch persisted lightweight timeline
+6. `GET /heartbeat-runs/:runId/log`
+   - reads full log stream via `RunLogStore` (or redirects/presigned URL for object store)
+7. `GET /api/companies/:companyId/events/ws`
    - websocket stream
 
 ## 13.2 Mutation logging
@@ -599,14 +687,15 @@ All wakeup/run state mutations must create `activity_log` entries:
 
 ## Phase 1: Contracts and schema
 
-1. Add new DB tables/columns (`agent_runtime_state`, `agent_wakeup_requests`, `heartbeat_run_events`).
-2. Add shared types/constants/validators.
-3. Keep existing routes functional during migration.
+1. Add new DB tables/columns (`agent_runtime_state`, `agent_wakeup_requests`, `heartbeat_run_events`, `heartbeat_runs.log_*` fields).
+2. Add `RunLogStore` interface and configuration wiring.
+3. Add shared types/constants/validators.
+4. Keep existing routes functional during migration.
 
 ## Phase 2: Wakeup coordinator
 
 1. Implement DB-backed wakeup queue.
-2. Convert manual invoke route to enqueue.
+2. Convert invoke/wake routes to enqueue with `source=on_demand` and appropriate `triggerDetail`.
 3. Add worker loop to claim and execute queued wakeups.
 
 ## Phase 3: Local adapters
@@ -631,7 +720,7 @@ All wakeup/run state mutations must create `activity_log` entries:
 ## Phase 6: Hardening
 
 1. Add failure/restart recovery sweeps.
-2. Add run/log retention caps and pruning.
+2. Add metadata/full-log retention policies and pruning jobs.
 3. Add integration/e2e coverage for wakeup triggers and live updates.
 
 ## 15. Acceptance Criteria
@@ -639,16 +728,16 @@ All wakeup/run state mutations must create `activity_log` entries:
 1. Agent with `claude-local` or `codex-local` can run, exit, and persist run result.
 2. Session ID is persisted and used for next run resume automatically.
 3. Token usage is persisted per run and accumulated per agent runtime state.
-4. Timer, assignment, and ping wakeups all enqueue through one coordinator.
+4. Timer, assignment, on-demand, and automation wakeups all enqueue through one coordinator.
 5. Pause/terminate interrupts running local process and prevents new wakeups.
 6. Browser receives live websocket updates for run status/logs and task/agent changes.
-7. Failed runs expose rich CLI diagnostics in UI (with truncation marker when capped).
+7. Failed runs expose rich CLI diagnostics in UI with excerpts immediately available and full log retrievable via `RunLogStore`.
 8. All actions remain company-scoped and auditable.
 
 ## 16. Open Questions
 
 1. Should timer default be `null` (off until enabled) or `300` seconds by default?
 2. For invalid resume session errors, should default behavior be fail-fast or auto-reset-and-retry-once?
-3. What retention policy should we use for `heartbeat_run_events` in V1 (days and per-run size cap)?
+3. What should the default retention policy be for full log objects vs Postgres metadata?
 4. Should agent API credentials be allowed in prompt templates by default, or require explicit opt-in toggle?
 5. Should websocket be the only realtime channel, or should we also expose SSE for simpler clients?

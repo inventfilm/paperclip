@@ -115,8 +115,10 @@ export function Companies() {
         </CardContent>
       </Card>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading companies...</p>}
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      <div className="h-6">
+        {loading && <p className="text-sm text-muted-foreground">Loading companies...</p>}
+        {error && <p className="text-sm text-destructive">{error.message}</p>}
+      </div>
 
       <div className="grid gap-3">
         {companies.map((company) => {
@@ -127,7 +129,7 @@ export function Companies() {
             <button
               key={company.id}
               onClick={() => setSelectedCompanyId(company.id)}
-              className={`text-left bg-card border rounded-lg p-4 transition-colors ${
+              className={`group text-left bg-card border rounded-lg p-4 transition-colors ${
                 selected ? "border-primary ring-1 ring-primary" : "border-border hover:border-muted-foreground/30"
               }`}
             >
