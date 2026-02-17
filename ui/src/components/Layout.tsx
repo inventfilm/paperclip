@@ -1,43 +1,52 @@
+import { useState, useCallback } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
-import { useCompany } from "../context/CompanyContext";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { BreadcrumbBar } from "./BreadcrumbBar";
+import { PropertiesPanel } from "./PropertiesPanel";
+import { CommandPalette } from "./CommandPalette";
+import { NewIssueDialog } from "./NewIssueDialog";
+import { useDialog } from "../context/DialogContext";
+import { usePanel } from "../context/PanelContext";
+import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { cn } from "../lib/utils";
 
 export function Layout() {
-  const { companies, selectedCompanyId, setSelectedCompanyId } = useCompany();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { openNewIssue } = useDialog();
+  const { panelContent, closePanel } = usePanel();
+
+  const toggleSidebar = useCallback(() => setSidebarOpen((v) => !v), []);
+  const togglePanel = useCallback(() => {
+    if (panelContent) closePanel();
+  }, [panelContent, closePanel]);
+
+  useKeyboardShortcuts({
+    onNewIssue: () => openNewIssue(),
+    onToggleSidebar: toggleSidebar,
+    onTogglePanel: togglePanel,
+  });
 
   return (
     <div className="flex h-screen bg-background text-foreground">
-      <Sidebar />
-      <div className="flex-1 overflow-auto">
-        <header className="bg-card border-b border-border px-8 py-3 flex items-center justify-end">
-          <label className="text-xs text-muted-foreground mr-2">Company</label>
-          <Select
-            value={selectedCompanyId ?? ""}
-            onValueChange={(value) => setSelectedCompanyId(value)}
-          >
-            <SelectTrigger className="w-48 h-8 text-sm">
-              <SelectValue placeholder="No companies" />
-            </SelectTrigger>
-            <SelectContent>
-              {companies.map((company) => (
-                <SelectItem key={company.id} value={company.id}>
-                  {company.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </header>
-        <main className="p-8">
-          <Outlet />
-        </main>
+      <div
+        className={cn(
+          "transition-all duration-200 ease-in-out shrink-0 overflow-hidden",
+          sidebarOpen ? "w-60" : "w-0"
+        )}
+      >
+        <Sidebar />
       </div>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <BreadcrumbBar />
+        <div className="flex flex-1 overflow-hidden">
+          <main className="flex-1 overflow-auto p-6">
+            <Outlet />
+          </main>
+          <PropertiesPanel />
+        </div>
+      </div>
+      <CommandPalette />
+      <NewIssueDialog />
     </div>
   );
 }

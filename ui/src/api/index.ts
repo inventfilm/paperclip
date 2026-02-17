@@ -8,3 +8,4 @@ export { approvalsApi } from "./approvals";
 export { costsApi } from "./costs";
 export { activityApi } from "./activity";
 export { dashboardApi } from "./dashboard";
+export { heartbeatsApi } from "./heartbeats";
