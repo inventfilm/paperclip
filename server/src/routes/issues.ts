@@ -7,12 +7,14 @@ import {
   updateIssueSchema,
 } from "@paperclip/shared";
 import { validate } from "../middleware/validate.js";
-import { issueService, logActivity } from "../services/index.js";
+import { heartbeatService, issueService, logActivity } from "../services/index.js";
+import { logger } from "../middleware/logger.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 export function issueRoutes(db: Db) {
   const router = Router();
   const svc = issueService(db);
+  const heartbeat = heartbeatService(db);
 
   router.get("/companies/:companyId/issues", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -58,6 +60,20 @@ export function issueRoutes(db: Db) {
       details: { title: issue.title },
     });
 
+    if (issue.assigneeAgentId) {
+      void heartbeat
+        .wakeup(issue.assigneeAgentId, {
+          source: "assignment",
+          triggerDetail: "system",
+          reason: "issue_assigned",
+          payload: { issueId: issue.id, mutation: "create" },
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: { issueId: issue.id, source: "issue.create" },
+        })
+        .catch((err) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue create"));
+    }
+
     res.status(201).json(issue);
   });
 
@@ -87,6 +103,22 @@ export function issueRoutes(db: Db) {
       entityId: issue.id,
       details: req.body,
     });
+
+    const assigneeChanged =
+      req.body.assigneeAgentId !== undefined && req.body.assigneeAgentId !== existing.assigneeAgentId;
+    if (assigneeChanged && issue.assigneeAgentId) {
+      void heartbeat
+        .wakeup(issue.assigneeAgentId, {
+          source: "assignment",
+          triggerDetail: "system",
+          reason: "issue_assigned",
+          payload: { issueId: issue.id, mutation: "update" },
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: { issueId: issue.id, source: "issue.update" },
+        })
+        .catch((err) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue update"));
+    }
 
     res.json(issue);
   });
@@ -147,6 +179,18 @@ export function issueRoutes(db: Db) {
       entityId: issue.id,
       details: { agentId: req.body.agentId },
     });
+
+    void heartbeat
+      .wakeup(req.body.agentId, {
+        source: "assignment",
+        triggerDetail: "system",
+        reason: "issue_checked_out",
+        payload: { issueId: issue.id, mutation: "checkout" },
+        requestedByActorType: actor.actorType,
+        requestedByActorId: actor.actorId,
+        contextSnapshot: { issueId: issue.id, source: "issue.checkout" },
+      })
+      .catch((err) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue checkout"));
 
     res.json(updated);
   });

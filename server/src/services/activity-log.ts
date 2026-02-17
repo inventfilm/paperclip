@@ -1,5 +1,6 @@
 import type { Db } from "@paperclip/db";
 import { activityLog } from "@paperclip/db";
+import { publishLiveEvent } from "./live-events.js";
 
 export interface LogActivityInput {
   companyId: string;
@@ -22,5 +23,19 @@ export async function logActivity(db: Db, input: LogActivityInput) {
     entityId: input.entityId,
     agentId: input.agentId ?? null,
     details: input.details ?? null,
+  });
+
+  publishLiveEvent({
+    companyId: input.companyId,
+    type: "activity.logged",
+    payload: {
+      actorType: input.actorType,
+      actorId: input.actorId,
+      action: input.action,
+      entityType: input.entityType,
+      entityId: input.entityId,
+      agentId: input.agentId ?? null,
+      details: input.details ?? null,
+    },
   });
 }

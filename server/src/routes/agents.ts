@@ -3,6 +3,7 @@ import type { Db } from "@paperclip/db";
 import {
   createAgentKeySchema,
   createAgentSchema,
+  wakeAgentSchema,
   updateAgentSchema,
 } from "@paperclip/shared";
 import { validate } from "../middleware/validate.js";
@@ -37,6 +38,44 @@ export function agentRoutes(db: Db) {
     }
     assertCompanyAccess(req, agent.companyId);
     res.json(agent);
+  });
+
+  router.get("/agents/:id/runtime-state", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const state = await heartbeat.getRuntimeState(id);
+    res.json(state);
+  });
+
+  router.post("/agents/:id/runtime-state/reset-session", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const state = await heartbeat.resetRuntimeSession(id);
+
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: "user",
+      actorId: req.actor.userId ?? "board",
+      action: "agent.runtime_session_reset",
+      entityType: "agent",
+      entityId: id,
+    });
+
+    res.json(state);
   });
 
   router.post("/companies/:companyId/agents", validate(createAgentSchema), async (req, res) => {
@@ -192,6 +231,54 @@ export function agentRoutes(db: Db) {
     res.status(201).json(key);
   });
 
+  router.post("/agents/:id/wakeup", validate(wakeAgentSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    if (req.actor.type === "agent" && req.actor.agentId !== id) {
+      res.status(403).json({ error: "Agent can only invoke itself" });
+      return;
+    }
+
+    const run = await heartbeat.wakeup(id, {
+      source: req.body.source,
+      triggerDetail: req.body.triggerDetail ?? "manual",
+      reason: req.body.reason ?? null,
+      payload: req.body.payload ?? null,
+      idempotencyKey: req.body.idempotencyKey ?? null,
+      requestedByActorType: req.actor.type === "agent" ? "agent" : "user",
+      requestedByActorId: req.actor.type === "agent" ? req.actor.agentId ?? null : req.actor.userId ?? null,
+      contextSnapshot: {
+        triggeredBy: req.actor.type,
+        actorId: req.actor.type === "agent" ? req.actor.agentId : req.actor.userId,
+      },
+    });
+
+    if (!run) {
+      res.status(202).json({ status: "skipped" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "heartbeat.invoked",
+      entityType: "heartbeat_run",
+      entityId: run.id,
+      details: { agentId: id },
+    });
+
+    res.status(202).json(run);
+  });
+
   router.post("/agents/:id/heartbeat/invoke", async (req, res) => {
     const id = req.params.id as string;
     const agent = await svc.getById(id);
@@ -206,10 +293,24 @@ export function agentRoutes(db: Db) {
       return;
     }
 
-    const run = await heartbeat.invoke(id, "manual", {
-      triggeredBy: req.actor.type,
-      actorId: req.actor.type === "agent" ? req.actor.agentId : req.actor.userId,
-    });
+    const run = await heartbeat.invoke(
+      id,
+      "on_demand",
+      {
+        triggeredBy: req.actor.type,
+        actorId: req.actor.type === "agent" ? req.actor.agentId : req.actor.userId,
+      },
+      "manual",
+      {
+        actorType: req.actor.type === "agent" ? "agent" : "user",
+        actorId: req.actor.type === "agent" ? req.actor.agentId ?? null : req.actor.userId ?? null,
+      },
+    );
+
+    if (!run) {
+      res.status(202).json({ status: "skipped" });
+      return;
+    }
 
     const actor = getActorInfo(req);
     await logActivity(db, {
@@ -252,6 +353,40 @@ export function agentRoutes(db: Db) {
     }
 
     res.json(run);
+  });
+
+  router.get("/heartbeat-runs/:runId/events", async (req, res) => {
+    const runId = req.params.runId as string;
+    const run = await heartbeat.getRun(runId);
+    if (!run) {
+      res.status(404).json({ error: "Heartbeat run not found" });
+      return;
+    }
+    assertCompanyAccess(req, run.companyId);
+
+    const afterSeq = Number(req.query.afterSeq ?? 0);
+    const limit = Number(req.query.limit ?? 200);
+    const events = await heartbeat.listEvents(runId, Number.isFinite(afterSeq) ? afterSeq : 0, Number.isFinite(limit) ? limit : 200);
+    res.json(events);
+  });
+
+  router.get("/heartbeat-runs/:runId/log", async (req, res) => {
+    const runId = req.params.runId as string;
+    const run = await heartbeat.getRun(runId);
+    if (!run) {
+      res.status(404).json({ error: "Heartbeat run not found" });
+      return;
+    }
+    assertCompanyAccess(req, run.companyId);
+
+    const offset = Number(req.query.offset ?? 0);
+    const limitBytes = Number(req.query.limitBytes ?? 256000);
+    const result = await heartbeat.readLog(runId, {
+      offset: Number.isFinite(offset) ? offset : 0,
+      limitBytes: Number.isFinite(limitBytes) ? limitBytes : 256000,
+    });
+
+    res.json(result);
   });
 
   return router;

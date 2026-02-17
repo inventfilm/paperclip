@@ -9,3 +9,4 @@ export { costService } from "./costs.js";
 export { heartbeatService } from "./heartbeat.js";
 export { dashboardService } from "./dashboard.js";
 export { logActivity, type LogActivityInput } from "./activity-log.js";
+export { publishLiveEvent, subscribeCompanyLiveEvents } from "./live-events.js";
