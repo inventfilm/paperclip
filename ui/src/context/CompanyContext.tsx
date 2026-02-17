@@ -7,8 +7,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Company } from "@paperclip/shared";
 import { companiesApi } from "../api/companies";
+import { queryKeys } from "../lib/queryKeys";
 
 interface CompanyContextValue {
   companies: Company[];
@@ -30,10 +32,28 @@ const STORAGE_KEY = "paperclip.selectedCompanyId";
 const CompanyContext = createContext<CompanyContextValue | null>(null);
 
 export function CompanyProvider({ children }: { children: ReactNode }) {
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [selectedCompanyId, setSelectedCompanyIdState] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error | null>(null);
+  const queryClient = useQueryClient();
+  const [selectedCompanyId, setSelectedCompanyIdState] = useState<string | null>(
+    () => localStorage.getItem(STORAGE_KEY)
+  );
+
+  const { data: companies = [], isLoading, error } = useQuery({
+    queryKey: queryKeys.companies.all,
+    queryFn: () => companiesApi.list(),
+  });
+
+  // Auto-select first company when list loads
+  useEffect(() => {
+    if (companies.length === 0) return;
+
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored && companies.some((c) => c.id === stored)) return;
+    if (selectedCompanyId && companies.some((c) => c.id === selectedCompanyId)) return;
+
+    const next = companies[0]!.id;
+    setSelectedCompanyIdState(next);
+    localStorage.setItem(STORAGE_KEY, next);
+  }, [companies, selectedCompanyId]);
 
   const setSelectedCompanyId = useCallback((companyId: string) => {
     setSelectedCompanyIdState(companyId);
@@ -41,47 +61,23 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const reloadCompanies = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const rows = await companiesApi.list();
-      setCompanies(rows);
+    await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+  }, [queryClient]);
 
-      if (rows.length === 0) {
-        setSelectedCompanyIdState(null);
-        return;
-      }
-
-      const stored = localStorage.getItem(STORAGE_KEY);
-      const next = rows.some((company) => company.id === stored)
-        ? stored
-        : selectedCompanyId && rows.some((company) => company.id === selectedCompanyId)
-          ? selectedCompanyId
-          : rows[0]!.id;
-
-      if (next) {
-        setSelectedCompanyIdState(next);
-        localStorage.setItem(STORAGE_KEY, next);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error("Failed to load companies"));
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedCompanyId]);
-
-  useEffect(() => {
-    void reloadCompanies();
-  }, [reloadCompanies]);
+  const createMutation = useMutation({
+    mutationFn: (data: { name: string; description?: string | null; budgetMonthlyCents?: number }) =>
+      companiesApi.create(data),
+    onSuccess: (company) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      setSelectedCompanyId(company.id);
+    },
+  });
 
   const createCompany = useCallback(
     async (data: { name: string; description?: string | null; budgetMonthlyCents?: number }) => {
-      const company = await companiesApi.create(data);
-      await reloadCompanies();
-      setSelectedCompanyId(company.id);
-      return company;
+      return createMutation.mutateAsync(data);
     },
-    [reloadCompanies, setSelectedCompanyId],
+    [createMutation],
   );
 
   const selectedCompany = useMemo(
@@ -94,8 +90,8 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       companies,
       selectedCompanyId,
       selectedCompany,
-      loading,
-      error,
+      loading: isLoading,
+      error: error as Error | null,
       setSelectedCompanyId,
       reloadCompanies,
       createCompany,
@@ -104,7 +100,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       companies,
       selectedCompanyId,
       selectedCompany,
-      loading,
+      isLoading,
       error,
       setSelectedCompanyId,
       reloadCompanies,

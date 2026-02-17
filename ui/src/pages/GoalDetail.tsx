@@ -1,11 +1,12 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
-import { useApi } from "../hooks/useApi";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { queryKeys } from "../lib/queryKeys";
 import { GoalProperties } from "../components/GoalProperties";
 import { GoalTree } from "../components/GoalTree";
 import { StatusBadge } from "../components/StatusBadge";
@@ -20,24 +21,23 @@ export function GoalDetail() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
 
-  const goalFetcher = useCallback(() => {
-    if (!goalId) return Promise.reject(new Error("No goal ID"));
-    return goalsApi.get(goalId);
-  }, [goalId]);
+  const { data: goal, isLoading, error } = useQuery({
+    queryKey: queryKeys.goals.detail(goalId!),
+    queryFn: () => goalsApi.get(goalId!),
+    enabled: !!goalId,
+  });
 
-  const allGoalsFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([] as Goal[]);
-    return goalsApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
+  const { data: allGoals } = useQuery({
+    queryKey: queryKeys.goals.list(selectedCompanyId!),
+    queryFn: () => goalsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
-  const projectsFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([] as Project[]);
-    return projectsApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data: goal, loading, error } = useApi(goalFetcher);
-  const { data: allGoals } = useApi(allGoalsFetcher);
-  const { data: allProjects } = useApi(projectsFetcher);
+  const { data: allProjects } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!),
+    queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   const childGoals = (allGoals ?? []).filter((g) => g.parentId === goalId);
   const linkedProjects = (allProjects ?? []).filter((p) => p.goalId === goalId);
@@ -56,7 +56,7 @@ export function GoalDetail() {
     return () => closePanel();
   }, [goal]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!goal) return null;
 

@@ -1,8 +1,9 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { costsApi } from "../api/costs";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { useApi } from "../hooks/useApi";
+import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { formatCents } from "../lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,17 +17,18 @@ export function Costs() {
     setBreadcrumbs([{ label: "Costs" }]);
   }, [setBreadcrumbs]);
 
-  const fetcher = useCallback(async () => {
-    if (!selectedCompanyId) return null;
-    const [summary, byAgent, byProject] = await Promise.all([
-      costsApi.summary(selectedCompanyId),
-      costsApi.byAgent(selectedCompanyId),
-      costsApi.byProject(selectedCompanyId),
-    ]);
-    return { summary, byAgent, byProject };
-  }, [selectedCompanyId]);
-
-  const { data, loading, error } = useApi(fetcher);
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.costs(selectedCompanyId!),
+    queryFn: async () => {
+      const [summary, byAgent, byProject] = await Promise.all([
+        costsApi.summary(selectedCompanyId!),
+        costsApi.byAgent(selectedCompanyId!),
+        costsApi.byProject(selectedCompanyId!),
+      ]);
+      return { summary, byAgent, byProject };
+    },
+    enabled: !!selectedCompanyId,
+  });
 
   if (!selectedCompanyId) {
     return <EmptyState icon={DollarSign} message="Select a company to view costs." />;
@@ -36,7 +38,7 @@ export function Costs() {
     <div className="space-y-6">
       <h2 className="text-lg font-semibold">Costs</h2>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {data && (

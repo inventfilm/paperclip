@@ -21,4 +21,14 @@ export const agentsApi = {
   terminate: (id: string) => api.post<Agent>(`/agents/${id}/terminate`, {}),
   createKey: (id: string, name: string) => api.post<AgentKeyCreated>(`/agents/${id}/keys`, { name }),
   invoke: (id: string) => api.post<HeartbeatRun>(`/agents/${id}/heartbeat/invoke`, {}),
+  wakeup: (
+    id: string,
+    data: {
+      source?: "timer" | "assignment" | "on_demand" | "automation";
+      triggerDetail?: "manual" | "ping" | "callback" | "system";
+      reason?: string | null;
+      payload?: Record<string, unknown> | null;
+      idempotencyKey?: string | null;
+    },
+  ) => api.post<HeartbeatRun | { status: "skipped" }>(`/agents/${id}/wakeup`, data),
 };

@@ -1,10 +1,11 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
-import { useAgents } from "../hooks/useAgents";
-import { useApi } from "../hooks/useApi";
+import { agentsApi } from "../api/agents";
+import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
   DialogContent,
@@ -47,13 +48,10 @@ const priorities = [
   { value: "low", label: "Low", icon: ArrowDown, color: "text-blue-400" },
 ];
 
-interface NewIssueDialogProps {
-  onCreated?: () => void;
-}
-
-export function NewIssueDialog({ onCreated }: NewIssueDialogProps) {
+export function NewIssueDialog() {
   const { newIssueOpen, newIssueDefaults, closeNewIssue } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("todo");
@@ -61,7 +59,6 @@ export function NewIssueDialog({ onCreated }: NewIssueDialogProps) {
   const [assigneeId, setAssigneeId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   // Popover states
   const [statusOpen, setStatusOpen] = useState(false);
@@ -70,13 +67,27 @@ export function NewIssueDialog({ onCreated }: NewIssueDialogProps) {
   const [projectOpen, setProjectOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
-  const { data: agents } = useAgents(selectedCompanyId);
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && newIssueOpen,
+  });
 
-  const projectsFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([] as Project[]);
-    return projectsApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-  const { data: projects } = useApi(projectsFetcher);
+  const { data: projects } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!),
+    queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && newIssueOpen,
+  });
+
+  const createIssue = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      issuesApi.create(selectedCompanyId!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+      reset();
+      closeNewIssue();
+    },
+  });
 
   useEffect(() => {
     if (newIssueOpen) {
@@ -96,25 +107,16 @@ export function NewIssueDialog({ onCreated }: NewIssueDialogProps) {
     setExpanded(false);
   }
 
-  async function handleSubmit() {
+  function handleSubmit() {
     if (!selectedCompanyId || !title.trim()) return;
-
-    setSubmitting(true);
-    try {
-      await issuesApi.create(selectedCompanyId, {
-        title: title.trim(),
-        description: description.trim() || undefined,
-        status,
-        priority: priority || "medium",
-        ...(assigneeId ? { assigneeAgentId: assigneeId } : {}),
-        ...(projectId ? { projectId } : {}),
-      });
-      reset();
-      closeNewIssue();
-      onCreated?.();
-    } finally {
-      setSubmitting(false);
-    }
+    createIssue.mutate({
+      title: title.trim(),
+      description: description.trim() || undefined,
+      status,
+      priority: priority || "medium",
+      ...(assigneeId ? { assigneeAgentId: assigneeId } : {}),
+      ...(projectId ? { projectId } : {}),
+    });
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -359,10 +361,10 @@ export function NewIssueDialog({ onCreated }: NewIssueDialogProps) {
         <div className="flex items-center justify-end px-4 py-2.5 border-t border-border">
           <Button
             size="sm"
-            disabled={!title.trim() || submitting}
+            disabled={!title.trim() || createIssue.isPending}
             onClick={handleSubmit}
           >
-            {submitting ? "Creating..." : "Create issue"}
+            {createIssue.isPending ? "Creating..." : "Create issue"}
           </Button>
         </div>
       </DialogContent>

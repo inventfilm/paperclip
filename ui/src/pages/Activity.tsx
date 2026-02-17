@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { activityApi } from "../api/activity";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { useApi } from "../hooks/useApi";
+import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { timeAgo } from "../lib/timeAgo";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,6 @@ import {
 import { History, Bot, User, Settings } from "lucide-react";
 
 function formatAction(action: string, entityType: string, entityId: string): string {
-  const shortId = entityId.slice(0, 8);
   const actionMap: Record<string, string> = {
     "company.created": "Company created",
     "agent.created": `Agent created`,
@@ -80,12 +80,11 @@ export function Activity() {
     setBreadcrumbs([{ label: "Activity" }]);
   }, [setBreadcrumbs]);
 
-  const fetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return activityApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data, loading, error } = useApi(fetcher);
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.activity(selectedCompanyId!),
+    queryFn: () => activityApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   if (!selectedCompanyId) {
     return <EmptyState icon={History} message="Select a company to view activity." />;
@@ -119,7 +118,7 @@ export function Activity() {
         </Select>
       </div>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {filtered && filtered.length === 0 && (

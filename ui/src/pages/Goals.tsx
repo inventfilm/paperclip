@@ -1,9 +1,10 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
-import { useApi } from "../hooks/useApi";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { queryKeys } from "../lib/queryKeys";
 import { GoalTree } from "../components/GoalTree";
 import { EmptyState } from "../components/EmptyState";
 import { Target } from "lucide-react";
@@ -17,12 +18,11 @@ export function Goals() {
     setBreadcrumbs([{ label: "Goals" }]);
   }, [setBreadcrumbs]);
 
-  const fetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return goalsApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data: goals, loading, error } = useApi(fetcher);
+  const { data: goals, isLoading, error } = useQuery({
+    queryKey: queryKeys.goals.list(selectedCompanyId!),
+    queryFn: () => goalsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Target} message="Select a company to view goals." />;
@@ -32,7 +32,7 @@ export function Goals() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Goals</h2>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {goals && goals.length === 0 && (

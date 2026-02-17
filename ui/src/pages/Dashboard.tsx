@@ -1,12 +1,13 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
+import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
-import { useAgents } from "../hooks/useAgents";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { useApi } from "../hooks/useApi";
+import { queryKeys } from "../lib/queryKeys";
 import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
 import { StatusIcon } from "../components/StatusIcon";
@@ -56,30 +57,34 @@ export function Dashboard() {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
-  const { data: agents } = useAgents(selectedCompanyId);
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Dashboard" }]);
   }, [setBreadcrumbs]);
 
-  const dashFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve(null);
-    return dashboardApi.summary(selectedCompanyId);
-  }, [selectedCompanyId]);
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.dashboard(selectedCompanyId!),
+    queryFn: () => dashboardApi.summary(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
-  const activityFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return activityApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
+  const { data: activity } = useQuery({
+    queryKey: queryKeys.activity(selectedCompanyId!),
+    queryFn: () => activityApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
-  const issuesFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return issuesApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data, loading, error } = useApi(dashFetcher);
-  const { data: activity } = useApi(activityFetcher);
-  const { data: issues } = useApi(issuesFetcher);
+  const { data: issues } = useQuery({
+    queryKey: queryKeys.issues.list(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   const staleIssues = issues ? getStaleIssues(issues) : [];
 
@@ -103,7 +108,7 @@ export function Dashboard() {
         )}
       </div>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {data && (

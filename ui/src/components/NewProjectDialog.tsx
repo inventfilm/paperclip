@@ -1,9 +1,10 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { projectsApi } from "../api/projects";
 import { goalsApi } from "../api/goals";
-import { useApi } from "../hooks/useApi";
+import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
   DialogContent,
@@ -32,29 +33,35 @@ const projectStatuses = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
-interface NewProjectDialogProps {
-  onCreated?: () => void;
-}
-
-export function NewProjectDialog({ onCreated }: NewProjectDialogProps) {
+export function NewProjectDialog() {
   const { newProjectOpen, closeNewProject } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
+  const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("planned");
   const [goalId, setGoalId] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
 
-  const goalsFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([] as Goal[]);
-    return goalsApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-  const { data: goals } = useApi(goalsFetcher);
+  const { data: goals } = useQuery({
+    queryKey: queryKeys.goals.list(selectedCompanyId!),
+    queryFn: () => goalsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && newProjectOpen,
+  });
+
+  const createProject = useMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      projectsApi.create(selectedCompanyId!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId!) });
+      reset();
+      closeNewProject();
+    },
+  });
 
   function reset() {
     setName("");
@@ -65,24 +72,15 @@ export function NewProjectDialog({ onCreated }: NewProjectDialogProps) {
     setExpanded(false);
   }
 
-  async function handleSubmit() {
+  function handleSubmit() {
     if (!selectedCompanyId || !name.trim()) return;
-
-    setSubmitting(true);
-    try {
-      await projectsApi.create(selectedCompanyId, {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        status,
-        ...(goalId ? { goalId } : {}),
-        ...(targetDate ? { targetDate } : {}),
-      });
-      reset();
-      closeNewProject();
-      onCreated?.();
-    } finally {
-      setSubmitting(false);
-    }
+    createProject.mutate({
+      name: name.trim(),
+      description: description.trim() || undefined,
+      status,
+      ...(goalId ? { goalId } : {}),
+      ...(targetDate ? { targetDate } : {}),
+    });
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -239,10 +237,10 @@ export function NewProjectDialog({ onCreated }: NewProjectDialogProps) {
         <div className="flex items-center justify-end px-4 py-2.5 border-t border-border">
           <Button
             size="sm"
-            disabled={!name.trim() || submitting}
+            disabled={!name.trim() || createProject.isPending}
             onClick={handleSubmit}
           >
-            {submitting ? "Creating..." : "Create project"}
+            {createProject.isPending ? "Creating..." : "Create project"}
           </Button>
         </div>
       </DialogContent>

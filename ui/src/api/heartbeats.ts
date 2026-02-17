@@ -1,4 +1,4 @@
-import type { HeartbeatRun } from "@paperclip/shared";
+import type { HeartbeatRun, HeartbeatRunEvent } from "@paperclip/shared";
 import { api } from "./client";
 
 export const heartbeatsApi = {
@@ -6,4 +6,12 @@ export const heartbeatsApi = {
     const params = agentId ? `?agentId=${agentId}` : "";
     return api.get<HeartbeatRun[]>(`/companies/${companyId}/heartbeat-runs${params}`);
   },
+  events: (runId: string, afterSeq = 0, limit = 200) =>
+    api.get<HeartbeatRunEvent[]>(
+      `/heartbeat-runs/${runId}/events?afterSeq=${encodeURIComponent(String(afterSeq))}&limit=${encodeURIComponent(String(limit))}`,
+    ),
+  log: (runId: string, offset = 0, limitBytes = 256000) =>
+    api.get<{ runId: string; store: string; logRef: string; content: string; nextOffset?: number }>(
+      `/heartbeat-runs/${runId}/log?offset=${encodeURIComponent(String(offset))}&limitBytes=${encodeURIComponent(String(limitBytes))}`,
+    ),
 };

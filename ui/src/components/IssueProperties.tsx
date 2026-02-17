@@ -1,6 +1,8 @@
 import type { Issue } from "@paperclip/shared";
+import { useQuery } from "@tanstack/react-query";
+import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
-import { useAgents } from "../hooks/useAgents";
+import { queryKeys } from "../lib/queryKeys";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { formatDate } from "../lib/utils";
@@ -31,7 +33,11 @@ function priorityLabel(priority: string): string {
 
 export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
-  const { data: agents } = useAgents(selectedCompanyId);
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   const agentName = (id: string | null) => {
     if (!id || !agents) return null;

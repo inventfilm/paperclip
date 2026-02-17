@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
-import { useApi } from "../hooks/useApi";
-import { useAgents } from "../hooks/useAgents";
+import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
@@ -43,29 +44,37 @@ export function Issues() {
   const { openNewIssue } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<TabFilter>("all");
-  const { data: agents } = useAgents(selectedCompanyId);
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Issues" }]);
   }, [setBreadcrumbs]);
 
-  const fetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return issuesApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
+  const { data: issues, isLoading, error } = useQuery({
+    queryKey: queryKeys.issues.list(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
-  const { data: issues, loading, error, reload } = useApi(fetcher);
+  const updateStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      issuesApi.update(id, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+    },
+  });
 
   const agentName = (id: string | null) => {
     if (!id || !agents) return null;
     return agents.find((a) => a.id === id)?.name ?? null;
   };
-
-  async function handleStatusChange(issue: Issue, status: string) {
-    await issuesApi.update(issue.id, { status });
-    reload();
-  }
 
   if (!selectedCompanyId) {
     return <EmptyState icon={CircleDot} message="Select a company to view issues." />;
@@ -96,7 +105,7 @@ export function Issues() {
         </TabsList>
       </Tabs>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {issues && filtered.length === 0 && (
@@ -137,7 +146,7 @@ export function Issues() {
                     <PriorityIcon priority={issue.priority} />
                     <StatusIcon
                       status={issue.status}
-                      onChange={(s) => handleStatusChange(issue, s)}
+                      onChange={(s) => updateStatus.mutate({ id: issue.id, status: s })}
                     />
                   </>
                 }

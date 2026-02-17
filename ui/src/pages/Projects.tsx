@@ -1,10 +1,11 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { projectsApi } from "../api/projects";
-import { useApi } from "../hooks/useApi";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { queryKeys } from "../lib/queryKeys";
 import { EntityRow } from "../components/EntityRow";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
@@ -22,12 +23,11 @@ export function Projects() {
     setBreadcrumbs([{ label: "Projects" }]);
   }, [setBreadcrumbs]);
 
-  const fetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return projectsApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data: projects, loading, error } = useApi(fetcher);
+  const { data: projects, isLoading, error } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!),
+    queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Hexagon} message="Select a company to view projects." />;
@@ -43,7 +43,7 @@ export function Projects() {
         </Button>
       </div>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {projects && projects.length === 0 && (

@@ -1,10 +1,12 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
+import { queryKeys } from "../lib/queryKeys";
 import {
   CommandDialog,
   CommandEmpty,
@@ -27,13 +29,9 @@ import {
   SquarePen,
   Plus,
 } from "lucide-react";
-import type { Issue, Agent, Project } from "@paperclip/shared";
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
-  const [issues, setIssues] = useState<Issue[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialog();
@@ -49,23 +47,23 @@ export function CommandPalette() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const loadData = useCallback(async () => {
-    if (!selectedCompanyId) return;
-    const [i, a, p] = await Promise.all([
-      issuesApi.list(selectedCompanyId).catch(() => []),
-      agentsApi.list(selectedCompanyId).catch(() => []),
-      projectsApi.list(selectedCompanyId).catch(() => []),
-    ]);
-    setIssues(i);
-    setAgents(a);
-    setProjects(p);
-  }, [selectedCompanyId]);
+  const { data: issues = [] } = useQuery({
+    queryKey: queryKeys.issues.list(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && open,
+  });
 
-  useEffect(() => {
-    if (open) {
-      void loadData();
-    }
-  }, [open, loadData]);
+  const { data: agents = [] } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && open,
+  });
+
+  const { data: projects = [] } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!),
+    queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && open,
+  });
 
   function go(path: string) {
     setOpen(false);

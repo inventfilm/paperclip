@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { useApi } from "../hooks/useApi";
+import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { ChevronRight, GitBranch } from "lucide-react";
@@ -93,12 +94,11 @@ export function Org() {
     setBreadcrumbs([{ label: "Org Chart" }]);
   }, [setBreadcrumbs]);
 
-  const fetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([] as OrgNode[]);
-    return agentsApi.org(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data, loading, error } = useApi(fetcher);
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.org(selectedCompanyId!),
+    queryFn: () => agentsApi.org(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   if (!selectedCompanyId) {
     return <EmptyState icon={GitBranch} message="Select a company to view org chart." />;
@@ -108,7 +108,7 @@ export function Org() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Org Chart</h2>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {data && data.length === 0 && (

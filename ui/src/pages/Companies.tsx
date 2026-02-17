@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { companiesApi } from "../api/companies";
+import { queryKeys } from "../lib/queryKeys";
 import { formatCents } from "../lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,9 +18,9 @@ export function Companies() {
     createCompany,
     loading,
     error,
-    reloadCompanies,
   } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [budget, setBudget] = useState("0");
@@ -28,7 +30,15 @@ export function Companies() {
   // Inline edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [editSaving, setEditSaving] = useState(false);
+
+  const editMutation = useMutation({
+    mutationFn: ({ id, newName }: { id: string; newName: string }) =>
+      companiesApi.update(id, { name: newName }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      setEditingId(null);
+    },
+  });
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Companies" }]);
@@ -49,7 +59,6 @@ export function Companies() {
       setName("");
       setDescription("");
       setBudget("0");
-      await reloadCompanies();
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to create company");
     } finally {
@@ -62,16 +71,9 @@ export function Companies() {
     setEditName(currentName);
   }
 
-  async function saveEdit() {
+  function saveEdit() {
     if (!editingId || !editName.trim()) return;
-    setEditSaving(true);
-    try {
-      await companiesApi.update(editingId, { name: editName.trim() });
-      await reloadCompanies();
-      setEditingId(null);
-    } finally {
-      setEditSaving(false);
-    }
+    editMutation.mutate({ id: editingId, newName: editName.trim() });
   }
 
   function cancelEdit() {
@@ -151,7 +153,7 @@ export function Companies() {
                         variant="ghost"
                         size="icon-xs"
                         onClick={saveEdit}
-                        disabled={editSaving}
+                        disabled={editMutation.isPending}
                       >
                         <Check className="h-3.5 w-3.5 text-green-500" />
                       </Button>

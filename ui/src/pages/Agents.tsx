@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAgents } from "../hooks/useAgents";
+import { useQuery } from "@tanstack/react-query";
+import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { agentsApi } from "../api/agents";
+import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
@@ -12,10 +13,14 @@ import { Bot } from "lucide-react";
 
 export function Agents() {
   const { selectedCompanyId } = useCompany();
-  const { data: agents, loading, error, reload } = useAgents(selectedCompanyId);
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
-  const [actionError, setActionError] = useState<string | null>(null);
+
+  const { data: agents, isLoading, error } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Agents" }]);
@@ -29,9 +34,8 @@ export function Agents() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Agents</h2>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
-      {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       {agents && agents.length === 0 && (
         <EmptyState

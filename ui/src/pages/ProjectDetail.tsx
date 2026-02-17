@@ -1,11 +1,12 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
-import { useApi } from "../hooks/useApi";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { queryKeys } from "../lib/queryKeys";
 import { ProjectProperties } from "../components/ProjectProperties";
 import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
@@ -18,18 +19,17 @@ export function ProjectDetail() {
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
 
-  const projectFetcher = useCallback(() => {
-    if (!projectId) return Promise.reject(new Error("No project ID"));
-    return projectsApi.get(projectId);
-  }, [projectId]);
+  const { data: project, isLoading, error } = useQuery({
+    queryKey: queryKeys.projects.detail(projectId!),
+    queryFn: () => projectsApi.get(projectId!),
+    enabled: !!projectId,
+  });
 
-  const issuesFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([] as Issue[]);
-    return issuesApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data: project, loading, error } = useApi(projectFetcher);
-  const { data: allIssues } = useApi(issuesFetcher);
+  const { data: allIssues } = useQuery({
+    queryKey: queryKeys.issues.list(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   const projectIssues = (allIssues ?? []).filter((i) => i.projectId === projectId);
 
@@ -47,7 +47,7 @@ export function ProjectDetail() {
     return () => closePanel();
   }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!project) return null;
 

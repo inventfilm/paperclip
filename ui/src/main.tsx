@@ -1,28 +1,43 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
 import { CompanyProvider } from "./context/CompanyContext";
+import { LiveUpdatesProvider } from "./context/LiveUpdatesProvider";
 import { BreadcrumbProvider } from "./context/BreadcrumbContext";
 import { PanelProvider } from "./context/PanelContext";
 import { DialogProvider } from "./context/DialogContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./index.css";
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
+    },
+  },
+});
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <CompanyProvider>
-      <BrowserRouter>
-        <TooltipProvider>
-          <BreadcrumbProvider>
-            <PanelProvider>
-              <DialogProvider>
-                <App />
-              </DialogProvider>
-            </PanelProvider>
-          </BreadcrumbProvider>
-        </TooltipProvider>
-      </BrowserRouter>
-    </CompanyProvider>
+    <QueryClientProvider client={queryClient}>
+      <CompanyProvider>
+        <LiveUpdatesProvider>
+          <BrowserRouter>
+            <TooltipProvider>
+              <BreadcrumbProvider>
+                <PanelProvider>
+                  <DialogProvider>
+                    <App />
+                  </DialogProvider>
+                </PanelProvider>
+              </BreadcrumbProvider>
+            </TooltipProvider>
+          </BrowserRouter>
+        </LiveUpdatesProvider>
+      </CompanyProvider>
+    </QueryClientProvider>
   </StrictMode>
 );

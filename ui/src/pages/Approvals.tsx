@@ -1,41 +1,42 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { useCompany } from "../context/CompanyContext";
-import { useApi } from "../hooks/useApi";
+import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 export function Approvals() {
   const { selectedCompanyId } = useCompany();
+  const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const fetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return approvalsApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
+  const { data, isLoading, error } = useQuery({
+    queryKey: queryKeys.approvals.list(selectedCompanyId!),
+    queryFn: () => approvalsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
-  const { data, loading, error, reload } = useApi(fetcher);
-
-  async function approve(id: string) {
-    setActionError(null);
-    try {
-      await approvalsApi.approve(id);
-      reload();
-    } catch (err) {
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => approvalsApi.approve(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
+    },
+    onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Failed to approve");
-    }
-  }
+    },
+  });
 
-  async function reject(id: string) {
-    setActionError(null);
-    try {
-      await approvalsApi.reject(id);
-      reload();
-    } catch (err) {
+  const rejectMutation = useMutation({
+    mutationFn: (id: string) => approvalsApi.reject(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
+    },
+    onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Failed to reject");
-    }
-  }
+    },
+  });
 
   if (!selectedCompanyId) {
     return <p className="text-muted-foreground">Select a company first.</p>;
@@ -44,7 +45,7 @@ export function Approvals() {
   return (
     <div>
       <h2 className="text-2xl font-bold mb-4">Approvals</h2>
-      {loading && <p className="text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-muted-foreground">Loading...</p>}
       {error && <p className="text-destructive">{error.message}</p>}
       {actionError && <p className="text-destructive">{actionError}</p>}
 
@@ -68,14 +69,14 @@ export function Approvals() {
                       variant="outline"
                       size="sm"
                       className="border-green-700 text-green-400 hover:bg-green-900/50"
-                      onClick={() => approve(approval.id)}
+                      onClick={() => approveMutation.mutate(approval.id)}
                     >
                       Approve
                     </Button>
                     <Button
                       variant="destructive"
                       size="sm"
-                      onClick={() => reject(approval.id)}
+                      onClick={() => rejectMutation.mutate(approval.id)}
                     >
                       Reject
                     </Button>

@@ -1,9 +1,10 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { useApi } from "../hooks/useApi";
+import { queryKeys } from "../lib/queryKeys";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { EntityRow } from "../components/EntityRow";
@@ -20,12 +21,11 @@ export function MyIssues() {
     setBreadcrumbs([{ label: "My Issues" }]);
   }, [setBreadcrumbs]);
 
-  const fetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return issuesApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data: issues, loading, error } = useApi(fetcher);
+  const { data: issues, isLoading, error } = useQuery({
+    queryKey: queryKeys.issues.list(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   if (!selectedCompanyId) {
     return <EmptyState icon={ListTodo} message="Select a company to view your issues." />;
@@ -40,10 +40,10 @@ export function MyIssues() {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">My Issues</h2>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
-      {!loading && myIssues.length === 0 && (
+      {!isLoading && myIssues.length === 0 && (
         <EmptyState icon={ListTodo} message="No issues assigned to you." />
       )}
 

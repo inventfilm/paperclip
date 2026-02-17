@@ -1,34 +1,53 @@
-import { useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { useParams } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
-import { useApi } from "../hooks/useApi";
+import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { queryKeys } from "../lib/queryKeys";
 import { InlineEditor } from "../components/InlineEditor";
 import { CommentThread } from "../components/CommentThread";
 import { IssueProperties } from "../components/IssueProperties";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
-import type { IssueComment } from "@paperclip/shared";
 import { Separator } from "@/components/ui/separator";
 
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
+  const { selectedCompanyId } = useCompany();
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const queryClient = useQueryClient();
 
-  const issueFetcher = useCallback(() => {
-    if (!issueId) return Promise.reject(new Error("No issue ID"));
-    return issuesApi.get(issueId);
-  }, [issueId]);
+  const { data: issue, isLoading, error } = useQuery({
+    queryKey: queryKeys.issues.detail(issueId!),
+    queryFn: () => issuesApi.get(issueId!),
+    enabled: !!issueId,
+  });
 
-  const commentsFetcher = useCallback(() => {
-    if (!issueId) return Promise.resolve([] as IssueComment[]);
-    return issuesApi.listComments(issueId);
-  }, [issueId]);
+  const { data: comments } = useQuery({
+    queryKey: queryKeys.issues.comments(issueId!),
+    queryFn: () => issuesApi.listComments(issueId!),
+    enabled: !!issueId,
+  });
 
-  const { data: issue, loading, error, reload: reloadIssue } = useApi(issueFetcher);
-  const { data: comments, reload: reloadComments } = useApi(commentsFetcher);
+  const updateIssue = useMutation({
+    mutationFn: (data: Record<string, unknown>) => issuesApi.update(issueId!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) });
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
+      }
+    },
+  });
+
+  const addComment = useMutation({
+    mutationFn: (body: string) => issuesApi.addComment(issueId!, body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+    },
+  });
 
   useEffect(() => {
     setBreadcrumbs([
@@ -37,28 +56,16 @@ export function IssueDetail() {
     ]);
   }, [setBreadcrumbs, issue, issueId]);
 
-  async function handleUpdate(data: Record<string, unknown>) {
-    if (!issueId) return;
-    await issuesApi.update(issueId, data);
-    reloadIssue();
-  }
-
-  async function handleAddComment(body: string) {
-    if (!issueId) return;
-    await issuesApi.addComment(issueId, body);
-    reloadComments();
-  }
-
   useEffect(() => {
     if (issue) {
       openPanel(
-        <IssueProperties issue={issue} onUpdate={handleUpdate} />
+        <IssueProperties issue={issue} onUpdate={(data) => updateIssue.mutate(data)} />
       );
     }
     return () => closePanel();
   }, [issue]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!issue) return null;
 
@@ -68,25 +75,25 @@ export function IssueDetail() {
         <div className="flex items-center gap-2">
           <StatusIcon
             status={issue.status}
-            onChange={(status) => handleUpdate({ status })}
+            onChange={(status) => updateIssue.mutate({ status })}
           />
           <PriorityIcon
             priority={issue.priority}
-            onChange={(priority) => handleUpdate({ priority })}
+            onChange={(priority) => updateIssue.mutate({ priority })}
           />
           <span className="text-xs font-mono text-muted-foreground">{issue.id.slice(0, 8)}</span>
         </div>
 
         <InlineEditor
           value={issue.title}
-          onSave={(title) => handleUpdate({ title })}
+          onSave={(title) => updateIssue.mutate({ title })}
           as="h2"
           className="text-xl font-bold"
         />
 
         <InlineEditor
           value={issue.description ?? ""}
-          onSave={(description) => handleUpdate({ description })}
+          onSave={(description) => updateIssue.mutate({ description })}
           as="p"
           className="text-sm text-muted-foreground"
           placeholder="Add a description..."
@@ -98,7 +105,9 @@ export function IssueDetail() {
 
       <CommentThread
         comments={comments ?? []}
-        onAdd={handleAddComment}
+        onAdd={async (body) => {
+          await addComment.mutateAsync(body);
+        }}
       />
     </div>
   );

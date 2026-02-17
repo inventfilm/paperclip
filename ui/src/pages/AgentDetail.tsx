@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { issuesApi } from "../api/issues";
-import { useApi } from "../hooks/useApi";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { queryKeys } from "../lib/queryKeys";
 import { AgentProperties } from "../components/AgentProperties";
 import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
@@ -20,28 +21,52 @@ export function AgentDetail() {
   const { selectedCompanyId } = useCompany();
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const agentFetcher = useCallback(() => {
-    if (!agentId) return Promise.reject(new Error("No agent ID"));
-    return agentsApi.get(agentId);
-  }, [agentId]);
+  const { data: agent, isLoading, error } = useQuery({
+    queryKey: queryKeys.agents.detail(agentId!),
+    queryFn: () => agentsApi.get(agentId!),
+    enabled: !!agentId,
+  });
 
-  const heartbeatsFetcher = useCallback(() => {
-    if (!selectedCompanyId || !agentId) return Promise.resolve([] as HeartbeatRun[]);
-    return heartbeatsApi.list(selectedCompanyId, agentId);
-  }, [selectedCompanyId, agentId]);
+  const { data: heartbeats } = useQuery({
+    queryKey: queryKeys.heartbeats(selectedCompanyId!, agentId),
+    queryFn: () => heartbeatsApi.list(selectedCompanyId!, agentId),
+    enabled: !!selectedCompanyId && !!agentId,
+  });
 
-  const issuesFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([] as Issue[]);
-    return issuesApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data: agent, loading, error, reload: reloadAgent } = useApi(agentFetcher);
-  const { data: heartbeats } = useApi(heartbeatsFetcher);
-  const { data: allIssues } = useApi(issuesFetcher);
+  const { data: allIssues } = useQuery({
+    queryKey: queryKeys.issues.list(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   const assignedIssues = (allIssues ?? []).filter((i) => i.assigneeAgentId === agentId);
+
+  const agentAction = useMutation({
+    mutationFn: async (action: "invoke" | "pause" | "resume") => {
+      if (!agentId) return Promise.reject(new Error("No agent ID"));
+      if (action === "invoke") {
+        await agentsApi.invoke(agentId);
+        return;
+      }
+      if (action === "pause") {
+        await agentsApi.pause(agentId);
+        return;
+      }
+      await agentsApi.resume(agentId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId!) });
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) });
+      }
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Action failed");
+    },
+  });
 
   useEffect(() => {
     setBreadcrumbs([
@@ -57,20 +82,7 @@ export function AgentDetail() {
     return () => closePanel();
   }, [agent]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleAction(action: "invoke" | "pause" | "resume") {
-    if (!agentId) return;
-    setActionError(null);
-    try {
-      if (action === "invoke") await agentsApi.invoke(agentId);
-      else if (action === "pause") await agentsApi.pause(agentId);
-      else await agentsApi.resume(agentId);
-      reloadAgent();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : `Failed to ${action} agent`);
-    }
-  }
-
-  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!agent) return null;
 
@@ -89,15 +101,15 @@ export function AgentDetail() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleAction("invoke")}>
+          <Button variant="outline" size="sm" onClick={() => agentAction.mutate("invoke")}>
             Invoke
           </Button>
           {agent.status === "active" ? (
-            <Button variant="outline" size="sm" onClick={() => handleAction("pause")}>
+            <Button variant="outline" size="sm" onClick={() => agentAction.mutate("pause")}>
               Pause
             </Button>
           ) : (
-            <Button variant="outline" size="sm" onClick={() => handleAction("resume")}>
+            <Button variant="outline" size="sm" onClick={() => agentAction.mutate("resume")}>
               Resume
             </Button>
           )}

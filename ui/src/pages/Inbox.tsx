@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { dashboardApi } from "../api/dashboard";
 import { issuesApi } from "../api/issues";
+import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
-import { useAgents } from "../hooks/useAgents";
-import { useApi } from "../hooks/useApi";
-import { StatusBadge } from "../components/StatusBadge";
+import { queryKeys } from "../lib/queryKeys";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { EmptyState } from "../components/EmptyState";
@@ -43,31 +43,36 @@ export function Inbox() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
-  const { data: agents } = useAgents(selectedCompanyId);
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Inbox" }]);
   }, [setBreadcrumbs]);
 
-  const approvalsFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return approvalsApi.list(selectedCompanyId, "pending");
-  }, [selectedCompanyId]);
+  const { data: approvals, isLoading, error } = useQuery({
+    queryKey: queryKeys.approvals.list(selectedCompanyId!, "pending"),
+    queryFn: () => approvalsApi.list(selectedCompanyId!, "pending"),
+    enabled: !!selectedCompanyId,
+  });
 
-  const dashboardFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve(null);
-    return dashboardApi.summary(selectedCompanyId);
-  }, [selectedCompanyId]);
+  const { data: dashboard } = useQuery({
+    queryKey: queryKeys.dashboard(selectedCompanyId!),
+    queryFn: () => dashboardApi.summary(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
-  const issuesFetcher = useCallback(() => {
-    if (!selectedCompanyId) return Promise.resolve([]);
-    return issuesApi.list(selectedCompanyId);
-  }, [selectedCompanyId]);
-
-  const { data: approvals, loading, error, reload } = useApi(approvalsFetcher);
-  const { data: dashboard } = useApi(dashboardFetcher);
-  const { data: issues } = useApi(issuesFetcher);
+  const { data: issues } = useQuery({
+    queryKey: queryKeys.issues.list(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   const staleIssues = issues ? getStaleIssues(issues) : [];
 
@@ -77,25 +82,25 @@ export function Inbox() {
     return agent?.name ?? null;
   };
 
-  async function approve(id: string) {
-    setActionError(null);
-    try {
-      await approvalsApi.approve(id);
-      reload();
-    } catch (err) {
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => approvalsApi.approve(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!, "pending") });
+    },
+    onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Failed to approve");
-    }
-  }
+    },
+  });
 
-  async function reject(id: string) {
-    setActionError(null);
-    try {
-      await approvalsApi.reject(id);
-      reload();
-    } catch (err) {
+  const rejectMutation = useMutation({
+    mutationFn: (id: string) => approvalsApi.reject(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!, "pending") });
+    },
+    onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Failed to reject");
-    }
-  }
+    },
+  });
 
   if (!selectedCompanyId) {
     return <EmptyState icon={InboxIcon} message="Select a company to view inbox." />;
@@ -113,11 +118,11 @@ export function Inbox() {
     <div className="space-y-6">
       <h2 className="text-lg font-semibold">Inbox</h2>
 
-      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      {!loading && !hasContent && (
+      {!isLoading && !hasContent && (
         <EmptyState icon={InboxIcon} message="You're all caught up!" />
       )}
 
@@ -152,14 +157,14 @@ export function Inbox() {
                     size="sm"
                     variant="outline"
                     className="border-green-700 text-green-500 hover:bg-green-900/20"
-                    onClick={() => approve(approval.id)}
+                    onClick={() => approveMutation.mutate(approval.id)}
                   >
                     Approve
                   </Button>
                   <Button
                     size="sm"
                     variant="destructive"
-                    onClick={() => reject(approval.id)}
+                    onClick={() => rejectMutation.mutate(approval.id)}
                   >
                     Reject
                   </Button>
