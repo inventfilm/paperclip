@@ -1,12 +1,21 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { goalsApi } from "../api/goals";
 import { useApi } from "../hooks/useApi";
-import { StatusBadge } from "../components/StatusBadge";
 import { useCompany } from "../context/CompanyContext";
-import { Card, CardContent } from "@/components/ui/card";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { GoalTree } from "../components/GoalTree";
+import { EmptyState } from "../components/EmptyState";
+import { Target } from "lucide-react";
 
 export function Goals() {
   const { selectedCompanyId } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Goals" }]);
+  }, [setBreadcrumbs]);
 
   const fetcher = useCallback(() => {
     if (!selectedCompanyId) return Promise.resolve([]);
@@ -16,32 +25,22 @@ export function Goals() {
   const { data: goals, loading, error } = useApi(fetcher);
 
   if (!selectedCompanyId) {
-    return <p className="text-muted-foreground">Select a company first.</p>;
+    return <EmptyState icon={Target} message="Select a company to view goals." />;
   }
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4">Goals</h2>
-      {loading && <p className="text-muted-foreground">Loading...</p>}
-      {error && <p className="text-destructive">{error.message}</p>}
-      {goals && goals.length === 0 && <p className="text-muted-foreground">No goals yet.</p>}
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Goals</h2>
+
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {goals && goals.length === 0 && (
+        <EmptyState icon={Target} message="No goals yet." />
+      )}
+
       {goals && goals.length > 0 && (
-        <div className="grid gap-4">
-          {goals.map((goal) => (
-            <Card key={goal.id}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold">{goal.title}</h3>
-                    {goal.description && <p className="text-sm text-muted-foreground mt-1">{goal.description}</p>}
-                    <p className="text-xs text-muted-foreground mt-2">Level: {goal.level}</p>
-                  </div>
-                  <StatusBadge status={goal.status} />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        <GoalTree goals={goals} onSelect={(goal) => navigate(`/goals/${goal.id}`)} />
       )}
     </div>
   );

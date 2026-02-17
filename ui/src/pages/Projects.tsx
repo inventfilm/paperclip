@@ -1,13 +1,23 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { projectsApi } from "../api/projects";
 import { useApi } from "../hooks/useApi";
-import { formatDate } from "../lib/utils";
-import { StatusBadge } from "../components/StatusBadge";
 import { useCompany } from "../context/CompanyContext";
-import { Card, CardContent } from "@/components/ui/card";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { EntityRow } from "../components/EntityRow";
+import { StatusBadge } from "../components/StatusBadge";
+import { EmptyState } from "../components/EmptyState";
+import { formatDate } from "../lib/utils";
+import { Hexagon } from "lucide-react";
 
 export function Projects() {
   const { selectedCompanyId } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Projects" }]);
+  }, [setBreadcrumbs]);
 
   const fetcher = useCallback(() => {
     if (!selectedCompanyId) return Promise.resolve([]);
@@ -17,34 +27,39 @@ export function Projects() {
   const { data: projects, loading, error } = useApi(fetcher);
 
   if (!selectedCompanyId) {
-    return <p className="text-muted-foreground">Select a company first.</p>;
+    return <EmptyState icon={Hexagon} message="Select a company to view projects." />;
   }
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4">Projects</h2>
-      {loading && <p className="text-muted-foreground">Loading...</p>}
-      {error && <p className="text-destructive">{error.message}</p>}
-      {projects && projects.length === 0 && <p className="text-muted-foreground">No projects yet.</p>}
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Projects</h2>
+
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {projects && projects.length === 0 && (
+        <EmptyState icon={Hexagon} message="No projects yet." />
+      )}
+
       {projects && projects.length > 0 && (
-        <div className="grid gap-4">
+        <div className="border border-border rounded-md">
           {projects.map((project) => (
-            <Card key={project.id}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold">{project.name}</h3>
-                    {project.description && (
-                      <p className="text-sm text-muted-foreground mt-1">{project.description}</p>
-                    )}
-                    {project.targetDate && (
-                      <p className="text-xs text-muted-foreground mt-2">Target: {formatDate(project.targetDate)}</p>
-                    )}
-                  </div>
+            <EntityRow
+              key={project.id}
+              title={project.name}
+              subtitle={project.description ?? undefined}
+              onClick={() => navigate(`/projects/${project.id}`)}
+              trailing={
+                <div className="flex items-center gap-3">
+                  {project.targetDate && (
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(project.targetDate)}
+                    </span>
+                  )}
                   <StatusBadge status={project.status} />
                 </div>
-              </CardContent>
-            </Card>
+              }
+            />
           ))}
         </div>
       )}

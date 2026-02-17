@@ -1,33 +1,98 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useApi } from "../hooks/useApi";
 import { StatusBadge } from "../components/StatusBadge";
-import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "../components/EmptyState";
+import { ChevronRight, GitBranch } from "lucide-react";
+import { cn } from "../lib/utils";
+import { useState } from "react";
 
-function OrgTree({ nodes, depth = 0 }: { nodes: OrgNode[]; depth?: number }) {
+function OrgTree({
+  nodes,
+  depth = 0,
+  onSelect,
+}: {
+  nodes: OrgNode[];
+  depth?: number;
+  onSelect: (id: string) => void;
+}) {
   return (
-    <div className="space-y-2">
+    <div>
       {nodes.map((node) => (
-        <div key={node.id}>
-          <Card style={{ marginLeft: `${depth * 20}px` }}>
-            <CardContent className="p-3 flex items-center justify-between">
-              <div>
-                <p className="font-medium">{node.name}</p>
-                <p className="text-xs text-muted-foreground">{node.role}</p>
-              </div>
-              <StatusBadge status={node.status} />
-            </CardContent>
-          </Card>
-          {node.reports.length > 0 && <OrgTree nodes={node.reports} depth={depth + 1} />}
-        </div>
+        <OrgTreeNode key={node.id} node={node} depth={depth} onSelect={onSelect} />
       ))}
+    </div>
+  );
+}
+
+function OrgTreeNode({
+  node,
+  depth,
+  onSelect,
+}: {
+  node: OrgNode;
+  depth: number;
+  onSelect: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = node.reports.length > 0;
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer hover:bg-accent/50"
+        style={{ paddingLeft: `${depth * 24 + 12}px` }}
+        onClick={() => onSelect(node.id)}
+      >
+        {hasChildren ? (
+          <button
+            className="p-0.5"
+            onClick={(e) => {
+              e.stopPropagation();
+              setExpanded(!expanded);
+            }}
+          >
+            <ChevronRight
+              className={cn("h-3 w-3 transition-transform", expanded && "rotate-90")}
+            />
+          </button>
+        ) : (
+          <span className="w-4" />
+        )}
+        <span
+          className={cn(
+            "h-2 w-2 rounded-full shrink-0",
+            node.status === "active"
+              ? "bg-green-400"
+              : node.status === "paused"
+                ? "bg-yellow-400"
+                : node.status === "error"
+                  ? "bg-red-400"
+                  : "bg-neutral-400"
+          )}
+        />
+        <span className="font-medium flex-1">{node.name}</span>
+        <span className="text-xs text-muted-foreground">{node.role}</span>
+        <StatusBadge status={node.status} />
+      </div>
+      {hasChildren && expanded && (
+        <OrgTree nodes={node.reports} depth={depth + 1} onSelect={onSelect} />
+      )}
     </div>
   );
 }
 
 export function Org() {
   const { selectedCompanyId } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Org Chart" }]);
+  }, [setBreadcrumbs]);
 
   const fetcher = useCallback(() => {
     if (!selectedCompanyId) return Promise.resolve([] as OrgNode[]);
@@ -37,16 +102,25 @@ export function Org() {
   const { data, loading, error } = useApi(fetcher);
 
   if (!selectedCompanyId) {
-    return <p className="text-muted-foreground">Select a company first.</p>;
+    return <EmptyState icon={GitBranch} message="Select a company to view org chart." />;
   }
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4">Org Chart</h2>
-      {loading && <p className="text-muted-foreground">Loading...</p>}
-      {error && <p className="text-destructive">{error.message}</p>}
-      {data && data.length === 0 && <p className="text-muted-foreground">No agents in org.</p>}
-      {data && data.length > 0 && <OrgTree nodes={data} />}
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Org Chart</h2>
+
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {data && data.length === 0 && (
+        <EmptyState icon={GitBranch} message="No agents in the organization." />
+      )}
+
+      {data && data.length > 0 && (
+        <div className="border border-border rounded-md py-1">
+          <OrgTree nodes={data} onSelect={(id) => navigate(`/agents/${id}`)} />
+        </div>
+      )}
     </div>
   );
 }

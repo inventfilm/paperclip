@@ -1,12 +1,20 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { activityApi } from "../api/activity";
 import { useCompany } from "../context/CompanyContext";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useApi } from "../hooks/useApi";
-import { formatDate } from "../lib/utils";
-import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "../components/EmptyState";
+import { timeAgo } from "../lib/timeAgo";
+import { Badge } from "@/components/ui/badge";
+import { History } from "lucide-react";
 
 export function Activity() {
   const { selectedCompanyId } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Activity" }]);
+  }, [setBreadcrumbs]);
 
   const fetcher = useCallback(() => {
     if (!selectedCompanyId) return Promise.resolve([]);
@@ -16,31 +24,37 @@ export function Activity() {
   const { data, loading, error } = useApi(fetcher);
 
   if (!selectedCompanyId) {
-    return <p className="text-muted-foreground">Select a company first.</p>;
+    return <EmptyState icon={History} message="Select a company to view activity." />;
   }
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4">Activity</h2>
-      {loading && <p className="text-muted-foreground">Loading...</p>}
-      {error && <p className="text-destructive">{error.message}</p>}
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">Activity</h2>
 
-      {data && data.length === 0 && <p className="text-muted-foreground">No activity yet.</p>}
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {data && data.length === 0 && (
+        <EmptyState icon={History} message="No activity yet." />
+      )}
 
       {data && data.length > 0 && (
-        <div className="space-y-2">
+        <div className="border border-border rounded-md divide-y divide-border">
           {data.map((event) => (
-            <Card key={event.id}>
-              <CardContent className="p-3 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{event.action}</span>
-                  <span className="text-xs text-muted-foreground">{formatDate(event.createdAt)}</span>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {event.entityType} {event.entityId}
-                </p>
-              </CardContent>
-            </Card>
+            <div key={event.id} className="px-4 py-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <Badge variant="secondary" className="shrink-0">
+                  {event.entityType}
+                </Badge>
+                <span className="text-sm font-medium">{event.action}</span>
+                <span className="text-xs text-muted-foreground font-mono truncate">
+                  {event.entityId.slice(0, 8)}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground shrink-0">
+                {timeAgo(event.createdAt)}
+              </span>
+            </div>
           ))}
         </div>
       )}

@@ -1,71 +1,106 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { dashboardApi } from "../api/dashboard";
+import { activityApi } from "../api/activity";
 import { useCompany } from "../context/CompanyContext";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useApi } from "../hooks/useApi";
+import { MetricCard } from "../components/MetricCard";
+import { EmptyState } from "../components/EmptyState";
+import { timeAgo } from "../lib/timeAgo";
 import { formatCents } from "../lib/utils";
-import { Card, CardContent } from "@/components/ui/card";
+import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard } from "lucide-react";
 
 export function Dashboard() {
   const { selectedCompanyId, selectedCompany } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
 
-  const fetcher = useCallback(() => {
-    if (!selectedCompanyId) {
-      return Promise.resolve(null);
-    }
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Dashboard" }]);
+  }, [setBreadcrumbs]);
+
+  const dashFetcher = useCallback(() => {
+    if (!selectedCompanyId) return Promise.resolve(null);
     return dashboardApi.summary(selectedCompanyId);
   }, [selectedCompanyId]);
 
-  const { data, loading, error } = useApi(fetcher);
+  const activityFetcher = useCallback(() => {
+    if (!selectedCompanyId) return Promise.resolve([]);
+    return activityApi.list(selectedCompanyId);
+  }, [selectedCompanyId]);
+
+  const { data, loading, error } = useApi(dashFetcher);
+  const { data: activity } = useApi(activityFetcher);
 
   if (!selectedCompanyId) {
-    return <p className="text-muted-foreground">Create or select a company to view the dashboard.</p>;
+    return (
+      <EmptyState icon={LayoutDashboard} message="Create or select a company to view the dashboard." />
+    );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold">Dashboard</h2>
-        <p className="text-muted-foreground">{selectedCompany?.name}</p>
+        <h2 className="text-lg font-semibold">Dashboard</h2>
+        {selectedCompany && (
+          <p className="text-sm text-muted-foreground">{selectedCompany.name}</p>
+        )}
       </div>
 
-      {loading && <p className="text-muted-foreground">Loading...</p>}
-      {error && <p className="text-destructive">{error.message}</p>}
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {data && (
-        <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Agents</p>
-              <p className="mt-2 text-sm">Running: {data.agents.running}</p>
-              <p className="text-sm">Paused: {data.agents.paused}</p>
-              <p className="text-sm">Error: {data.agents.error}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Tasks</p>
-              <p className="mt-2 text-sm">Open: {data.tasks.open}</p>
-              <p className="text-sm">In Progress: {data.tasks.inProgress}</p>
-              <p className="text-sm">Blocked: {data.tasks.blocked}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Costs</p>
-              <p className="mt-2 text-sm">
-                {formatCents(data.costs.monthSpendCents)} / {formatCents(data.costs.monthBudgetCents)}
-              </p>
-              <p className="text-sm">Utilization: {data.costs.monthUtilizationPercent}%</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Governance</p>
-              <p className="mt-2 text-sm">Pending approvals: {data.pendingApprovals}</p>
-              <p className="text-sm">Stale tasks: {data.staleTasks}</p>
-            </CardContent>
-          </Card>
-        </div>
+        <>
+          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <MetricCard
+              icon={Bot}
+              value={data.agents.running}
+              label="Agents Running"
+              description={`${data.agents.paused} paused, ${data.agents.error} errors`}
+            />
+            <MetricCard
+              icon={CircleDot}
+              value={data.tasks.inProgress}
+              label="Tasks In Progress"
+              description={`${data.tasks.open} open, ${data.tasks.blocked} blocked`}
+            />
+            <MetricCard
+              icon={DollarSign}
+              value={formatCents(data.costs.monthSpendCents)}
+              label="Month Spend"
+              description={`${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`}
+            />
+            <MetricCard
+              icon={ShieldCheck}
+              value={data.pendingApprovals}
+              label="Pending Approvals"
+              description={`${data.staleTasks} stale tasks`}
+            />
+          </div>
+
+          {activity && activity.length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                Recent Activity
+              </h3>
+              <div className="border border-border rounded-md divide-y divide-border">
+                {activity.slice(0, 10).map((event) => (
+                  <div key={event.id} className="px-4 py-2 flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{event.action}</span>
+                      <span className="text-muted-foreground">
+                        {event.entityType}
+                      </span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {timeAgo(event.createdAt)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

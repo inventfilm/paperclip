@@ -1,67 +1,149 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { issuesApi } from "../api/issues";
 import { useApi } from "../hooks/useApi";
-import { StatusBadge } from "../components/StatusBadge";
-import { cn } from "../lib/utils";
 import { useCompany } from "../context/CompanyContext";
-import { Card, CardContent } from "@/components/ui/card";
+import { useDialog } from "../context/DialogContext";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { groupBy } from "../lib/groupBy";
+import { StatusIcon } from "../components/StatusIcon";
+import { PriorityIcon } from "../components/PriorityIcon";
+import { EntityRow } from "../components/EntityRow";
+import { EmptyState } from "../components/EmptyState";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CircleDot, Plus } from "lucide-react";
+import { formatDate } from "../lib/utils";
+import type { Issue } from "@paperclip/shared";
 
-const priorityColors: Record<string, string> = {
-  critical: "text-red-300 bg-red-900/50",
-  high: "text-orange-300 bg-orange-900/50",
-  medium: "text-yellow-300 bg-yellow-900/50",
-  low: "text-neutral-400 bg-neutral-800",
-};
+const statusOrder = ["in_progress", "todo", "backlog", "in_review", "blocked", "done", "cancelled"];
+
+function statusLabel(status: string): string {
+  return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+type TabFilter = "all" | "active" | "backlog" | "done";
+
+function filterIssues(issues: Issue[], tab: TabFilter): Issue[] {
+  switch (tab) {
+    case "active":
+      return issues.filter((i) => ["todo", "in_progress", "in_review", "blocked"].includes(i.status));
+    case "backlog":
+      return issues.filter((i) => i.status === "backlog");
+    case "done":
+      return issues.filter((i) => ["done", "cancelled"].includes(i.status));
+    default:
+      return issues;
+  }
+}
 
 export function Issues() {
   const { selectedCompanyId } = useCompany();
+  const { openNewIssue } = useDialog();
+  const { setBreadcrumbs } = useBreadcrumbs();
+  const navigate = useNavigate();
+  const [tab, setTab] = useState<TabFilter>("all");
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Issues" }]);
+  }, [setBreadcrumbs]);
 
   const fetcher = useCallback(() => {
     if (!selectedCompanyId) return Promise.resolve([]);
     return issuesApi.list(selectedCompanyId);
   }, [selectedCompanyId]);
 
-  const { data: issues, loading, error } = useApi(fetcher);
+  const { data: issues, loading, error, reload } = useApi(fetcher);
 
-  if (!selectedCompanyId) {
-    return <p className="text-muted-foreground">Select a company first.</p>;
+  async function handleStatusChange(issue: Issue, status: string) {
+    await issuesApi.update(issue.id, { status });
+    reload();
   }
 
+  if (!selectedCompanyId) {
+    return <EmptyState icon={CircleDot} message="Select a company to view issues." />;
+  }
+
+  const filtered = filterIssues(issues ?? [], tab);
+  const grouped = groupBy(filtered, (i) => i.status);
+  const orderedGroups = statusOrder
+    .filter((s) => grouped[s]?.length)
+    .map((s) => ({ status: s, items: grouped[s]! }));
+
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4">Tasks</h2>
-      {loading && <p className="text-muted-foreground">Loading...</p>}
-      {error && <p className="text-destructive">{error.message}</p>}
-      {issues && issues.length === 0 && <p className="text-muted-foreground">No tasks yet.</p>}
-      {issues && issues.length > 0 && (
-        <div className="grid gap-4">
-          {issues.map((issue) => (
-            <Card key={issue.id}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold">{issue.title}</h3>
-                    {issue.description && (
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-1">{issue.description}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={cn(
-                        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-                        priorityColors[issue.priority] ?? "text-neutral-400 bg-neutral-800",
-                      )}
-                    >
-                      {issue.priority}
-                    </span>
-                    <StatusBadge status={issue.status} />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Issues</h2>
+        <Button size="sm" onClick={() => openNewIssue()}>
+          <Plus className="h-4 w-4 mr-1" />
+          New Issue
+        </Button>
+      </div>
+
+      <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)}>
+        <TabsList>
+          <TabsTrigger value="all">All Issues</TabsTrigger>
+          <TabsTrigger value="active">Active</TabsTrigger>
+          <TabsTrigger value="backlog">Backlog</TabsTrigger>
+          <TabsTrigger value="done">Done</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {issues && filtered.length === 0 && (
+        <EmptyState
+          icon={CircleDot}
+          message="No issues found."
+          action="Create Issue"
+          onAction={() => openNewIssue()}
+        />
       )}
+
+      {orderedGroups.map(({ status, items }) => (
+        <div key={status}>
+          <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-t-md">
+            <StatusIcon status={status} />
+            <span className="text-xs font-semibold uppercase tracking-wide">
+              {statusLabel(status)}
+            </span>
+            <span className="text-xs text-muted-foreground">{items.length}</span>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="ml-auto text-muted-foreground"
+              onClick={() => openNewIssue({ status })}
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
+          <div className="border border-border rounded-b-md">
+            {items.map((issue) => (
+              <EntityRow
+                key={issue.id}
+                identifier={issue.id.slice(0, 8)}
+                title={issue.title}
+                onClick={() => navigate(`/issues/${issue.id}`)}
+                leading={
+                  <>
+                    <PriorityIcon priority={issue.priority} />
+                    <StatusIcon
+                      status={issue.status}
+                      onChange={(s) => handleStatusChange(issue, s)}
+                    />
+                  </>
+                }
+                trailing={
+                  <span className="text-xs text-muted-foreground">
+                    {formatDate(issue.createdAt)}
+                  </span>
+                }
+              />
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

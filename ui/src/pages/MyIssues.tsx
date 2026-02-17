@@ -1,0 +1,75 @@
+import { useCallback, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { issuesApi } from "../api/issues";
+import { useCompany } from "../context/CompanyContext";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useApi } from "../hooks/useApi";
+import { StatusIcon } from "../components/StatusIcon";
+import { PriorityIcon } from "../components/PriorityIcon";
+import { EntityRow } from "../components/EntityRow";
+import { EmptyState } from "../components/EmptyState";
+import { formatDate } from "../lib/utils";
+import { ListTodo } from "lucide-react";
+
+export function MyIssues() {
+  const { selectedCompanyId } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "My Issues" }]);
+  }, [setBreadcrumbs]);
+
+  const fetcher = useCallback(() => {
+    if (!selectedCompanyId) return Promise.resolve([]);
+    return issuesApi.list(selectedCompanyId);
+  }, [selectedCompanyId]);
+
+  const { data: issues, loading, error } = useApi(fetcher);
+
+  if (!selectedCompanyId) {
+    return <EmptyState icon={ListTodo} message="Select a company to view your issues." />;
+  }
+
+  // Show issues that are not assigned (user-created or unassigned)
+  const myIssues = (issues ?? []).filter(
+    (i) => !i.assigneeAgentId && !["done", "cancelled"].includes(i.status)
+  );
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold">My Issues</h2>
+
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {!loading && myIssues.length === 0 && (
+        <EmptyState icon={ListTodo} message="No issues assigned to you." />
+      )}
+
+      {myIssues.length > 0 && (
+        <div className="border border-border rounded-md">
+          {myIssues.map((issue) => (
+            <EntityRow
+              key={issue.id}
+              identifier={issue.id.slice(0, 8)}
+              title={issue.title}
+              onClick={() => navigate(`/issues/${issue.id}`)}
+              leading={
+                <>
+                  <PriorityIcon priority={issue.priority} />
+                  <StatusIcon status={issue.status} />
+                </>
+              }
+              trailing={
+                <span className="text-xs text-muted-foreground">
+                  {formatDate(issue.createdAt)}
+                </span>
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,81 +1,122 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { costsApi } from "../api/costs";
 import { useCompany } from "../context/CompanyContext";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useApi } from "../hooks/useApi";
+import { EmptyState } from "../components/EmptyState";
 import { formatCents } from "../lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
+import { DollarSign } from "lucide-react";
 
 export function Costs() {
   const { selectedCompanyId } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Costs" }]);
+  }, [setBreadcrumbs]);
 
   const fetcher = useCallback(async () => {
-    if (!selectedCompanyId) {
-      return null;
-    }
-
+    if (!selectedCompanyId) return null;
     const [summary, byAgent, byProject] = await Promise.all([
       costsApi.summary(selectedCompanyId),
       costsApi.byAgent(selectedCompanyId),
       costsApi.byProject(selectedCompanyId),
     ]);
-
     return { summary, byAgent, byProject };
   }, [selectedCompanyId]);
 
   const { data, loading, error } = useApi(fetcher);
 
   if (!selectedCompanyId) {
-    return <p className="text-muted-foreground">Select a company first.</p>;
+    return <EmptyState icon={DollarSign} message="Select a company to view costs." />;
   }
 
   return (
-    <div className="space-y-5">
-      <h2 className="text-2xl font-bold">Costs</h2>
+    <div className="space-y-6">
+      <h2 className="text-lg font-semibold">Costs</h2>
 
-      {loading && <p className="text-muted-foreground">Loading...</p>}
-      {error && <p className="text-destructive">{error.message}</p>}
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {data && (
         <>
           <Card>
-            <CardContent className="p-4">
-              <p className="text-sm text-muted-foreground">Month to Date</p>
-              <p className="text-lg font-semibold mt-1">
-                {formatCents(data.summary.monthSpendCents)} / {formatCents(data.summary.monthBudgetCents)}
+            <CardContent className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">Month to Date</p>
+                <p className="text-sm text-muted-foreground">
+                  {data.summary.monthUtilizationPercent}% utilized
+                </p>
+              </div>
+              <p className="text-2xl font-bold">
+                {formatCents(data.summary.monthSpendCents)}{" "}
+                <span className="text-base font-normal text-muted-foreground">
+                  / {formatCents(data.summary.monthBudgetCents)}
+                </span>
               </p>
-              <p className="text-sm text-muted-foreground">Utilization {data.summary.monthUtilizationPercent}%</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4">
-              <h3 className="font-semibold mb-3">By Agent</h3>
-              <div className="space-y-2 text-sm">
-                {data.byAgent.map((row, idx) => (
-                  <div key={`${row.agentId ?? "na"}-${idx}`} className="flex justify-between">
-                    <span>{row.agentId}</span>
-                    <span>{formatCents(row.costCents)}</span>
-                  </div>
-                ))}
-                {data.byAgent.length === 0 && <p className="text-muted-foreground">No cost events yet.</p>}
+              <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    data.summary.monthUtilizationPercent > 90
+                      ? "bg-red-400"
+                      : data.summary.monthUtilizationPercent > 70
+                        ? "bg-yellow-400"
+                        : "bg-green-400"
+                  }`}
+                  style={{ width: `${Math.min(100, data.summary.monthUtilizationPercent)}%` }}
+                />
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-4">
-              <h3 className="font-semibold mb-3">By Project</h3>
-              <div className="space-y-2 text-sm">
-                {data.byProject.map((row, idx) => (
-                  <div key={`${row.projectId ?? "na"}-${idx}`} className="flex justify-between">
-                    <span>{row.projectId}</span>
-                    <span>{formatCents(row.costCents)}</span>
+          <div className="grid md:grid-cols-2 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="text-sm font-semibold mb-3">By Agent</h3>
+                {data.byAgent.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No cost events yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {data.byAgent.map((row, idx) => (
+                      <div
+                        key={`${row.agentId ?? "na"}-${idx}`}
+                        className="flex items-center justify-between text-sm"
+                      >
+                        <span className="font-mono text-xs truncate">
+                          {row.agentId ?? "Unattributed"}
+                        </span>
+                        <span className="font-medium">{formatCents(row.costCents)}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-                {data.byProject.length === 0 && <p className="text-muted-foreground">No project-attributed costs yet.</p>}
-              </div>
-            </CardContent>
-          </Card>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-4">
+                <h3 className="text-sm font-semibold mb-3">By Project</h3>
+                {data.byProject.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No project-attributed costs yet.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {data.byProject.map((row, idx) => (
+                      <div
+                        key={`${row.projectId ?? "na"}-${idx}`}
+                        className="flex items-center justify-between text-sm"
+                      >
+                        <span className="font-mono text-xs truncate">
+                          {row.projectId ?? "Unattributed"}
+                        </span>
+                        <span className="font-medium">{formatCents(row.costCents)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </>
       )}
     </div>
