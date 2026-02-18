@@ -36,6 +36,7 @@ session). The server mints the token, passes it in the adapter call, and
 accepts it back on API requests.
 
 **Token lifetime considerations:**
+
 - Coding agents can run for hours, so tokens can't expire too quickly.
 - Infinite-lived tokens are undesirable even in local contexts.
 - Use JWTs with a generous expiry (e.g. 48h) and overlap windows so a
@@ -52,7 +53,7 @@ add a `PAPERCLIP_API_KEY` (JWT) to the set of injected env vars.
 **Trust model:** A developer is setting up a remote or semi-remote agent and
 has shell access to it.
 
-**Approach:** Similar to `claude authkey` -- the developer runs a Paperclip CLI
+**Approach:** Similar to `claude setup-token` -- the developer runs a Paperclip CLI
 command that opens a browser URL for confirmation, then receives a token that
 gets stored in the agent's config automatically.
 
@@ -97,6 +98,7 @@ agent receives an onboarding URL and negotiates its own registration.
 to the agent via its declared communication channel.
 
 **Inspiration:**
+
 - [Allium self-registration](https://agents.allium.so/skills/skill.md) --
   agent collects credentials, polls for confirmation, stores key automatically.
 - [Allium x402](https://agents.allium.so/skills/x402-skill.md) -- multi-step
@@ -186,6 +188,7 @@ All self-registration requires approval. This is non-negotiable for security.
   with this link"). Even then, the invite link itself is a secret.
 
 On approval, the approver sets:
+
 - `reportsTo` -- who the new agent reports to in the chain of command
 - `role` -- the agent's role within the company
 - `budget` -- initial budget allocation
@@ -194,13 +197,13 @@ On approval, the approver sets:
 
 ## Implementation Priorities
 
-| Priority | Item | Notes |
-|----------|------|-------|
-| **P0** | Local adapter JWT injection | Unblocks zero-config local auth. Mint a JWT per heartbeat, pass as `PAPERCLIP_API_KEY`. |
-| **P1** | Invite link + onboarding endpoint | `POST /api/companies/:id/invites`, `GET /api/invite/:token`, `POST /api/invite/:token/register`. |
-| **P1** | Approval flow | UI + API for reviewing and approving pending agent registrations. |
-| **P2** | OpenClaw integration | First real external agent onboarding via invite link. |
-| **P3** | CLI auth flow | `paperclip auth login` for developer-managed remote agents. |
+| Priority | Item                              | Notes                                                                                            |
+| -------- | --------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **P0**   | Local adapter JWT injection       | Unblocks zero-config local auth. Mint a JWT per heartbeat, pass as `PAPERCLIP_API_KEY`.          |
+| **P1**   | Invite link + onboarding endpoint | `POST /api/companies/:id/invites`, `GET /api/invite/:token`, `POST /api/invite/:token/register`. |
+| **P1**   | Approval flow                     | UI + API for reviewing and approving pending agent registrations.                                |
+| **P2**   | OpenClaw integration              | First real external agent onboarding via invite link.                                            |
+| **P3**   | CLI auth flow                     | `paperclip auth login` for developer-managed remote agents.                                      |
 
 ---
 
