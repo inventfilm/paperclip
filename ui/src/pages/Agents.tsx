@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
@@ -30,12 +30,27 @@ const roleLabels: Record<string, string> = {
 
 type FilterTab = "all" | "active" | "paused" | "error";
 
+function matchesFilter(status: string, tab: FilterTab): boolean {
+  if (tab === "all") return true;
+  if (tab === "active") return status === "active" || status === "running" || status === "idle";
+  if (tab === "paused") return status === "paused";
+  if (tab === "error") return status === "error" || status === "terminated";
+  return true;
+}
+
 function filterAgents(agents: Agent[], tab: FilterTab): Agent[] {
-  if (tab === "all") return agents;
-  if (tab === "active") return agents.filter((a) => a.status === "active" || a.status === "running" || a.status === "idle");
-  if (tab === "paused") return agents.filter((a) => a.status === "paused");
-  if (tab === "error") return agents.filter((a) => a.status === "error" || a.status === "terminated");
-  return agents;
+  return agents.filter((a) => matchesFilter(a.status, tab));
+}
+
+function filterOrgTree(nodes: OrgNode[], tab: FilterTab): OrgNode[] {
+  if (tab === "all") return nodes;
+  return nodes.reduce<OrgNode[]>((acc, node) => {
+    const filteredReports = filterOrgTree(node.reports, tab);
+    if (matchesFilter(node.status, tab) || filteredReports.length > 0) {
+      acc.push({ ...node, reports: filteredReports });
+    }
+    return acc;
+  }, []);
 }
 
 export function Agents() {
@@ -44,7 +59,7 @@ export function Agents() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const [tab, setTab] = useState<FilterTab>("all");
-  const [view, setView] = useState<"list" | "org">("list");
+  const [view, setView] = useState<"list" | "org">("org");
 
   const { data: agents, isLoading, error } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -58,6 +73,12 @@ export function Agents() {
     enabled: !!selectedCompanyId && view === "org",
   });
 
+  const agentMap = useMemo(() => {
+    const map = new Map<string, Agent>();
+    for (const a of agents ?? []) map.set(a.id, a);
+    return map;
+  }, [agents]);
+
   useEffect(() => {
     setBreadcrumbs([{ label: "Agents" }]);
   }, [setBreadcrumbs]);
@@ -67,11 +88,22 @@ export function Agents() {
   }
 
   const filtered = filterAgents(agents ?? [], tab);
+  const filteredOrg = filterOrgTree(orgTree ?? [], tab);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Agents</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg font-semibold">Agents</h2>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+            <TabsList>
+              <TabsTrigger value="all">All{agents ? ` (${agents.length})` : ""}</TabsTrigger>
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="paused">Paused</TabsTrigger>
+              <TabsTrigger value="error">Error</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
         <div className="flex items-center gap-2">
           {/* View toggle */}
           <div className="flex items-center border border-border rounded-md">
@@ -100,17 +132,6 @@ export function Agents() {
           </Button>
         </div>
       </div>
-
-      {view === "list" && (
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList>
-            <TabsTrigger value="all">All{agents ? ` (${agents.length})` : ""}</TabsTrigger>
-            <TabsTrigger value="active">Active</TabsTrigger>
-            <TabsTrigger value="paused">Paused</TabsTrigger>
-            <TabsTrigger value="error">Error</TabsTrigger>
-          </TabsList>
-        </Tabs>
-      )}
 
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
@@ -199,12 +220,18 @@ export function Agents() {
       )}
 
       {/* Org chart view */}
-      {view === "org" && orgTree && orgTree.length > 0 && (
-        <div className="py-4">
-          {orgTree.map((node) => (
-            <OrgTreeNode key={node.id} node={node} depth={0} navigate={navigate} />
+      {view === "org" && filteredOrg.length > 0 && (
+        <div className="border border-border rounded-md py-1">
+          {filteredOrg.map((node) => (
+            <OrgTreeNode key={node.id} node={node} depth={0} navigate={navigate} agentMap={agentMap} />
           ))}
         </div>
+      )}
+
+      {view === "org" && orgTree && orgTree.length > 0 && filteredOrg.length === 0 && (
+        <p className="text-sm text-muted-foreground text-center py-8">
+          No agents match the selected filter.
+        </p>
       )}
 
       {view === "org" && orgTree && orgTree.length === 0 && (
@@ -220,19 +247,30 @@ function OrgTreeNode({
   node,
   depth,
   navigate,
+  agentMap,
 }: {
   node: OrgNode;
   depth: number;
   navigate: (path: string) => void;
+  agentMap: Map<string, Agent>;
 }) {
+  const agent = agentMap.get(node.id);
+
   const statusColor =
-    node.status === "active" || node.status === "running"
-      ? "bg-green-400"
-      : node.status === "paused"
-        ? "bg-yellow-400"
-        : node.status === "error"
-          ? "bg-red-400"
-          : "bg-neutral-400";
+    node.status === "running"
+      ? "bg-cyan-400 animate-pulse"
+      : node.status === "active"
+        ? "bg-green-400"
+        : node.status === "paused"
+          ? "bg-yellow-400"
+          : node.status === "error"
+            ? "bg-red-400"
+            : "bg-neutral-400";
+
+  const budgetPct =
+    agent && agent.budgetMonthlyCents > 0
+      ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100)
+      : 0;
 
   return (
     <div style={{ paddingLeft: depth * 24 }}>
@@ -247,14 +285,46 @@ function OrgTreeNode({
           <span className="text-sm font-medium">{node.name}</span>
           <span className="text-xs text-muted-foreground ml-2">
             {roleLabels[node.role] ?? node.role}
+            {agent?.title ? ` - ${agent.title}` : ""}
           </span>
         </div>
-        <StatusBadge status={node.status} />
+        <div className="flex items-center gap-3 shrink-0">
+          {agent && (
+            <>
+              <span className="text-xs text-muted-foreground font-mono">
+                {adapterLabels[agent.adapterType] ?? agent.adapterType}
+              </span>
+              {agent.lastHeartbeatAt && (
+                <span className="text-xs text-muted-foreground">
+                  {relativeTime(agent.lastHeartbeatAt)}
+                </span>
+              )}
+              <div className="flex items-center gap-1.5">
+                <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full ${
+                      budgetPct > 90
+                        ? "bg-red-400"
+                        : budgetPct > 70
+                          ? "bg-yellow-400"
+                          : "bg-green-400"
+                    }`}
+                    style={{ width: `${Math.min(100, budgetPct)}%` }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground w-20 text-right">
+                  {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)}
+                </span>
+              </div>
+            </>
+          )}
+          <StatusBadge status={node.status} />
+        </div>
       </button>
       {node.reports && node.reports.length > 0 && (
         <div className="border-l border-border/50 ml-4">
           {node.reports.map((child) => (
-            <OrgTreeNode key={child.id} node={child} depth={depth + 1} navigate={navigate} />
+            <OrgTreeNode key={child.id} node={child} depth={depth + 1} navigate={navigate} agentMap={agentMap} />
           ))}
         </div>
       )}
