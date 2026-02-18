@@ -175,6 +175,7 @@ export async function runChildProcess(
     graceSec: number;
     onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
     onLogError?: (err: unknown, runId: string, message: string) => void;
+    stdin?: string;
   },
 ): Promise<RunProcessResult> {
   const onLogError = opts.onLogError ?? ((err, id, msg) => console.warn({ err, runId: id }, msg));
@@ -185,8 +186,13 @@ export async function runChildProcess(
       cwd: opts.cwd,
       env: mergedEnv,
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [opts.stdin != null ? "pipe" : "ignore", "pipe", "pipe"],
     });
+
+    if (opts.stdin != null && child.stdin) {
+      child.stdin.write(opts.stdin);
+      child.stdin.end();
+    }
 
     runningProcesses.set(runId, { child, graceSec: opts.graceSec });
 

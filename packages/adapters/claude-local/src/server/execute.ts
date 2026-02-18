@@ -1,3 +1,7 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip/adapter-utils";
 import type { RunProcessResult } from "@paperclip/adapter-utils/server-utils";
 import {
@@ -16,6 +20,32 @@ import {
   runChildProcess,
 } from "@paperclip/adapter-utils/server-utils";
 import { parseClaudeStreamJson, describeClaudeFailure, isClaudeUnknownSessionError } from "./parse.js";
+
+const PAPERCLIP_SKILLS_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../../../skills",
+);
+
+/**
+ * Create a tmpdir with `.claude/skills/` containing symlinks to skills from
+ * the repo's `skills/` directory, so `--add-dir` makes Claude Code discover
+ * them as proper registered skills.
+ */
+async function buildSkillsDir(): Promise<string> {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skills-"));
+  const target = path.join(tmp, ".claude", "skills");
+  await fs.mkdir(target, { recursive: true });
+  const entries = await fs.readdir(PAPERCLIP_SKILLS_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      await fs.symlink(
+        path.join(PAPERCLIP_SKILLS_DIR, entry.name),
+        path.join(target, entry.name),
+      );
+    }
+  }
+  return tmp;
+}
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, runtime, config, context, onLog, onMeta } = ctx;
@@ -47,6 +77,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (fromExtraArgs.length > 0) return fromExtraArgs;
     return asStringArray(config.args);
   })();
+  const skillsDir = await buildSkillsDir();
 
   const sessionId = runtime.sessionId;
   const template = sessionId ? promptTemplate : bootstrapTemplate;
@@ -58,11 +89,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   });
 
   const buildClaudeArgs = (resumeSessionId: string | null) => {
-    const args = ["--print", prompt, "--output-format", "stream-json", "--verbose"];
+    const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
     if (resumeSessionId) args.push("--resume", resumeSessionId);
     if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
     if (model) args.push("--model", model);
     if (maxTurns > 0) args.push("--max-turns", String(maxTurns));
+    args.push("--add-dir", skillsDir);
     if (extraArgs.length > 0) args.push(...extraArgs);
     return args;
   };
@@ -90,7 +122,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         adapterType: "claude_local",
         command,
         cwd,
-        commandArgs: args.map((value, idx) => (idx === 1 ? `<prompt ${prompt.length} chars>` : value)),
+        commandArgs: args,
         env: redactEnvForLogs(env),
         prompt,
         context,
@@ -100,6 +132,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env,
+      stdin: prompt,
       timeoutSec,
       graceSec,
       onLog,
@@ -177,21 +210,25 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   };
 
-  const initial = await runAttempt(sessionId ?? null);
-  if (
-    sessionId &&
-    !initial.proc.timedOut &&
-    (initial.proc.exitCode ?? 0) !== 0 &&
-    initial.parsed &&
-    isClaudeUnknownSessionError(initial.parsed)
-  ) {
-    await onLog(
-      "stderr",
-      `[paperclip] Claude resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
-    );
-    const retry = await runAttempt(null);
-    return toAdapterResult(retry, { fallbackSessionId: null, clearSessionOnMissingSession: true });
-  }
+  try {
+    const initial = await runAttempt(sessionId ?? null);
+    if (
+      sessionId &&
+      !initial.proc.timedOut &&
+      (initial.proc.exitCode ?? 0) !== 0 &&
+      initial.parsed &&
+      isClaudeUnknownSessionError(initial.parsed)
+    ) {
+      await onLog(
+        "stderr",
+        `[paperclip] Claude resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+      );
+      const retry = await runAttempt(null);
+      return toAdapterResult(retry, { fallbackSessionId: null, clearSessionOnMissingSession: true });
+    }
 
-  return toAdapterResult(initial, { fallbackSessionId: runtime.sessionId });
+    return toAdapterResult(initial, { fallbackSessionId: runtime.sessionId });
+  } finally {
+    fs.rm(skillsDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
