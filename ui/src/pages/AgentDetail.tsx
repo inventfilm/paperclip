@@ -15,6 +15,7 @@ import { adapterLabels, roleLabels } from "../components/agent-config-primitives
 import { getUIAdapter, buildTranscript } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
+import { CopyText } from "../components/CopyText";
 import { EntityRow } from "../components/EntityRow";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
 import { cn } from "../lib/utils";
@@ -43,6 +44,7 @@ import {
   Eye,
   EyeOff,
   Copy,
+  ChevronRight,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState } from "@paperclip/shared";
@@ -660,6 +662,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
 function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: string }) {
   const queryClient = useQueryClient();
   const metrics = runMetrics(run);
+  const [sessionOpen, setSessionOpen] = useState(false);
 
   const cancelRun = useMutation({
     mutationFn: () => heartbeatsApi.cancel(run.id),
@@ -668,107 +671,124 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     },
   });
 
+  const timeFormat: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
+  const startTime = run.startedAt ? new Date(run.startedAt).toLocaleTimeString("en-US", timeFormat) : null;
+  const endTime = run.finishedAt ? new Date(run.finishedAt).toLocaleTimeString("en-US", timeFormat) : null;
+  const durationSec = run.startedAt && run.finishedAt
+    ? Math.round((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
+    : null;
+  const hasMetrics = metrics.input > 0 || metrics.output > 0 || metrics.cached > 0 || metrics.cost > 0;
+  const hasSession = !!(run.sessionIdBefore || run.sessionIdAfter);
+  const sessionChanged = run.sessionIdBefore && run.sessionIdAfter && run.sessionIdBefore !== run.sessionIdAfter;
+  const sessionId = run.sessionIdAfter || run.sessionIdBefore;
+  const hasNonZeroExit = run.exitCode !== null && run.exitCode !== 0;
+
   return (
-    <div className="p-4 space-y-4">
-      {/* Status timeline */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
-        <div>
-          <span className="text-muted-foreground">Status: </span>
-          <StatusBadge status={run.status} />
+    <div className="space-y-4">
+      {/* Run summary card */}
+      <div className="border border-border rounded-lg overflow-hidden">
+        <div className="flex">
+          {/* Left column: status + timing */}
+          <div className="flex-1 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <StatusBadge status={run.status} />
+              {(run.status === "running" || run.status === "queued") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive text-xs h-6 px-2"
+                  onClick={() => cancelRun.mutate()}
+                  disabled={cancelRun.isPending}
+                >
+                  {cancelRun.isPending ? "Cancelling..." : "Cancel"}
+                </Button>
+              )}
+            </div>
+            {startTime && (
+              <div className="space-y-0.5">
+                <div className="text-sm font-mono">
+                  {startTime}
+                  {endTime && <span className="text-muted-foreground"> &rarr; </span>}
+                  {endTime}
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {relativeTime(run.startedAt!)}
+                  {run.finishedAt && <> &rarr; {relativeTime(run.finishedAt)}</>}
+                </div>
+                {durationSec !== null && (
+                  <div className="text-xs text-muted-foreground">
+                    Duration: {durationSec >= 60 ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : `${durationSec}s`}
+                  </div>
+                )}
+              </div>
+            )}
+            {run.error && (
+              <div className="text-xs">
+                <span className="text-red-400">{run.error}</span>
+                {run.errorCode && <span className="text-muted-foreground ml-1">({run.errorCode})</span>}
+              </div>
+            )}
+            {hasNonZeroExit && (
+              <div className="text-xs text-red-400">
+                Exit code {run.exitCode}
+                {run.signal && <span className="text-muted-foreground ml-1">(signal: {run.signal})</span>}
+              </div>
+            )}
+          </div>
+
+          {/* Right column: metrics */}
+          {hasMetrics && (
+            <div className="border-l border-border p-4 grid grid-cols-2 gap-x-8 gap-y-3 content-center">
+              <div>
+                <div className="text-xs text-muted-foreground">Input</div>
+                <div className="text-sm font-medium font-mono">{formatTokens(metrics.input)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Output</div>
+                <div className="text-sm font-medium font-mono">{formatTokens(metrics.output)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Cached</div>
+                <div className="text-sm font-medium font-mono">{formatTokens(metrics.cached)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Cost</div>
+                <div className="text-sm font-medium font-mono">{metrics.cost > 0 ? `$${metrics.cost.toFixed(4)}` : "-"}</div>
+              </div>
+            </div>
+          )}
         </div>
-        {run.startedAt && (
-          <div>
-            <span className="text-muted-foreground">Started: </span>
-            <span>{formatDate(run.startedAt)} {new Date(run.startedAt).toLocaleTimeString()}</span>
-          </div>
-        )}
-        {run.finishedAt && (
-          <div>
-            <span className="text-muted-foreground">Finished: </span>
-            <span>{formatDate(run.finishedAt)} {new Date(run.finishedAt).toLocaleTimeString()}</span>
-          </div>
-        )}
-        {run.startedAt && run.finishedAt && (
-          <div>
-            <span className="text-muted-foreground">Duration: </span>
-            <span>{Math.round((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)}s</span>
+
+        {/* Collapsible session row */}
+        {hasSession && (
+          <div className="border-t border-border">
+            <button
+              className="flex items-center gap-1.5 w-full px-4 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setSessionOpen((v) => !v)}
+            >
+              <ChevronRight className={cn("h-3 w-3 transition-transform", sessionOpen && "rotate-90")} />
+              Session
+              {sessionChanged && <span className="text-yellow-400 ml-1">(changed)</span>}
+            </button>
+            {sessionOpen && (
+              <div className="px-4 pb-3 space-y-1 text-xs">
+                {run.sessionIdBefore && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground w-12">{sessionChanged ? "Before" : "ID"}</span>
+                    <CopyText text={run.sessionIdBefore} className="font-mono" />
+                  </div>
+                )}
+                {sessionChanged && run.sessionIdAfter && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground w-12">After</span>
+                    <CopyText text={run.sessionIdAfter} className="font-mono" />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
-
-      {/* Token breakdown */}
-      {(metrics.input > 0 || metrics.output > 0 || metrics.cached > 0 || metrics.cost > 0) && (
-        <div className="flex items-center gap-6 text-xs">
-          <div>
-            <span className="text-muted-foreground">Input: </span>
-            <span>{formatTokens(metrics.input)}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">Output: </span>
-            <span>{formatTokens(metrics.output)}</span>
-          </div>
-          {metrics.cached > 0 && (
-            <div>
-              <span className="text-muted-foreground">Cached: </span>
-              <span>{formatTokens(metrics.cached)}</span>
-            </div>
-          )}
-          {metrics.cost > 0 && (
-            <div>
-              <span className="text-muted-foreground">Cost: </span>
-              <span>${metrics.cost.toFixed(4)}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Session info */}
-      {(run.sessionIdBefore || run.sessionIdAfter) && (
-        <div className="flex items-center gap-6 text-xs">
-          {run.sessionIdBefore && (
-            <div>
-              <span className="text-muted-foreground">Session before: </span>
-              <button
-                className="font-mono hover:text-foreground transition-colors cursor-copy"
-                title={`Click to copy: ${run.sessionIdBefore}`}
-                onClick={() => navigator.clipboard.writeText(run.sessionIdBefore!)}
-              >
-                {run.sessionIdBefore.slice(0, 16)}...
-              </button>
-            </div>
-          )}
-          {run.sessionIdAfter && (
-            <div>
-              <span className="text-muted-foreground">Session after: </span>
-              <button
-                className="font-mono hover:text-foreground transition-colors cursor-copy"
-                title={`Click to copy: ${run.sessionIdAfter}`}
-                onClick={() => navigator.clipboard.writeText(run.sessionIdAfter!)}
-              >
-                {run.sessionIdAfter.slice(0, 16)}...
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Error */}
-      {run.error && (
-        <div className="text-xs">
-          <span className="text-red-400">Error: </span>
-          <span className="text-red-300">{run.error}</span>
-          {run.errorCode && <span className="text-muted-foreground ml-2">({run.errorCode})</span>}
-        </div>
-      )}
-
-      {/* Exit info */}
-      {run.exitCode !== null && (
-        <div className="text-xs">
-          <span className="text-muted-foreground">Exit code: </span>
-          <span>{run.exitCode}</span>
-          {run.signal && <span className="text-muted-foreground ml-2">(signal: {run.signal})</span>}
-        </div>
-      )}
 
       {/* stderr excerpt for failed runs */}
       {run.stderrExcerpt && (
@@ -785,21 +805,6 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           <pre className="bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
         </div>
       )}
-
-      {/* Cancel button for running */}
-      {(run.status === "running" || run.status === "queued") && (
-        <Button
-          variant="outline"
-          size="sm"
-          className="text-destructive border-destructive/30"
-          onClick={() => cancelRun.mutate()}
-          disabled={cancelRun.isPending}
-        >
-          {cancelRun.isPending ? "Cancelling..." : "Cancel Run"}
-        </Button>
-      )}
-
-      <Separator />
 
       {/* Log viewer */}
       <LogViewer run={run} adapterType={adapterType} />
@@ -865,10 +870,12 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     }
   }, [initialEvents]);
 
-  // Auto-scroll
+  // Auto-scroll only for live runs
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events, logLines]);
+    if (isLive) {
+      logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [events, logLines, isLive]);
 
   // Fetch persisted shell log
   useEffect(() => {
@@ -897,6 +904,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
         let first = true;
         while (!cancelled) {
           const result = await heartbeatsApi.log(run.id, offset, first ? firstLimit : 256_000);
+          if (cancelled) break;
           appendLogContent(result.content, result.nextOffset === undefined);
           const next = result.nextOffset ?? offset + result.content.length;
           setLogOffset(next);
@@ -1058,28 +1066,43 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
         )}
         {transcript.map((entry, idx) => {
           const time = new Date(entry.ts).toLocaleTimeString("en-US", { hour12: false });
+          const grid = "grid grid-cols-[auto_auto_1fr] gap-x-3 items-baseline";
+          const tsCell = "text-neutral-600 select-none w-16";
+          const lblCell = "w-20";
+          const contentCell = "min-w-0 whitespace-pre-wrap break-words";
+          const expandCell = "col-span-full md:col-start-3 md:col-span-1";
+
           if (entry.kind === "assistant") {
             return (
-              <div key={`${entry.ts}-assistant-${idx}`} className="space-y-1 py-0.5">
-                <div className="flex gap-2">
-                  <span className="text-neutral-600 shrink-0 select-none w-16">{time}</span>
-                  <span className="shrink-0 w-14 text-green-300">assistant</span>
-                  <span className="whitespace-pre-wrap break-all text-green-100">{entry.text}</span>
-                </div>
+              <div key={`${entry.ts}-assistant-${idx}`} className={cn(grid, "py-0.5")}>
+                <span className={tsCell}>{time}</span>
+                <span className={cn(lblCell, "text-green-300")}>assistant</span>
+                <span className={cn(contentCell, "text-green-100")}>{entry.text}</span>
               </div>
             );
           }
 
           if (entry.kind === "tool_call") {
             return (
-              <div key={`${entry.ts}-tool-${idx}`} className="space-y-1 py-0.5">
-                <div className="flex gap-2">
-                  <span className="text-neutral-600 shrink-0 select-none w-16">{time}</span>
-                  <span className="shrink-0 w-14 text-yellow-300">tool</span>
-                  <span className="text-yellow-100">{entry.name}</span>
-                </div>
-                <pre className="ml-[74px] bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-200">
+              <div key={`${entry.ts}-tool-${idx}`} className={cn(grid, "gap-y-1 py-0.5")}>
+                <span className={tsCell}>{time}</span>
+                <span className={cn(lblCell, "text-yellow-300")}>tool_call</span>
+                <span className="text-yellow-100 min-w-0">{entry.name}</span>
+                <pre className={cn(expandCell, "bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-200")}>
                   {JSON.stringify(entry.input, null, 2)}
+                </pre>
+              </div>
+            );
+          }
+
+          if (entry.kind === "tool_result") {
+            return (
+              <div key={`${entry.ts}-toolres-${idx}`} className={cn(grid, "gap-y-1 py-0.5")}>
+                <span className={tsCell}>{time}</span>
+                <span className={cn(lblCell, entry.isError ? "text-red-300" : "text-purple-300")}>tool_result</span>
+                {entry.isError ? <span className="text-red-400 min-w-0">error</span> : <span />}
+                <pre className={cn(expandCell, "bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-300 max-h-60 overflow-y-auto")}>
+                  {entry.content}
                 </pre>
               </div>
             );
@@ -1087,32 +1110,30 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 
           if (entry.kind === "init") {
             return (
-              <div key={`${entry.ts}-init-${idx}`} className="flex gap-2">
-                <span className="text-neutral-600 shrink-0 select-none w-16">{time}</span>
-                <span className="shrink-0 w-14 text-blue-300">init</span>
-                <span className="text-blue-100">Claude initialized (model: {entry.model}{entry.sessionId ? `, session: ${entry.sessionId}` : ""})</span>
+              <div key={`${entry.ts}-init-${idx}`} className={grid}>
+                <span className={tsCell}>{time}</span>
+                <span className={cn(lblCell, "text-blue-300")}>init</span>
+                <span className={cn(contentCell, "text-blue-100")}>model: {entry.model}{entry.sessionId ? `, session: ${entry.sessionId}` : ""}</span>
               </div>
             );
           }
 
           if (entry.kind === "result") {
             return (
-              <div key={`${entry.ts}-result-${idx}`} className="space-y-1 py-0.5">
-                <div className="flex gap-2">
-                  <span className="text-neutral-600 shrink-0 select-none w-16">{time}</span>
-                  <span className="shrink-0 w-14 text-cyan-300">result</span>
-                  <span className="text-cyan-100">
-                    tokens in={formatTokens(entry.inputTokens)} out={formatTokens(entry.outputTokens)} cached={formatTokens(entry.cachedTokens)} cost=${entry.costUsd.toFixed(6)}
-                  </span>
-                </div>
+              <div key={`${entry.ts}-result-${idx}`} className={cn(grid, "gap-y-1 py-0.5")}>
+                <span className={tsCell}>{time}</span>
+                <span className={cn(lblCell, "text-cyan-300")}>result</span>
+                <span className={cn(contentCell, "text-cyan-100")}>
+                  tokens in={formatTokens(entry.inputTokens)} out={formatTokens(entry.outputTokens)} cached={formatTokens(entry.cachedTokens)} cost=${entry.costUsd.toFixed(6)}
+                </span>
                 {(entry.subtype || entry.isError || entry.errors.length > 0) && (
-                  <div className="ml-[74px] text-red-300 whitespace-pre-wrap break-all">
+                  <div className={cn(expandCell, "text-red-300 whitespace-pre-wrap break-words")}>
                     subtype={entry.subtype || "unknown"} is_error={entry.isError ? "true" : "false"}
                     {entry.errors.length > 0 ? ` errors=${entry.errors.join(" | ")}` : ""}
                   </div>
                 )}
                 {entry.text && (
-                  <div className="ml-[74px] whitespace-pre-wrap break-all text-neutral-100">{entry.text}</div>
+                  <div className={cn(expandCell, "whitespace-pre-wrap break-words text-neutral-100")}>{entry.text}</div>
                 )}
               </div>
             );
@@ -1126,18 +1147,12 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           const color =
             entry.kind === "stderr" ? "text-red-300" :
             entry.kind === "system" ? "text-blue-300" :
-            "text-foreground";
+            "text-neutral-500";
           return (
-            <div key={`${entry.ts}-raw-${idx}`} className="flex gap-2">
-              <span className="text-neutral-600 shrink-0 select-none w-16">
-                {time}
-              </span>
-              <span className={cn("shrink-0 w-14", color)}>
-                {label}
-              </span>
-              <span className={cn("whitespace-pre-wrap break-all", color)}>
-                {rawText}
-              </span>
+            <div key={`${entry.ts}-raw-${idx}`} className={grid}>
+              <span className={tsCell}>{time}</span>
+              <span className={cn(lblCell, color)}>{label}</span>
+              <span className={cn(contentCell, color)}>{rawText}</span>
             </div>
           )
         })}
