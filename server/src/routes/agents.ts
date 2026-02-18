@@ -11,6 +11,45 @@ import { agentService, heartbeatService, logActivity } from "../services/index.j
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { listAdapterModels } from "../adapters/index.js";
 
+const SECRET_PAYLOAD_KEY_RE =
+  /(api[-_]?key|access[-_]?token|auth(?:_?token)?|authorization|bearer|secret|passwd|password|credential|jwt|private[-_]?key|cookie|connectionstring)/i;
+const JWT_VALUE_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/;
+const REDACTED_EVENT_VALUE = "***REDACTED***";
+
+function sanitizeValue(value: unknown): unknown {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(sanitizeValue);
+  if (typeof value !== "object") return value;
+  if (value instanceof Date) return value;
+  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) return value;
+  return sanitizeRecord(value as Record<string, unknown>);
+}
+
+function sanitizeRecord(record: Record<string, unknown>): Record<string, unknown> {
+  const redacted: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    const isSensitiveKey = SECRET_PAYLOAD_KEY_RE.test(key);
+    if (isSensitiveKey) {
+      redacted[key] = REDACTED_EVENT_VALUE;
+      continue;
+    }
+    if (typeof value === "string" && JWT_VALUE_RE.test(value)) {
+      redacted[key] = REDACTED_EVENT_VALUE;
+      continue;
+    }
+    redacted[key] = sanitizeValue(value);
+  }
+  return redacted;
+}
+
+function redactEventPayload(payload: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!payload) return null;
+  if (Array.isArray(payload) || typeof payload !== "object") {
+    return payload as Record<string, unknown>;
+  }
+  return sanitizeRecord(payload);
+}
+
 export function agentRoutes(db: Db) {
   const router = Router();
   const svc = agentService(db);
@@ -407,7 +446,11 @@ export function agentRoutes(db: Db) {
     const afterSeq = Number(req.query.afterSeq ?? 0);
     const limit = Number(req.query.limit ?? 200);
     const events = await heartbeat.listEvents(runId, Number.isFinite(afterSeq) ? afterSeq : 0, Number.isFinite(limit) ? limit : 200);
-    res.json(events);
+    const redactedEvents = events.map((event) => ({
+      ...event,
+      payload: redactEventPayload(event.payload),
+    }));
+    res.json(redactedEvents);
   });
 
   router.get("/heartbeat-runs/:runId/log", async (req, res) => {

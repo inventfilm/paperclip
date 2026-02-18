@@ -7,6 +7,7 @@ export interface CheckResult {
   repairHint?: string;
 }
 
+export { agentJwtSecretCheck } from "./agent-jwt-secret-check.js";
 export { configCheck } from "./config-check.js";
 export { databaseCheck } from "./database-check.js";
 export { llmCheck } from "./llm-check.js";

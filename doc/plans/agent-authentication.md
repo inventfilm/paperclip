@@ -205,6 +205,10 @@ On approval, the approver sets:
 | **P2**   | OpenClaw integration              | First real external agent onboarding via invite link.                                            |
 | **P3**   | CLI auth flow                     | `paperclip auth login` for developer-managed remote agents.                                      |
 
+## P0 Implementation Plan
+
+See [`doc/plans/agent-authentication-implementation.md`](./agent-authentication-implementation.md) for the P0 local JWT execution plan.
+
 ---
 
 ## Open Questions

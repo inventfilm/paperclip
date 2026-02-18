@@ -10,12 +10,14 @@ const claudeLocalAdapter: ServerAdapterModule = {
   type: "claude_local",
   execute: claudeExecute,
   models: claudeModels,
+  supportsLocalAgentJwt: true,
 };
 
 const codexLocalAdapter: ServerAdapterModule = {
   type: "codex_local",
   execute: codexExecute,
   models: codexModels,
+  supportsLocalAgentJwt: true,
 };
 
 const adaptersByType = new Map<string, ServerAdapterModule>(

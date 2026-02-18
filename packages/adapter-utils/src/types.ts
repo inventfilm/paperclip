@@ -57,11 +57,13 @@ export interface AdapterExecutionContext {
   context: Record<string, unknown>;
   onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
   onMeta?: (meta: AdapterInvocationMeta) => Promise<void>;
+  authToken?: string;
 }
 
 export interface ServerAdapterModule {
   type: string;
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
+  supportsLocalAgentJwt?: boolean;
   models?: { id: string; label: string }[];
 }
 
@@ -71,6 +73,8 @@ export interface ServerAdapterModule {
 
 export type TranscriptEntry =
   | { kind: "assistant"; ts: string; text: string }
+  | { kind: "thinking"; ts: string; text: string }
+  | { kind: "user"; ts: string; text: string }
   | { kind: "tool_call"; ts: string; name: string; input: unknown }
   | { kind: "tool_result"; ts: string; toolUseId: string; content: string; isError: boolean }
   | { kind: "init"; ts: string; model: string; sessionId: string }

@@ -48,7 +48,7 @@ async function buildSkillsDir(): Promise<string> {
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
-  const { runId, agent, runtime, config, context, onLog, onMeta } = ctx;
+  const { runId, agent, runtime, config, context, onLog, onMeta, authToken } = ctx;
 
   const promptTemplate = asString(
     config.promptTemplate,
@@ -63,9 +63,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const cwd = asString(config.cwd, process.cwd());
   await ensureAbsoluteDirectory(cwd);
   const envConfig = parseObject(config.env);
+  const hasExplicitApiKey =
+    typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
   for (const [k, v] of Object.entries(envConfig)) {
     if (typeof v === "string") env[k] = v;
+  }
+  if (!hasExplicitApiKey && authToken) {
+    env.PAPERCLIP_API_KEY = authToken;
   }
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
   await ensureCommandResolvable(command, cwd, runtimeEnv);

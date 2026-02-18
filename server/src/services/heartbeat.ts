@@ -14,6 +14,7 @@ import { publishLiveEvent } from "./live-events.js";
 import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
 import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type { AdapterExecutionResult, AdapterInvocationMeta } from "../adapters/index.js";
+import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
@@ -170,9 +171,7 @@ export function heartbeatService(db: Db) {
     return {
       enabled: asBoolean(heartbeat.enabled, true),
       intervalSec: Math.max(0, asNumber(heartbeat.intervalSec, 0)),
-      wakeOnAssignment: asBoolean(heartbeat.wakeOnAssignment, true),
-      wakeOnOnDemand: asBoolean(heartbeat.wakeOnOnDemand, true),
-      wakeOnAutomation: asBoolean(heartbeat.wakeOnAutomation, true),
+      wakeOnDemand: asBoolean(heartbeat.wakeOnDemand ?? heartbeat.wakeOnAssignment ?? heartbeat.wakeOnOnDemand ?? heartbeat.wakeOnAutomation, true),
     };
   }
 
@@ -385,6 +384,20 @@ export function heartbeatService(db: Db) {
       };
 
       const adapter = getServerAdapter(agent.adapterType);
+      const authToken = adapter.supportsLocalAgentJwt
+        ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
+        : null;
+      if (adapter.supportsLocalAgentJwt && !authToken) {
+        logger.warn(
+          {
+            companyId: agent.companyId,
+            agentId: agent.id,
+            runId: run.id,
+            adapterType: agent.adapterType,
+          },
+          "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
+        );
+      }
       const adapterResult = await adapter.execute({
         runId: run.id,
         agent,
@@ -393,6 +406,7 @@ export function heartbeatService(db: Db) {
         context,
         onLog,
         onMeta: onAdapterMeta,
+        authToken: authToken ?? undefined,
       });
 
       let outcome: "succeeded" | "failed" | "cancelled" | "timed_out";
@@ -559,16 +573,8 @@ export function heartbeatService(db: Db) {
       await writeSkippedRequest("heartbeat.disabled");
       return null;
     }
-    if (source === "assignment" && !policy.wakeOnAssignment) {
-      await writeSkippedRequest("heartbeat.wakeOnAssignment.disabled");
-      return null;
-    }
-    if (source === "automation" && !policy.wakeOnAutomation) {
-      await writeSkippedRequest("heartbeat.wakeOnAutomation.disabled");
-      return null;
-    }
-    if (source === "on_demand" && triggerDetail === "ping" && !policy.wakeOnOnDemand) {
-      await writeSkippedRequest("heartbeat.wakeOnOnDemand.disabled");
+    if (source !== "timer" && !policy.wakeOnDemand) {
+      await writeSkippedRequest("heartbeat.wakeOnDemand.disabled");
       return null;
     }
 

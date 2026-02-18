@@ -1,4 +1,12 @@
 import { readConfigFile } from "./config-file.js";
+import { existsSync } from "node:fs";
+import { config as loadDotenv } from "dotenv";
+import { resolvePaperclipEnvPath } from "./paths.js";
+
+const PAPERCLIP_ENV_FILE_PATH = resolvePaperclipEnvPath();
+if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
+  loadDotenv({ path: PAPERCLIP_ENV_FILE_PATH, override: false, quiet: true });
+}
 
 type DatabaseMode = "embedded-postgres" | "postgres";
 
@@ -33,7 +41,7 @@ export function loadConfig(): Config {
     serveUi:
       process.env.SERVE_UI !== undefined
         ? process.env.SERVE_UI === "true"
-        : fileConfig?.server.serveUi ?? false,
+        : fileConfig?.server.serveUi ?? true,
     uiDevMiddleware: process.env.PAPERCLIP_UI_DEV_MIDDLEWARE === "true",
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),

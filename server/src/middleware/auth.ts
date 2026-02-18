@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import type { RequestHandler } from "express";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
-import { agentApiKeys } from "@paperclip/db";
+import { agentApiKeys, agents } from "@paperclip/db";
+import { verifyLocalAgentJwt } from "../agent-auth-jwt.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -32,6 +33,34 @@ export function actorMiddleware(db: Db): RequestHandler {
       .then((rows) => rows[0] ?? null);
 
     if (!key) {
+      const claims = verifyLocalAgentJwt(token);
+      if (!claims) {
+        next();
+        return;
+      }
+
+      const agentRecord = await db
+        .select()
+        .from(agents)
+        .where(eq(agents.id, claims.sub))
+        .then((rows) => rows[0] ?? null);
+
+      if (!agentRecord || agentRecord.companyId !== claims.company_id) {
+        next();
+        return;
+      }
+
+      if (agentRecord.status === "terminated") {
+        next();
+        return;
+      }
+
+      req.actor = {
+        type: "agent",
+        agentId: claims.sub,
+        companyId: claims.company_id,
+        keyId: undefined,
+      };
       next();
       return;
     }

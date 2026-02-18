@@ -1,7 +1,8 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { configExists, readConfig, writeConfig } from "../config/store.js";
+import { configExists, readConfig, resolveConfigPath, writeConfig } from "../config/store.js";
 import type { PaperclipConfig } from "../config/schema.js";
+import { ensureAgentJwtSecret, resolveAgentJwtEnvFile } from "../config/env.js";
 import { promptDatabase } from "../prompts/database.js";
 import { promptLlm } from "../prompts/llm.js";
 import { promptLogging } from "../prompts/logging.js";
@@ -12,24 +13,17 @@ export async function onboard(opts: { config?: string }): Promise<void> {
 
   // Check for existing config
   if (configExists(opts.config)) {
+    const configPath = resolveConfigPath(opts.config);
+    p.log.message(pc.dim(`${configPath} exists, updating config`));
+
     try {
       readConfig(opts.config);
     } catch (err) {
       p.log.message(
         pc.yellow(
-          `Existing config appears invalid and will be replaced if you continue.\n${err instanceof Error ? err.message : String(err)}`,
+          `Existing config appears invalid and will be updated.\n${err instanceof Error ? err.message : String(err)}`,
         ),
       );
-    }
-
-    const overwrite = await p.confirm({
-      message: "A config file already exists. Overwrite it?",
-      initialValue: false,
-    });
-
-    if (p.isCancel(overwrite) || !overwrite) {
-      p.cancel("Keeping existing configuration.");
-      return;
     }
   }
 
@@ -104,6 +98,16 @@ export async function onboard(opts: { config?: string }): Promise<void> {
   p.log.step(pc.bold("Server"));
   const server = await promptServer();
 
+  const jwtSecret = ensureAgentJwtSecret();
+  const envFilePath = resolveAgentJwtEnvFile();
+  if (jwtSecret.created) {
+    p.log.success(`Created ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} in ${pc.dim(envFilePath)}`);
+  } else if (process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim()) {
+    p.log.info(`Using existing ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} from environment`);
+  } else {
+    p.log.info(`Using existing ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} in ${pc.dim(envFilePath)}`);
+  }
+
   // Assemble and write config
   const config: PaperclipConfig = {
     $meta: {
@@ -125,10 +129,14 @@ export async function onboard(opts: { config?: string }): Promise<void> {
       llm ? `LLM: ${llm.provider}` : "LLM: not configured",
       `Logging: ${logging.mode} → ${logging.logDir}`,
       `Server: port ${server.port}`,
+      `Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured`,
     ].join("\n"),
     "Configuration saved",
   );
 
   p.log.info(`Run ${pc.cyan("pnpm paperclip doctor")} to verify your setup.`);
+  p.log.message(
+    `Before starting Paperclip, export ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} from ${pc.dim(envFilePath)} (for example: ${pc.dim(`set -a; source ${envFilePath}; set +a`)})`,
+  );
   p.outro("You're all set!");
 }

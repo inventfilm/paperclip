@@ -1,8 +1,9 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import type { PaperclipConfig } from "../config/schema.js";
-import { readConfig } from "../config/store.js";
+import { readConfig, resolveConfigPath } from "../config/store.js";
 import {
+  agentJwtSecretCheck,
   configCheck,
   databaseCheck,
   llmCheck,
@@ -24,6 +25,7 @@ export async function doctor(opts: {
 }): Promise<void> {
   p.intro(pc.bgCyan(pc.black(" paperclip doctor ")));
 
+  const configPath = resolveConfigPath(opts.config);
   const results: CheckResult[] = [];
 
   // 1. Config check (must pass before others)
@@ -53,24 +55,30 @@ export async function doctor(opts: {
     return;
   }
 
-  // 2. Database check
-  const dbResult = await databaseCheck(config);
+  // 2. Agent JWT check
+  const jwtResult = agentJwtSecretCheck();
+  results.push(jwtResult);
+  printResult(jwtResult);
+  await maybeRepair(jwtResult, opts);
+
+  // 3. Database check
+  const dbResult = await databaseCheck(config, configPath);
   results.push(dbResult);
   printResult(dbResult);
   await maybeRepair(dbResult, opts);
 
-  // 3. LLM check
+  // 4. LLM check
   const llmResult = await llmCheck(config);
   results.push(llmResult);
   printResult(llmResult);
 
-  // 4. Log directory check
-  const logResult = logCheck(config);
+  // 5. Log directory check
+  const logResult = logCheck(config, configPath);
   results.push(logResult);
   printResult(logResult);
   await maybeRepair(logResult, opts);
 
-  // 5. Port check
+  // 6. Port check
   const portResult = await portCheck(config);
   results.push(portResult);
   printResult(portResult);

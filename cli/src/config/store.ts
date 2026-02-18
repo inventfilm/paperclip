@@ -3,11 +3,30 @@ import path from "node:path";
 import { paperclipConfigSchema, type PaperclipConfig } from "./schema.js";
 
 const DEFAULT_CONFIG_PATH = ".paperclip/config.json";
+const DEFAULT_CONFIG_BASENAME = "config.json";
+
+function findConfigFileFromAncestors(startDir: string): string | null {
+  const absoluteStartDir = path.resolve(startDir);
+  let currentDir = absoluteStartDir;
+
+  while (true) {
+    const candidate = path.resolve(currentDir, ".paperclip", DEFAULT_CONFIG_BASENAME);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+
+    const nextDir = path.resolve(currentDir, "..");
+    if (nextDir === currentDir) break;
+    currentDir = nextDir;
+  }
+
+  return null;
+}
 
 export function resolveConfigPath(overridePath?: string): string {
   if (overridePath) return path.resolve(overridePath);
   if (process.env.PAPERCLIP_CONFIG) return path.resolve(process.env.PAPERCLIP_CONFIG);
-  return path.resolve(process.cwd(), DEFAULT_CONFIG_PATH);
+  return findConfigFileFromAncestors(process.cwd()) ?? path.resolve(process.cwd(), DEFAULT_CONFIG_PATH);
 }
 
 function parseJson(filePath: string): unknown {

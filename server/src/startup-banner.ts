@@ -1,4 +1,7 @@
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { resolvePaperclipConfigPath, resolvePaperclipEnvPath } from "./paths.js";
+
+import { parse as parseEnvFileContents } from "dotenv";
 
 type UiMode = "none" | "static" | "vite-dev";
 
@@ -53,13 +56,44 @@ function redactConnectionString(raw: string): string {
   }
 }
 
+function resolveAgentJwtSecretStatus(
+  envFilePath: string,
+): {
+  status: "pass" | "warn";
+  message: string;
+} {
+  const envValue = process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
+  if (envValue) {
+    return {
+      status: "pass",
+      message: "set",
+    };
+  }
+
+  if (existsSync(envFilePath)) {
+    const parsed = parseEnvFileContents(readFileSync(envFilePath, "utf-8"));
+    const fileValue = typeof parsed.PAPERCLIP_AGENT_JWT_SECRET === "string" ? parsed.PAPERCLIP_AGENT_JWT_SECRET.trim() : "";
+    if (fileValue) {
+      return {
+        status: "warn",
+        message: `found in ${envFilePath} but not loaded`,
+      };
+    }
+  }
+
+  return {
+    status: "warn",
+    message: "missing (run `pnpm paperclip onboard`)",
+  };
+}
+
 export function printStartupBanner(opts: StartupBannerOptions): void {
   const baseUrl = `http://localhost:${opts.listenPort}`;
   const apiUrl = `${baseUrl}/api`;
   const uiUrl = opts.uiMode === "none" ? "disabled" : baseUrl;
-  const configPath = process.env.PAPERCLIP_CONFIG
-    ? resolve(process.env.PAPERCLIP_CONFIG)
-    : resolve(process.cwd(), ".paperclip/config.json");
+  const configPath = resolvePaperclipConfigPath();
+  const envFilePath = resolvePaperclipEnvPath();
+  const agentJwtSecret = resolveAgentJwtSecretStatus(envFilePath);
 
   const dbMode =
     opts.db.mode === "embedded-postgres"
@@ -105,11 +139,20 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     row("UI", uiUrl),
     row("Database", dbDetails),
     row("Migrations", opts.migrationSummary),
+    row(
+      "Agent JWT",
+      agentJwtSecret.status === "pass"
+        ? color(agentJwtSecret.message, "green")
+        : color(agentJwtSecret.message, "yellow"),
+    ),
     row("Heartbeat", heartbeat),
     row("Config", configPath),
+    agentJwtSecret.status === "warn"
+      ? color("  ───────────────────────────────────────────────────────", "yellow")
+      : null,
     color("  ───────────────────────────────────────────────────────", "blue"),
     "",
   ];
 
-  console.log(lines.join("\n"));
+  console.log(lines.filter((line): line is string => line !== null).join("\n"));
 }

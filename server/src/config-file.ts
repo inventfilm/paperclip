@@ -1,11 +1,9 @@
 import fs from "node:fs";
-import path from "node:path";
 import { paperclipConfigSchema, type PaperclipConfig } from "@paperclip/shared";
+import { resolvePaperclipConfigPath } from "./paths.js";
 
 export function readConfigFile(): PaperclipConfig | null {
-  const configPath = process.env.PAPERCLIP_CONFIG
-    ? path.resolve(process.env.PAPERCLIP_CONFIG)
-    : path.resolve(process.cwd(), ".paperclip/config.json");
+  const configPath = resolvePaperclipConfigPath();
 
   if (!fs.existsSync(configPath)) return null;
 
