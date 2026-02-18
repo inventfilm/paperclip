@@ -165,11 +165,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       {/* ---- Adapter type ---- */}
       <div className={cn("px-4 py-2.5", isCreate ? "border-t border-border" : "border-b border-border")}>
         <Field label="Adapter" hint={help.adapterType}>
-          {isCreate ? (
-            <AdapterTypeDropdown value={adapterType} onChange={(t) => set!({ adapterType: t })} />
-          ) : (
-            <div className="text-sm font-mono px-2.5 py-1.5">{adapterLabels[adapterType] ?? adapterType}</div>
-          )}
+          <AdapterTypeDropdown
+            value={adapterType}
+            onChange={(t) =>
+              isCreate ? set!({ adapterType: t }) : props.onSave({ adapterType: t })
+            }
+          />
         </Field>
       </div>
 

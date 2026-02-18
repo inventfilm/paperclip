@@ -1,24 +1,25 @@
-import { resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import pc from "picocolors";
-import { createDb, createPgliteDb } from "@paperclip/db";
-import { heartbeatService, subscribeCompanyLiveEvents } from "../../server/src/services/index.js";
-import { agents } from "@paperclip/db";
-import { eq } from "drizzle-orm";
+import type { Agent, HeartbeatRun, HeartbeatRunEvent, HeartbeatRunStatus } from "@paperclip/shared";
 import type { PaperclipConfig } from "../config/schema.js";
 import { readConfig } from "../config/store.js";
-import type { LiveEvent } from "@paperclip/shared";
 
 const HEARTBEAT_SOURCES = ["timer", "assignment", "on_demand", "automation"] as const;
 const HEARTBEAT_TRIGGERS = ["manual", "ping", "callback", "system"] as const;
-const TERMINAL_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+const TERMINAL_STATUSES = new Set<HeartbeatRunStatus>(["succeeded", "failed", "cancelled", "timed_out"]);
 const POLL_INTERVAL_MS = 200;
 
 type HeartbeatSource = (typeof HEARTBEAT_SOURCES)[number];
 type HeartbeatTrigger = (typeof HEARTBEAT_TRIGGERS)[number];
+type InvokedHeartbeat = HeartbeatRun | { status: "skipped" };
+interface HeartbeatRunEventRecord extends HeartbeatRunEvent {
+  type?: string | null;
+}
 
 interface HeartbeatRunOptions {
   config?: string;
   agentId: string;
+  apiBase?: string;
   source: string;
   trigger: string;
   timeoutMs: string;
@@ -35,34 +36,59 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
     : "manual";
 
   const config = readConfig(opts.config);
-  const db = await createHeartbeatDb(config);
+  const apiBase = getApiBase(config, opts.apiBase);
 
-  const [agent] = await db.select().from(agents).where(eq(agents.id, opts.agentId));
-  if (!agent) {
+  const agent = await requestJson<Agent>(`${apiBase}/api/agents/${opts.agentId}`, {
+    method: "GET",
+  });
+  if (!agent || typeof agent !== "object" || !agent.id) {
     console.error(pc.red(`Agent not found: ${opts.agentId}`));
     return;
   }
 
-  const heartbeat = heartbeatService(db);
+  const invokeRes = await requestJson<InvokedHeartbeat>(
+    `${apiBase}/api/agents/${opts.agentId}/wakeup`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: source,
+        triggerDetail: triggerDetail,
+      }),
+    },
+  );
+  if (!invokeRes) {
+    console.error(pc.red("Failed to invoke heartbeat"));
+    return;
+  }
+  if ((invokeRes as { status?: string }).status === "skipped") {
+    console.log(pc.yellow("Heartbeat invocation was skipped"));
+    return;
+  }
+
+  const run = invokeRes as HeartbeatRun;
+  console.log(pc.cyan(`Invoked heartbeat run ${run.id} for agent ${agent.name} (${agent.id})`));
+
+  const runId = run.id;
   let activeRunId: string | null = null;
-  const unsubscribe = subscribeCompanyLiveEvents(agent.companyId, (event: LiveEvent) => {
+  let lastEventSeq = 0;
+  let logOffset = 0;
+
+  const handleEvent = (event: HeartbeatRunEventRecord) => {
     const payload = normalizePayload(event.payload);
-    const payloadRunId = typeof payload.runId === "string" ? payload.runId : null;
-    const payloadAgentId = typeof payload.agentId === "string" ? payload.agentId : null;
-    if (!payloadRunId || (payloadAgentId && payloadAgentId !== agent.id)) return;
+    if (event.runId !== runId) return;
+    const eventType = typeof event.eventType === "string"
+      ? event.eventType
+      : typeof event.type === "string"
+      ? event.type
+      : "";
 
-    if (activeRunId === null) {
-      activeRunId = payloadRunId;
-    } else if (payloadRunId !== activeRunId) {
-      return;
-    }
-
-    if (event.type === "heartbeat.run.status") {
+    if (eventType === "heartbeat.run.status") {
       const status = typeof payload.status === "string" ? payload.status : null;
       if (status) {
         console.log(pc.blue(`[status] ${status}`));
       }
-    } else if (event.type === "heartbeat.run.log") {
+    } else if (eventType === "heartbeat.run.log") {
       const stream = typeof payload.stream === "string" ? payload.stream : "system";
       const chunk = typeof payload.chunk === "string" ? payload.chunk : "";
       if (!chunk) return;
@@ -73,26 +99,14 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
       } else {
         process.stdout.write(pc.yellow("[system] ") + chunk);
       }
-    } else if (event.type === "heartbeat.run.event") {
-      if (typeof payload.message === "string") {
-        console.log(pc.gray(`[event] ${payload.eventType ?? "heartbeat.run.event"}: ${payload.message}`));
-      }
+    } else if (typeof event.message === "string") {
+      console.log(pc.gray(`[event] ${eventType || "heartbeat.run.event"}: ${event.message}`));
     }
-  });
 
-  const run = await heartbeat.invoke(opts.agentId, source, {}, triggerDetail, {
-    actorType: "user",
-    actorId: "paperclip cli",
-  });
+    lastEventSeq = Math.max(lastEventSeq, event.seq ?? 0);
+  };
 
-  if (!run) {
-    console.error(pc.red("Heartbeat was not queued."));
-    return;
-  }
-
-  console.log(pc.cyan(`Invoked heartbeat run ${run.id} for agent ${agent.name} (${agent.id})`));
-
-  activeRunId = run.id;
+  activeRunId = runId;
   let finalStatus: string | null = null;
   let finalError: string | null = null;
 
@@ -102,37 +116,68 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
     return;
   }
 
-  try {
-    while (true) {
-      const currentRun = await heartbeat.getRun(activeRunId);
-      if (!currentRun) {
-        console.error(pc.red("Heartbeat run disappeared"));
-        break;
-      }
-
-      if (currentRun.status !== finalStatus && currentRun.status) {
-        finalStatus = currentRun.status;
-        const statusText = `Status: ${currentRun.status}`;
-        console.log(pc.blue(statusText));
-      }
-
-      if (TERMINAL_STATUSES.has(currentRun.status)) {
-        finalStatus = currentRun.status;
-        finalError = currentRun.error;
-        break;
-      }
-
-      if (deadline && Date.now() >= deadline) {
-        finalError = `CLI timed out after ${timeoutMs}ms`;
-        finalStatus = "timed_out";
-        console.error(pc.yellow(finalError));
-        break;
-      }
-
-      await sleep(POLL_INTERVAL_MS);
+  while (true) {
+      const events = await requestJson<HeartbeatRunEvent[]>(
+        `${apiBase}/api/heartbeat-runs/${activeRunId}/events?afterSeq=${lastEventSeq}&limit=100`,
+        { method: "GET" },
+      );
+    for (const event of Array.isArray(events) ? (events as HeartbeatRunEventRecord[]) : []) {
+      handleEvent(event);
     }
-  } finally {
-    unsubscribe();
+
+      const runList = (await requestJson<(HeartbeatRun | null)[]>(
+        `${apiBase}/api/companies/${agent.companyId}/heartbeat-runs?agentId=${agent.id}`,
+      )) || [];
+      const currentRun = runList.find((r) => r && r.id === activeRunId) ?? null;
+
+    if (!currentRun) {
+      console.error(pc.red("Heartbeat run disappeared"));
+      break;
+    }
+
+    const currentStatus = currentRun.status as HeartbeatRunStatus | undefined;
+    if (currentStatus !== finalStatus && currentStatus) {
+      finalStatus = currentStatus;
+      console.log(pc.blue(`Status: ${currentStatus}`));
+    }
+
+    if (currentStatus && TERMINAL_STATUSES.has(currentStatus)) {
+      finalStatus = currentRun.status;
+      finalError = currentRun.error;
+      break;
+    }
+
+    if (deadline && Date.now() >= deadline) {
+      finalError = `CLI timed out after ${timeoutMs}ms`;
+      finalStatus = "timed_out";
+      console.error(pc.yellow(finalError));
+      break;
+    }
+
+    const logResult = await requestJson<{ content: string; nextOffset?: number }>(
+      `${apiBase}/api/heartbeat-runs/${activeRunId}/log?offset=${logOffset}&limitBytes=16384`,
+      { method: "GET" },
+      { ignoreNotFound: true },
+    );
+    if (logResult && logResult.content) {
+      for (const chunk of logResult.content.split(/\r?\n/)) {
+        if (!chunk) continue;
+        const parsed = safeParseLogLine(chunk);
+        if (!parsed) continue;
+        if (parsed.stream === "stdout") {
+          process.stdout.write(pc.green("[stdout] ") + parsed.chunk);
+        } else if (parsed.stream === "stderr") {
+          process.stdout.write(pc.red("[stderr] ") + parsed.chunk);
+        } else {
+          process.stdout.write(pc.yellow("[system] ") + parsed.chunk);
+        }
+      }
+      if (typeof logResult.nextOffset === "number") {
+        logOffset = logResult.nextOffset;
+      }
+    }
+
+    await delay(POLL_INTERVAL_MS);
   }
 
   if (finalStatus) {
@@ -157,22 +202,65 @@ function normalizePayload(payload: unknown): Record<string, unknown> {
   return typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
 }
 
-async function createHeartbeatDb(config: PaperclipConfig | null) {
-  if (process.env.DATABASE_URL) {
-    return createDb(process.env.DATABASE_URL);
-  }
+function safeParseLogLine(line: string): { stream: "stdout" | "stderr" | "system"; chunk: string } | null {
+  try {
+    const parsed = JSON.parse(line) as { stream?: unknown; chunk?: unknown };
+    const stream =
+      parsed.stream === "stdout" || parsed.stream === "stderr" || parsed.stream === "system"
+        ? parsed.stream
+        : "system";
+    const chunk = typeof parsed.chunk === "string" ? parsed.chunk : "";
 
-  if (!config || config.database.mode === "pglite") {
-    return createPgliteDb(resolve(process.cwd(), config?.database.pgliteDataDir ?? "./data/pglite"));
+    if (!chunk) return null;
+    return { stream, chunk };
+  } catch {
+    return null;
   }
-
-  if (!config.database.connectionString) {
-    throw new Error("Postgres mode is configured but connectionString is missing");
-  }
-
-  return createDb(config.database.connectionString);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function getApiBase(config: PaperclipConfig | null, apiBaseOverride?: string): string {
+  if (apiBaseOverride?.trim()) return apiBaseOverride.trim();
+  const envBase = process.env.PAPERCLIP_API_URL?.trim();
+  if (envBase) return envBase;
+  const envHost = process.env.PAPERCLIP_SERVER_HOST?.trim() || "localhost";
+  const envPort = Number(process.env.PAPERCLIP_SERVER_PORT || config?.server?.port || 3100);
+  return `http://${envHost}:${Number.isFinite(envPort) && envPort > 0 ? envPort : 3100}`;
+}
+
+async function requestJson<T>(
+  url: string,
+  init?: RequestInit,
+  opts?: { ignoreNotFound?: boolean },
+): Promise<T | null> {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...init?.headers,
+      accept: "application/json",
+    },
+  });
+
+  if (!res.ok) {
+    if (opts?.ignoreNotFound && res.status === 404) {
+      return null;
+    }
+    const text = await safeReadText(res);
+    console.error(pc.red(`Request failed (${res.status}): ${text || res.statusText}`));
+    return null;
+  }
+
+  return (await res.json()) as T;
+}
+
+async function safeReadText(res: Response): Promise<string> {
+  try {
+    const text = await res.text();
+    if (!text) return "";
+    const trimmed = text.trim();
+    if (!trimmed) return "";
+    if (trimmed[0] === "{" || trimmed[0] === "[") return trimmed;
+    return trimmed;
+  } catch (_err) {
+    return "";
+  }
 }

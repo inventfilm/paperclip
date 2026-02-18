@@ -213,6 +213,16 @@ export function AgentDetail() {
               <button
                 className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
                 onClick={() => {
+                  navigator.clipboard.writeText(agent.id);
+                  setMoreOpen(false);
+                }}
+              >
+                <Copy className="h-3 w-3" />
+                Copy Agent ID
+              </button>
+              <button
+                className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
+                onClick={() => {
                   agentAction.mutate("resetSession");
                   setMoreOpen(false);
                 }}

@@ -41,6 +41,7 @@ heartbeat
   .description("Run one agent heartbeat and stream live logs")
   .requiredOption("-a, --agent-id <agentId>", "Agent ID to invoke")
   .option("-c, --config <path>", "Path to config file")
+  .option("--api-base <url>", "Base URL for the Paperclip server API")
   .option(
     "--source <source>",
     "Invocation source (timer | assignment | on_demand | automation)",
