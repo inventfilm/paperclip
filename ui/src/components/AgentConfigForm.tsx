@@ -37,6 +37,8 @@ export interface CreateConfigValues {
   dangerouslyBypassSandbox: boolean;
   command: string;
   args: string;
+  extraArgs: string;
+  envVars: string;
   url: string;
   bootstrapPrompt: string;
   maxTurnsPerRun: number;
@@ -54,6 +56,8 @@ export const defaultCreateValues: CreateConfigValues = {
   dangerouslyBypassSandbox: false,
   command: "",
   args: "",
+  extraArgs: "",
+  envVars: "",
   url: "",
   bootstrapPrompt: "",
   maxTurnsPerRun: 80,
@@ -65,6 +69,10 @@ export const defaultCreateValues: CreateConfigValues = {
 
 type AgentConfigFormProps = {
   adapterModels?: AdapterModel[];
+  onDirtyChange?: (dirty: boolean) => void;
+  onSaveActionChange?: (save: (() => void) | null) => void;
+  onCancelActionChange?: (cancel: (() => void) | null) => void;
+  hideInlineSave?: boolean;
 } & (
   | {
       mode: "create";
@@ -109,6 +117,51 @@ function isOverlayDirty(o: Overlay): boolean {
 /* ---- Shared input class ---- */
 const inputClass =
   "w-full rounded-md border border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40";
+
+function parseCommaArgs(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function formatArgList(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .join(", ");
+  }
+  return typeof value === "string" ? value : "";
+}
+
+function parseEnvVars(text: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    env[key] = value;
+  }
+  return env;
+}
+
+function formatEnvVars(value: unknown): string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return "";
+  return Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => typeof v === "string")
+    .map(([k, v]) => `${k}=${String(v)}`)
+    .join("\n");
+}
+
+function extractPickedDirectoryPath(handle: unknown): string | null {
+  if (typeof handle !== "object" || handle === null) return null;
+  const maybePath = (handle as { path?: unknown }).path;
+  return typeof maybePath === "string" && maybePath.length > 0 ? maybePath : null;
+}
 
 /* ---- Form ---- */
 
@@ -175,6 +228,20 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     props.onSave(patch);
   }
 
+  useEffect(() => {
+    if (!isCreate) {
+      props.onDirtyChange?.(isDirty);
+      props.onSaveActionChange?.(() => handleSave());
+      props.onCancelActionChange?.(() => setOverlay({ ...emptyOverlay }));
+      return () => {
+        props.onSaveActionChange?.(null);
+        props.onCancelActionChange?.(null);
+        props.onDirtyChange?.(false);
+      };
+    }
+    return;
+  }, [isCreate, isDirty, props.onDirtyChange, props.onSaveActionChange, props.onCancelActionChange, overlay]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- Resolve values ----
   const config = !isCreate ? ((props.agent.adapterConfig ?? {}) as Record<string, unknown>) : {};
   const runtimeConfig = !isCreate ? ((props.agent.runtimeConfig ?? {}) as Record<string, unknown>) : {};
@@ -195,6 +262,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   // Section toggle state — advanced always starts collapsed
   const [adapterAdvancedOpen, setAdapterAdvancedOpen] = useState(false);
   const [heartbeatOpen, setHeartbeatOpen] = useState(!isCreate);
+  const [cwdPickerNotice, setCwdPickerNotice] = useState<string | null>(null);
 
   // Popover states
   const [modelOpen, setModelOpen] = useState(false);
@@ -213,7 +281,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   return (
     <div className="relative">
       {/* ---- Floating Save button (edit mode, when dirty) ---- */}
-      {isDirty && (
+      {isDirty && !props.hideInlineSave && (
         <div className="sticky top-0 z-10 flex items-center justify-end px-4 py-2 bg-background/90 backdrop-blur-sm border-b border-primary/20">
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground">Unsaved changes</span>
@@ -237,6 +305,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               <DraftInput
                 value={eff("identity", "name", props.agent.name)}
                 onCommit={(v) => mark("identity", "name", v)}
+                immediate
                 className={inputClass}
                 placeholder="Agent name"
               />
@@ -245,6 +314,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               <DraftInput
                 value={eff("identity", "title", props.agent.title ?? "")}
                 onCommit={(v) => mark("identity", "title", v || null)}
+                immediate
                 className={inputClass}
                 placeholder="e.g. VP of Engineering"
               />
@@ -253,6 +323,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               <DraftTextarea
                 value={eff("identity", "capabilities", props.agent.capabilities ?? "")}
                 onCommit={(v) => mark("identity", "capabilities", v || null)}
+                immediate
                 placeholder="Describe what this agent can do..."
                 minRows={2}
               />
@@ -303,7 +374,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       ? set!({ cwd: v })
                       : mark("adapterConfig", "cwd", v || undefined)
                   }
-                  immediate={isCreate}
+                  immediate
                   className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
                   placeholder="/path/to/project"
                 />
@@ -312,10 +383,24 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 transition-colors shrink-0"
                   onClick={async () => {
                     try {
+                      setCwdPickerNotice(null);
                       // @ts-expect-error -- showDirectoryPicker is not in all TS lib defs yet
                       const handle = await window.showDirectoryPicker({ mode: "read" });
-                      if (isCreate) set!({ cwd: handle.name });
-                      else mark("adapterConfig", "cwd", handle.name);
+                      const absolutePath = extractPickedDirectoryPath(handle);
+                      if (absolutePath) {
+                        if (isCreate) set!({ cwd: absolutePath });
+                        else mark("adapterConfig", "cwd", absolutePath);
+                        return;
+                      }
+                      const selectedName =
+                        typeof handle === "object" &&
+                        handle !== null &&
+                        typeof (handle as { name?: unknown }).name === "string"
+                          ? String((handle as { name: string }).name)
+                          : "selected folder";
+                      setCwdPickerNotice(
+                        `Directory picker only exposed "${selectedName}". Paste the absolute path manually.`,
+                      );
                     } catch {
                       // user cancelled or API unsupported
                     }
@@ -324,6 +409,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   Choose
                 </button>
               </div>
+              {cwdPickerNotice && (
+                <p className="mt-1 text-xs text-amber-400">{cwdPickerNotice}</p>
+              )}
             </Field>
           )}
 
@@ -347,6 +435,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   onCommit={(v) =>
                     mark("adapterConfig", "promptTemplate", v || undefined)
                   }
+                  immediate
                   placeholder="You are agent {{ agent.name }}. Your role is {{ agent.role }}..."
                   minRows={4}
                 />
@@ -429,7 +518,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       ? set!({ command: v })
                       : mark("adapterConfig", "command", v || undefined)
                   }
-                  immediate={isCreate}
+                  immediate
                   className={inputClass}
                   placeholder="e.g. node, python"
                 />
@@ -439,7 +528,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   value={
                     isCreate
                       ? val!.args
-                      : eff("adapterConfig", "args", String(config.args ?? ""))
+                      : eff("adapterConfig", "args", formatArgList(config.args))
                   }
                   onCommit={(v) =>
                     isCreate
@@ -447,15 +536,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       : mark(
                           "adapterConfig",
                           "args",
-                          v
-                            ? v
-                                .split(",")
-                                .map((a) => a.trim())
-                                .filter(Boolean)
-                            : undefined,
+                          v ? parseCommaArgs(v) : undefined,
                         )
                   }
-                  immediate={isCreate}
+                  immediate
                   className={inputClass}
                   placeholder="e.g. script.js, --flag"
                 />
@@ -477,7 +561,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     ? set!({ url: v })
                     : mark("adapterConfig", "url", v || undefined)
                 }
-                immediate={isCreate}
+                immediate
                 className={inputClass}
                 placeholder="https://..."
               />
@@ -492,6 +576,24 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               onToggle={() => setAdapterAdvancedOpen(!adapterAdvancedOpen)}
             >
               <div className="space-y-3">
+                <Field label="Command" hint={help.localCommand}>
+                  <DraftInput
+                    value={
+                      isCreate
+                        ? val!.command
+                        : eff("adapterConfig", "command", String(config.command ?? ""))
+                    }
+                    onCommit={(v) =>
+                      isCreate
+                        ? set!({ command: v })
+                        : mark("adapterConfig", "command", v || undefined)
+                    }
+                    immediate
+                    className={inputClass}
+                    placeholder={adapterType === "codex_local" ? "codex" : "claude"}
+                  />
+                </Field>
+
                 <ModelDropdown
                   models={models}
                   value={currentModelId}
@@ -521,6 +623,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       onCommit={(v) =>
                         mark("adapterConfig", "bootstrapPromptTemplate", v || undefined)
                       }
+                      immediate
                       placeholder="Optional initial setup prompt for the first run"
                       minRows={2}
                     />
@@ -543,11 +646,56 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                           Number(config.maxTurnsPerRun ?? 80),
                         )}
                         onCommit={(v) => mark("adapterConfig", "maxTurnsPerRun", v || 80)}
+                        immediate
                         className={inputClass}
                       />
                     )}
                   </Field>
                 )}
+
+                <Field label="Extra args (comma-separated)" hint={help.extraArgs}>
+                  <DraftInput
+                    value={
+                      isCreate
+                        ? val!.extraArgs
+                        : eff("adapterConfig", "extraArgs", formatArgList(config.extraArgs))
+                    }
+                    onCommit={(v) =>
+                      isCreate
+                        ? set!({ extraArgs: v })
+                        : mark("adapterConfig", "extraArgs", v ? parseCommaArgs(v) : undefined)
+                    }
+                    immediate
+                    className={inputClass}
+                    placeholder="e.g. --verbose, --foo=bar"
+                  />
+                </Field>
+
+                <Field label="Environment variables" hint={help.envVars}>
+                  {isCreate ? (
+                    <AutoExpandTextarea
+                      placeholder={"ANTHROPIC_API_KEY=...\nPAPERCLIP_API_URL=http://localhost:3100"}
+                      value={val!.envVars}
+                      onChange={(v) => set!({ envVars: v })}
+                      minRows={3}
+                    />
+                  ) : (
+                    <DraftTextarea
+                      value={eff("adapterConfig", "env", formatEnvVars(config.env))}
+                      onCommit={(v) => {
+                        const parsed = parseEnvVars(v);
+                        mark(
+                          "adapterConfig",
+                          "env",
+                          Object.keys(parsed).length > 0 ? parsed : undefined,
+                        );
+                      }}
+                      immediate
+                      placeholder={"ANTHROPIC_API_KEY=...\nPAPERCLIP_API_URL=http://localhost:3100"}
+                      minRows={3}
+                    />
+                  )}
+                </Field>
 
                 {/* Edit-only: timeout + grace period */}
                 {!isCreate && (
@@ -560,6 +708,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                           Number(config.timeoutSec ?? 0),
                         )}
                         onCommit={(v) => mark("adapterConfig", "timeoutSec", v)}
+                        immediate
                         className={inputClass}
                       />
                     </Field>
@@ -571,6 +720,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                           Number(config.graceSec ?? 15),
                         )}
                         onCommit={(v) => mark("adapterConfig", "graceSec", v)}
+                        immediate
                         className={inputClass}
                       />
                     </Field>
@@ -669,6 +819,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     Number(heartbeat.cooldownSec ?? 10),
                   )}
                   onCommit={(v) => mark("heartbeat", "cooldownSec", v)}
+                  immediate
                   className={inputClass}
                 />
               </Field>
@@ -695,6 +846,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   props.agent.budgetMonthlyCents,
                 )}
                 onCommit={(v) => mark("runtime", "budgetMonthlyCents", v)}
+                immediate
                 className={inputClass}
               />
             </Field>

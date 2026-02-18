@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -12,8 +12,9 @@ import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
+import { PageTabBar } from "../components/PageTabBar";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs } from "@/components/ui/tabs";
 import { CircleDot, Plus } from "lucide-react";
 import { formatDate } from "../lib/utils";
 import type { Issue } from "@paperclip/shared";
@@ -25,6 +26,18 @@ function statusLabel(status: string): string {
 }
 
 type TabFilter = "all" | "active" | "backlog" | "done";
+
+const issueTabItems = [
+  { value: "all", label: "All Issues" },
+  { value: "active", label: "Active" },
+  { value: "backlog", label: "Backlog" },
+  { value: "done", label: "Done" },
+] as const;
+
+function parseIssueTab(value: string | null): TabFilter {
+  if (value === "active" || value === "backlog" || value === "done") return value;
+  return "all";
+}
 
 function filterIssues(issues: Issue[], tab: TabFilter): Issue[] {
   switch (tab) {
@@ -45,7 +58,8 @@ export function Issues() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<TabFilter>("all");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = parseIssueTab(searchParams.get("tab"));
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -86,16 +100,18 @@ export function Issues() {
     .filter((s) => grouped[s]?.length)
     .map((s) => ({ status: s, items: grouped[s]! }));
 
+  const setTab = (nextTab: TabFilter) => {
+    const next = new URLSearchParams(searchParams);
+    if (nextTab === "all") next.delete("tab");
+    else next.set("tab", nextTab);
+    setSearchParams(next);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)}>
-          <TabsList variant="line">
-            <TabsTrigger value="all">All Issues</TabsTrigger>
-            <TabsTrigger value="active">Active</TabsTrigger>
-            <TabsTrigger value="backlog">Backlog</TabsTrigger>
-            <TabsTrigger value="done">Done</TabsTrigger>
-          </TabsList>
+          <PageTabBar items={[...issueTabItems]} />
         </Tabs>
         <Button size="sm" onClick={() => openNewIssue()}>
           <Plus className="h-4 w-4 mr-1" />

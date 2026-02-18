@@ -27,6 +27,7 @@ export function App() {
         <Route path="org" element={<Navigate to="/agents" replace />} />
         <Route path="agents" element={<Agents />} />
         <Route path="agents/:agentId" element={<AgentDetail />} />
+        <Route path="agents/:agentId/runs/:runId" element={<AgentDetail />} />
         <Route path="projects" element={<Projects />} />
         <Route path="projects/:projectId" element={<ProjectDetail />} />
         <Route path="issues" element={<Issues />} />

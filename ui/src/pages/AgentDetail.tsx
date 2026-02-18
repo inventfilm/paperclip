@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import { useParams, useNavigate, Link, useBeforeUnload, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type AgentKey } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
@@ -9,14 +9,14 @@ import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { AgentProperties } from "../components/AgentProperties";
 import { AgentConfigForm } from "../components/AgentConfigForm";
+import { PageTabBar } from "../components/PageTabBar";
 import { adapterLabels, roleLabels } from "../components/agent-config-primitives";
 import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
 import { cn } from "../lib/utils";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -28,8 +28,6 @@ import {
   MoreHorizontal,
   Play,
   Pause,
-  ChevronDown,
-  ChevronRight,
   CheckCircle2,
   XCircle,
   Clock,
@@ -63,16 +61,190 @@ const sourceLabels: Record<string, string> = {
   automation: "Automation",
 };
 
+type AgentDetailTab = "overview" | "configuration" | "runs" | "issues" | "costs" | "keys";
+
+function parseAgentDetailTab(value: string | null): AgentDetailTab {
+  if (value === "configuration") return value;
+  if (value === "runs") return value;
+  if (value === "issues") return value;
+  if (value === "costs") return value;
+  if (value === "keys") return value;
+  return "overview";
+}
+
+function usageNumber(usage: Record<string, unknown> | null, ...keys: string[]) {
+  if (!usage) return 0;
+  for (const key of keys) {
+    const value = usage[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return 0;
+}
+
+function runMetrics(run: HeartbeatRun) {
+  const usage = (run.usageJson ?? null) as Record<string, unknown> | null;
+  const result = (run.resultJson ?? null) as Record<string, unknown> | null;
+  const input = usageNumber(usage, "inputTokens", "input_tokens");
+  const output = usageNumber(usage, "outputTokens", "output_tokens");
+  const cached = usageNumber(
+    usage,
+    "cachedInputTokens",
+    "cached_input_tokens",
+    "cache_read_input_tokens",
+  );
+  const cost =
+    usageNumber(usage, "costUsd", "cost_usd", "total_cost_usd") ||
+    usageNumber(result, "total_cost_usd", "cost_usd", "costUsd");
+  return {
+    input,
+    output,
+    cached,
+    cost,
+    totalTokens: input + output,
+  };
+}
+
+type RunLogChunk = { ts: string; stream: "stdout" | "stderr" | "system"; chunk: string };
+
+type TranscriptEntry =
+  | { kind: "assistant"; ts: string; text: string }
+  | { kind: "tool_call"; ts: string; name: string; input: unknown }
+  | { kind: "init"; ts: string; model: string; sessionId: string }
+  | { kind: "result"; ts: string; text: string; inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number }
+  | { kind: "stderr"; ts: string; text: string }
+  | { kind: "system"; ts: string; text: string }
+  | { kind: "stdout"; ts: string; text: string };
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function asNumber(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function parseClaudeStdoutLine(line: string, ts: string): TranscriptEntry[] {
+  const parsed = asRecord(safeJsonParse(line));
+  if (!parsed) {
+    return [{ kind: "stdout", ts, text: line }];
+  }
+
+  const type = typeof parsed.type === "string" ? parsed.type : "";
+  if (type === "system" && parsed.subtype === "init") {
+    return [
+      {
+        kind: "init",
+        ts,
+        model: typeof parsed.model === "string" ? parsed.model : "unknown",
+        sessionId: typeof parsed.session_id === "string" ? parsed.session_id : "",
+      },
+    ];
+  }
+
+  if (type === "assistant") {
+    const message = asRecord(parsed.message) ?? {};
+    const content = Array.isArray(message.content) ? message.content : [];
+    const entries: TranscriptEntry[] = [];
+    for (const blockRaw of content) {
+      const block = asRecord(blockRaw);
+      if (!block) continue;
+      const blockType = typeof block.type === "string" ? block.type : "";
+      if (blockType === "text") {
+        const text = typeof block.text === "string" ? block.text : "";
+        if (text) entries.push({ kind: "assistant", ts, text });
+      } else if (blockType === "tool_use") {
+        entries.push({
+          kind: "tool_call",
+          ts,
+          name: typeof block.name === "string" ? block.name : "unknown",
+          input: block.input ?? {},
+        });
+      }
+    }
+    return entries.length > 0 ? entries : [{ kind: "stdout", ts, text: line }];
+  }
+
+  if (type === "result") {
+    const usage = asRecord(parsed.usage) ?? {};
+    const inputTokens = asNumber(usage.input_tokens);
+    const outputTokens = asNumber(usage.output_tokens);
+    const cachedTokens = asNumber(usage.cache_read_input_tokens);
+    const costUsd = asNumber(parsed.total_cost_usd);
+    const text = typeof parsed.result === "string" ? parsed.result : "";
+    return [{
+      kind: "result",
+      ts,
+      text,
+      inputTokens,
+      outputTokens,
+      cachedTokens,
+      costUsd,
+    }];
+  }
+
+  return [{ kind: "stdout", ts, text: line }];
+}
+
+function buildTranscript(chunks: RunLogChunk[]): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = [];
+  let stdoutBuffer = "";
+
+  for (const chunk of chunks) {
+    if (chunk.stream === "stderr") {
+      entries.push({ kind: "stderr", ts: chunk.ts, text: chunk.chunk });
+      continue;
+    }
+    if (chunk.stream === "system") {
+      entries.push({ kind: "system", ts: chunk.ts, text: chunk.chunk });
+      continue;
+    }
+
+    const combined = stdoutBuffer + chunk.chunk;
+    const lines = combined.split(/\r?\n/);
+    stdoutBuffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      entries.push(...parseClaudeStdoutLine(trimmed, chunk.ts));
+    }
+  }
+
+  const trailing = stdoutBuffer.trim();
+  if (trailing) {
+    const ts = chunks.length > 0 ? chunks[chunks.length - 1]!.ts : new Date().toISOString();
+    entries.push(...parseClaudeStdoutLine(trailing, ts));
+  }
+
+  return entries;
+}
+
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 export function AgentDetail() {
-  const { agentId } = useParams<{ agentId: string }>();
+  const { agentId, runId: urlRunId } = useParams<{ agentId: string; runId?: string }>();
   const { selectedCompanyId } = useCompany();
-  const { openPanel, closePanel } = usePanel();
+  const { closePanel } = usePanel();
   const { openNewIssue } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [actionError, setActionError] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const activeTab = urlRunId ? "runs" as AgentDetailTab : parseAgentDetailTab(searchParams.get("tab"));
+  const [configDirty, setConfigDirty] = useState(false);
+  const [configSaving, setConfigSaving] = useState(false);
+  const saveConfigActionRef = useRef<(() => void) | null>(null);
+  const cancelConfigActionRef = useRef<(() => void) | null>(null);
+  const setSaveConfigAction = useCallback((fn: (() => void) | null) => { saveConfigActionRef.current = fn; }, []);
+  const setCancelConfigAction = useCallback((fn: (() => void) | null) => { cancelConfigActionRef.current = fn; }, []);
 
   const { data: agent, isLoading, error } = useQuery({
     queryKey: queryKeys.agents.detail(agentId!),
@@ -140,11 +312,31 @@ export function AgentDetail() {
   }, [setBreadcrumbs, agent, agentId]);
 
   useEffect(() => {
-    if (agent) {
-      openPanel(<AgentProperties agent={agent} runtimeState={runtimeState ?? undefined} />);
-    }
+    closePanel();
     return () => closePanel();
-  }, [agent, runtimeState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useBeforeUnload(
+    useCallback((event) => {
+      if (!configDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }, [configDirty]),
+  );
+
+  const setActiveTab = useCallback((nextTab: string) => {
+    const next = parseAgentDetailTab(nextTab);
+    // If we're on a /runs/:runId URL and switching tabs, navigate back to base agent URL
+    if (urlRunId) {
+      const tabParam = next === "overview" ? "" : `?tab=${next}`;
+      navigate(`/agents/${agentId}${tabParam}`, { replace: true });
+      return;
+    }
+    const params = new URLSearchParams(searchParams);
+    if (next === "overview") params.delete("tab");
+    else params.set("tab", next);
+    setSearchParams(params);
+  }, [searchParams, setSearchParams, urlRunId, agentId, navigate]);
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
@@ -165,31 +357,21 @@ export function AgentDetail() {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => openNewIssue({ assigneeAgentId: agentId })}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Assign Task
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => agentAction.mutate("invoke")}
             disabled={agentAction.isPending}
           >
             <Play className="h-3.5 w-3.5 mr-1" />
             Invoke
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openNewIssue({ assigneeAgentId: agentId })}
-          >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            Assign Task
-          </Button>
-          {agent.status === "active" || agent.status === "running" ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => agentAction.mutate("pause")}
-              disabled={agentAction.isPending}
-            >
-              <Pause className="h-3.5 w-3.5 mr-1" />
-              Pause
-            </Button>
-          ) : (
+          {agent.status === "paused" ? (
             <Button
               variant="outline"
               size="sm"
@@ -198,6 +380,16 @@ export function AgentDetail() {
             >
               <Play className="h-3.5 w-3.5 mr-1" />
               Resume
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => agentAction.mutate("pause")}
+              disabled={agentAction.isPending}
+            >
+              <Pause className="h-3.5 w-3.5 mr-1" />
+              Pause
             </Button>
           )}
           <StatusBadge status={agent.status} />
@@ -247,15 +439,43 @@ export function AgentDetail() {
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="configuration">Configuration</TabsTrigger>
-          <TabsTrigger value="runs">Runs{heartbeats ? ` (${heartbeats.length})` : ""}</TabsTrigger>
-          <TabsTrigger value="issues">Issues ({assignedIssues.length})</TabsTrigger>
-          <TabsTrigger value="costs">Costs</TabsTrigger>
-          <TabsTrigger value="keys">API Keys</TabsTrigger>
-        </TabsList>
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <div className="flex items-center justify-between">
+          <PageTabBar
+            items={[
+              { value: "overview", label: "Overview" },
+              { value: "configuration", label: "Configuration" },
+              { value: "runs", label: `Runs${heartbeats ? ` (${heartbeats.length})` : ""}` },
+              { value: "issues", label: `Issues (${assignedIssues.length})` },
+              { value: "costs", label: "Costs" },
+              { value: "keys", label: "API Keys" },
+            ]}
+          />
+          <div
+            className={cn(
+              "flex items-center gap-2 transition-opacity duration-150",
+              activeTab === "configuration" && configDirty
+                ? "opacity-100"
+                : "opacity-0 pointer-events-none"
+            )}
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => cancelConfigActionRef.current?.()}
+              disabled={configSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => saveConfigActionRef.current?.()}
+              disabled={configSaving}
+            >
+              {configSaving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </div>
 
         {/* OVERVIEW TAB */}
         <TabsContent value="overview" className="space-y-6 mt-4">
@@ -354,12 +574,18 @@ export function AgentDetail() {
 
         {/* CONFIGURATION TAB */}
         <TabsContent value="configuration" className="mt-4">
-          <ConfigurationTab agent={agent} />
+          <ConfigurationTab
+            agent={agent}
+            onDirtyChange={setConfigDirty}
+            onSaveActionChange={setSaveConfigAction}
+            onCancelActionChange={setCancelConfigAction}
+            onSavingChange={setConfigSaving}
+          />
         </TabsContent>
 
         {/* RUNS TAB */}
         <TabsContent value="runs" className="mt-4">
-          <RunsTab runs={heartbeats ?? []} companyId={selectedCompanyId!} />
+          <RunsTab runs={heartbeats ?? []} companyId={selectedCompanyId!} agentId={agentId!} selectedRunId={urlRunId ?? null} />
         </TabsContent>
 
         {/* ISSUES TAB */}
@@ -408,7 +634,19 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
 
 /* ---- Configuration Tab ---- */
 
-function ConfigurationTab({ agent }: { agent: Agent }) {
+function ConfigurationTab({
+  agent,
+  onDirtyChange,
+  onSaveActionChange,
+  onCancelActionChange,
+  onSavingChange,
+}: {
+  agent: Agent;
+  onDirtyChange: (dirty: boolean) => void;
+  onSaveActionChange: (save: (() => void) | null) => void;
+  onCancelActionChange: (cancel: (() => void) | null) => void;
+  onSavingChange: (saving: boolean) => void;
+}) {
   const queryClient = useQueryClient();
 
   const { data: adapterModels } = useQuery({
@@ -423,6 +661,10 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
     },
   });
 
+  useEffect(() => {
+    onSavingChange(updateAgent.isPending);
+  }, [onSavingChange, updateAgent.isPending]);
+
   return (
     <div className="max-w-2xl border border-border rounded-lg overflow-hidden">
       <AgentConfigForm
@@ -431,6 +673,10 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
         onSave={(patch) => updateAgent.mutate(patch)}
         isSaving={updateAgent.isPending}
         adapterModels={adapterModels}
+        onDirtyChange={onDirtyChange}
+        onSaveActionChange={onSaveActionChange}
+        onCancelActionChange={onCancelActionChange}
+        hideInlineSave
       />
     </div>
   );
@@ -438,8 +684,8 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
 
 /* ---- Runs Tab ---- */
 
-function RunsTab({ runs, companyId }: { runs: HeartbeatRun[]; companyId: string }) {
-  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+function RunsTab({ runs, companyId, agentId, selectedRunId }: { runs: HeartbeatRun[]; companyId: string; agentId: string; selectedRunId: string | null }) {
+  const navigate = useNavigate();
 
   if (runs.length === 0) {
     return <p className="text-sm text-muted-foreground">No runs yet.</p>;
@@ -450,61 +696,75 @@ function RunsTab({ runs, companyId }: { runs: HeartbeatRun[]; companyId: string 
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  return (
-    <div className="border border-border">
-      {sorted.map((run) => {
-        const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
-        const StatusIcon = statusInfo.icon;
-        const isExpanded = expandedRunId === run.id;
-        const usage = run.usageJson as Record<string, unknown> | null;
-        const totalTokens = usage
-          ? (Number(usage.input_tokens ?? 0) + Number(usage.output_tokens ?? 0))
-          : 0;
-        const cost = usage ? Number(usage.cost_usd ?? usage.total_cost_usd ?? 0) : 0;
-        const summary = run.resultJson
-          ? String((run.resultJson as Record<string, unknown>).summary ?? (run.resultJson as Record<string, unknown>).result ?? "")
-          : run.error ?? "";
+  // Auto-select latest run when no run is selected
+  const effectiveRunId = selectedRunId ?? sorted[0]?.id ?? null;
+  const selectedRun = sorted.find((r) => r.id === effectiveRunId) ?? null;
 
-        return (
-          <div key={run.id} className="border-b border-border last:border-b-0">
+  return (
+    <div className="flex gap-0 border border-border rounded-lg overflow-hidden" style={{ height: "calc(100vh - 220px)" }}>
+      {/* Left: run list */}
+      <div className={cn(
+        "shrink-0 overflow-y-auto border-r border-border",
+        selectedRun ? "w-72" : "w-full",
+      )}>
+        {sorted.map((run) => {
+          const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
+          const StatusIcon = statusInfo.icon;
+          const isSelected = run.id === effectiveRunId;
+          const metrics = runMetrics(run);
+          const summary = run.resultJson
+            ? String((run.resultJson as Record<string, unknown>).summary ?? (run.resultJson as Record<string, unknown>).result ?? "")
+            : run.error ?? "";
+
+          return (
             <button
-              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-accent/30 transition-colors text-left"
-              onClick={() => setExpandedRunId(isExpanded ? null : run.id)}
+              key={run.id}
+              className={cn(
+                "flex flex-col gap-1 w-full px-3 py-2.5 text-left border-b border-border last:border-b-0 transition-colors",
+                isSelected ? "bg-accent/40" : "hover:bg-accent/20",
+              )}
+              onClick={() => navigate(isSelected ? `/agents/${agentId}?tab=runs` : `/agents/${agentId}/runs/${run.id}`)}
             >
-              <StatusIcon className={cn("h-4 w-4 shrink-0", statusInfo.color, run.status === "running" && "animate-spin")} />
-              <span className="font-mono text-xs text-muted-foreground shrink-0">
-                {run.id.slice(0, 8)}
-              </span>
-              <span className={cn(
-                "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
-                run.invocationSource === "timer" ? "bg-blue-900/50 text-blue-300"
-                  : run.invocationSource === "assignment" ? "bg-violet-900/50 text-violet-300"
-                  : run.invocationSource === "on_demand" ? "bg-cyan-900/50 text-cyan-300"
-                  : "bg-neutral-800 text-neutral-400"
-              )}>
-                {sourceLabels[run.invocationSource] ?? run.invocationSource}
-              </span>
-              <span className="flex-1 truncate text-muted-foreground text-xs">
-                {summary ? summary.slice(0, 80) : ""}
-              </span>
-              <div className="flex items-center gap-3 shrink-0">
-                {totalTokens > 0 && (
-                  <span className="text-xs text-muted-foreground">{formatTokens(totalTokens)} tok</span>
-                )}
-                {cost > 0 && (
-                  <span className="text-xs text-muted-foreground">${cost.toFixed(3)}</span>
-                )}
-                <span className="text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <StatusIcon className={cn("h-3.5 w-3.5 shrink-0", statusInfo.color, run.status === "running" && "animate-spin")} />
+                <span className="font-mono text-xs text-muted-foreground">
+                  {run.id.slice(0, 8)}
+                </span>
+                <span className={cn(
+                  "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
+                  run.invocationSource === "timer" ? "bg-blue-900/50 text-blue-300"
+                    : run.invocationSource === "assignment" ? "bg-violet-900/50 text-violet-300"
+                    : run.invocationSource === "on_demand" ? "bg-cyan-900/50 text-cyan-300"
+                    : "bg-neutral-800 text-neutral-400"
+                )}>
+                  {sourceLabels[run.invocationSource] ?? run.invocationSource}
+                </span>
+                <span className="ml-auto text-[11px] text-muted-foreground shrink-0">
                   {relativeTime(run.createdAt)}
                 </span>
-                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               </div>
+              {summary && (
+                <span className="text-xs text-muted-foreground truncate pl-5.5">
+                  {summary.slice(0, 60)}
+                </span>
+              )}
+              {(metrics.totalTokens > 0 || metrics.cost > 0) && (
+                <div className="flex items-center gap-2 pl-5.5 text-[11px] text-muted-foreground">
+                  {metrics.totalTokens > 0 && <span>{formatTokens(metrics.totalTokens)} tok</span>}
+                  {metrics.cost > 0 && <span>${metrics.cost.toFixed(3)}</span>}
+                </div>
+              )}
             </button>
+          );
+        })}
+      </div>
 
-            {isExpanded && <RunDetail run={run} />}
-          </div>
-        );
-      })}
+      {/* Right: run detail */}
+      {selectedRun && (
+        <div className="flex-1 min-w-0 overflow-y-auto pr-2">
+          <RunDetail key={selectedRun.id} run={selectedRun} />
+        </div>
+      )}
     </div>
   );
 }
@@ -513,7 +773,7 @@ function RunsTab({ runs, companyId }: { runs: HeartbeatRun[]; companyId: string 
 
 function RunDetail({ run }: { run: HeartbeatRun }) {
   const queryClient = useQueryClient();
-  const usage = run.usageJson as Record<string, unknown> | null;
+  const metrics = runMetrics(run);
 
   const cancelRun = useMutation({
     mutationFn: () => heartbeatsApi.cancel(run.id),
@@ -523,9 +783,9 @@ function RunDetail({ run }: { run: HeartbeatRun }) {
   });
 
   return (
-    <div className="px-4 pb-4 space-y-4 bg-accent/10">
+    <div className="p-4 space-y-4">
       {/* Status timeline */}
-      <div className="flex items-center gap-6 text-xs">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
         <div>
           <span className="text-muted-foreground">Status: </span>
           <StatusBadge status={run.status} />
@@ -551,26 +811,26 @@ function RunDetail({ run }: { run: HeartbeatRun }) {
       </div>
 
       {/* Token breakdown */}
-      {usage && (
+      {(metrics.input > 0 || metrics.output > 0 || metrics.cached > 0 || metrics.cost > 0) && (
         <div className="flex items-center gap-6 text-xs">
           <div>
             <span className="text-muted-foreground">Input: </span>
-            <span>{formatTokens(Number(usage.input_tokens ?? 0))}</span>
+            <span>{formatTokens(metrics.input)}</span>
           </div>
           <div>
             <span className="text-muted-foreground">Output: </span>
-            <span>{formatTokens(Number(usage.output_tokens ?? 0))}</span>
+            <span>{formatTokens(metrics.output)}</span>
           </div>
-          {Number(usage.cached_input_tokens ?? usage.cache_read_input_tokens ?? 0) > 0 && (
+          {metrics.cached > 0 && (
             <div>
               <span className="text-muted-foreground">Cached: </span>
-              <span>{formatTokens(Number(usage.cached_input_tokens ?? usage.cache_read_input_tokens ?? 0))}</span>
+              <span>{formatTokens(metrics.cached)}</span>
             </div>
           )}
-          {Number(usage.cost_usd ?? usage.total_cost_usd ?? 0) > 0 && (
+          {metrics.cost > 0 && (
             <div>
               <span className="text-muted-foreground">Cost: </span>
-              <span>${Number(usage.cost_usd ?? usage.total_cost_usd ?? 0).toFixed(4)}</span>
+              <span>${metrics.cost.toFixed(4)}</span>
             </div>
           )}
         </div>
@@ -582,13 +842,25 @@ function RunDetail({ run }: { run: HeartbeatRun }) {
           {run.sessionIdBefore && (
             <div>
               <span className="text-muted-foreground">Session before: </span>
-              <span className="font-mono">{run.sessionIdBefore.slice(0, 16)}...</span>
+              <button
+                className="font-mono hover:text-foreground transition-colors cursor-copy"
+                title={`Click to copy: ${run.sessionIdBefore}`}
+                onClick={() => navigator.clipboard.writeText(run.sessionIdBefore!)}
+              >
+                {run.sessionIdBefore.slice(0, 16)}...
+              </button>
             </div>
           )}
           {run.sessionIdAfter && (
             <div>
               <span className="text-muted-foreground">Session after: </span>
-              <span className="font-mono">{run.sessionIdAfter.slice(0, 16)}...</span>
+              <button
+                className="font-mono hover:text-foreground transition-colors cursor-copy"
+                title={`Click to copy: ${run.sessionIdAfter}`}
+                onClick={() => navigator.clipboard.writeText(run.sessionIdAfter!)}
+              >
+                {run.sessionIdAfter.slice(0, 16)}...
+              </button>
             </div>
           )}
         </div>
@@ -612,6 +884,22 @@ function RunDetail({ run }: { run: HeartbeatRun }) {
         </div>
       )}
 
+      {/* stderr excerpt for failed runs */}
+      {run.stderrExcerpt && (
+        <div className="space-y-1">
+          <span className="text-xs font-medium text-red-400">stderr</span>
+          <pre className="bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
+        </div>
+      )}
+
+      {/* stdout excerpt when no log is available */}
+      {run.stdoutExcerpt && !run.logRef && (
+        <div className="space-y-1">
+          <span className="text-xs font-medium text-muted-foreground">stdout</span>
+          <pre className="bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
+        </div>
+      )}
+
       {/* Cancel button for running */}
       {(run.status === "running" || run.status === "queued") && (
         <Button
@@ -628,23 +916,60 @@ function RunDetail({ run }: { run: HeartbeatRun }) {
       <Separator />
 
       {/* Log viewer */}
-      <LogViewer runId={run.id} status={run.status} />
+      <LogViewer run={run} />
     </div>
   );
 }
 
 /* ---- Log Viewer ---- */
 
-function LogViewer({ runId, status }: { runId: string; status: string }) {
+function LogViewer({ run }: { run: HeartbeatRun }) {
   const [events, setEvents] = useState<HeartbeatRunEvent[]>([]);
+  const [logLines, setLogLines] = useState<Array<{ ts: string; stream: "stdout" | "stderr" | "system"; chunk: string }>>([]);
   const [loading, setLoading] = useState(true);
+  const [logLoading, setLogLoading] = useState(!!run.logRef);
+  const [logError, setLogError] = useState<string | null>(null);
+  const [logOffset, setLogOffset] = useState(0);
   const logEndRef = useRef<HTMLDivElement>(null);
-  const isLive = status === "running" || status === "queued";
+  const pendingLogLineRef = useRef("");
+  const isLive = run.status === "running" || run.status === "queued";
+
+  function appendLogContent(content: string, finalize = false) {
+    if (!content && !finalize) return;
+    const combined = `${pendingLogLineRef.current}${content}`;
+    const split = combined.split("\n");
+    pendingLogLineRef.current = split.pop() ?? "";
+    if (finalize && pendingLogLineRef.current) {
+      split.push(pendingLogLineRef.current);
+      pendingLogLineRef.current = "";
+    }
+
+    const parsed: Array<{ ts: string; stream: "stdout" | "stderr" | "system"; chunk: string }> = [];
+    for (const line of split) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const raw = JSON.parse(trimmed) as { ts?: unknown; stream?: unknown; chunk?: unknown };
+        const stream =
+          raw.stream === "stderr" || raw.stream === "system" ? raw.stream : "stdout";
+        const chunk = typeof raw.chunk === "string" ? raw.chunk : "";
+        const ts = typeof raw.ts === "string" ? raw.ts : new Date().toISOString();
+        if (!chunk) continue;
+        parsed.push({ ts, stream, chunk });
+      } catch {
+        // ignore malformed lines
+      }
+    }
+
+    if (parsed.length > 0) {
+      setLogLines((prev) => [...prev, ...parsed]);
+    }
+  }
 
   // Fetch events
   const { data: initialEvents } = useQuery({
-    queryKey: ["run-events", runId],
-    queryFn: () => heartbeatsApi.events(runId, 0, 200),
+    queryKey: ["run-events", run.id],
+    queryFn: () => heartbeatsApi.events(run.id, 0, 200),
   });
 
   useEffect(() => {
@@ -657,7 +982,56 @@ function LogViewer({ runId, status }: { runId: string; status: string }) {
   // Auto-scroll
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events]);
+  }, [events, logLines]);
+
+  // Fetch persisted shell log
+  useEffect(() => {
+    let cancelled = false;
+    pendingLogLineRef.current = "";
+    setLogLines([]);
+    setLogOffset(0);
+    setLogError(null);
+
+    if (!run.logRef) {
+      setLogLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setLogLoading(true);
+    const firstLimit =
+      typeof run.logBytes === "number" && run.logBytes > 0
+        ? Math.min(Math.max(run.logBytes + 1024, 256_000), 2_000_000)
+        : 256_000;
+
+    const load = async () => {
+      try {
+        let offset = 0;
+        let first = true;
+        while (!cancelled) {
+          const result = await heartbeatsApi.log(run.id, offset, first ? firstLimit : 256_000);
+          appendLogContent(result.content, result.nextOffset === undefined);
+          const next = result.nextOffset ?? offset + result.content.length;
+          setLogOffset(next);
+          offset = next;
+          first = false;
+          if (result.nextOffset === undefined || isLive) break;
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLogError(err instanceof Error ? err.message : "Failed to load run log");
+        }
+      } finally {
+        if (!cancelled) setLogLoading(false);
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [run.id, run.logRef, run.logBytes, isLive]);
 
   // Poll for live updates
   useEffect(() => {
@@ -665,7 +1039,7 @@ function LogViewer({ runId, status }: { runId: string; status: string }) {
     const interval = setInterval(async () => {
       const maxSeq = events.length > 0 ? Math.max(...events.map((e) => e.seq)) : 0;
       try {
-        const newEvents = await heartbeatsApi.events(runId, maxSeq, 100);
+        const newEvents = await heartbeatsApi.events(run.id, maxSeq, 100);
         if (newEvents.length > 0) {
           setEvents((prev) => [...prev, ...newEvents]);
         }
@@ -674,13 +1048,41 @@ function LogViewer({ runId, status }: { runId: string; status: string }) {
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [runId, isLive, events]);
+  }, [run.id, isLive, events]);
 
-  if (loading) {
-    return <p className="text-xs text-muted-foreground">Loading events...</p>;
+  // Poll shell log for running runs
+  useEffect(() => {
+    if (!isLive || !run.logRef) return;
+    const interval = setInterval(async () => {
+      try {
+        const result = await heartbeatsApi.log(run.id, logOffset, 256_000);
+        if (result.content) {
+          appendLogContent(result.content, result.nextOffset === undefined);
+        }
+        if (result.nextOffset !== undefined) {
+          setLogOffset(result.nextOffset);
+        } else if (result.content.length > 0) {
+          setLogOffset((prev) => prev + result.content.length);
+        }
+      } catch {
+        // ignore polling errors
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [run.id, run.logRef, isLive, logOffset]);
+
+  const adapterInvokePayload = useMemo(() => {
+    const evt = events.find((e) => e.eventType === "adapter.invoke");
+    return asRecord(evt?.payload ?? null);
+  }, [events]);
+
+  const transcript = useMemo(() => buildTranscript(logLines), [logLines]);
+
+  if (loading && logLoading) {
+    return <p className="text-xs text-muted-foreground">Loading run logs...</p>;
   }
 
-  if (events.length === 0) {
+  if (events.length === 0 && logLines.length === 0 && !logError) {
     return <p className="text-xs text-muted-foreground">No log events.</p>;
   }
 
@@ -697,9 +1099,62 @@ function LogViewer({ runId, status }: { runId: string; status: string }) {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-muted-foreground">Events ({events.length})</span>
+    <div className="space-y-3">
+      {adapterInvokePayload && (
+        <div className="rounded-lg border border-border bg-background/60 p-3 space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">Invocation</div>
+          {typeof adapterInvokePayload.adapterType === "string" && (
+            <div className="text-xs"><span className="text-muted-foreground">Adapter: </span>{adapterInvokePayload.adapterType}</div>
+          )}
+          {typeof adapterInvokePayload.cwd === "string" && (
+            <div className="text-xs"><span className="text-muted-foreground">Working dir: </span><span className="font-mono">{adapterInvokePayload.cwd}</span></div>
+          )}
+          {typeof adapterInvokePayload.command === "string" && (
+            <div className="text-xs">
+              <span className="text-muted-foreground">Command: </span>
+              <span className="font-mono">
+                {[
+                  adapterInvokePayload.command,
+                  ...(Array.isArray(adapterInvokePayload.commandArgs)
+                    ? adapterInvokePayload.commandArgs.filter((v): v is string => typeof v === "string")
+                    : []),
+                ].join(" ")}
+              </span>
+            </div>
+          )}
+          {adapterInvokePayload.prompt !== undefined && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Prompt</div>
+              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
+                {typeof adapterInvokePayload.prompt === "string"
+                  ? adapterInvokePayload.prompt
+                  : JSON.stringify(adapterInvokePayload.prompt, null, 2)}
+              </pre>
+            </div>
+          )}
+          {adapterInvokePayload.context !== undefined && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Context</div>
+              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
+                {JSON.stringify(adapterInvokePayload.context, null, 2)}
+              </pre>
+            </div>
+          )}
+          {adapterInvokePayload.env !== undefined && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Environment</div>
+              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
+                {JSON.stringify(adapterInvokePayload.env, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-muted-foreground">
+          Transcript ({transcript.length})
+        </span>
         {isLive && (
           <span className="flex items-center gap-1 text-xs text-cyan-400">
             <span className="relative flex h-2 w-2">
@@ -711,30 +1166,119 @@ function LogViewer({ runId, status }: { runId: string; status: string }) {
         )}
       </div>
       <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs max-h-80 overflow-y-auto space-y-0.5">
-        {events.map((evt) => {
-          const color = evt.color
-            ?? (evt.level ? levelColors[evt.level] : null)
-            ?? (evt.stream ? streamColors[evt.stream] : null)
-            ?? "text-foreground";
+        {transcript.length === 0 && !run.logRef && (
+          <div className="text-neutral-500">No persisted transcript for this run.</div>
+        )}
+        {transcript.map((entry, idx) => {
+          const time = new Date(entry.ts).toLocaleTimeString("en-US", { hour12: false });
+          if (entry.kind === "assistant") {
+            return (
+              <div key={`${entry.ts}-assistant-${idx}`} className="space-y-1 py-0.5">
+                <div className="flex gap-2">
+                  <span className="text-neutral-600 shrink-0 select-none w-16">{time}</span>
+                  <span className="shrink-0 w-14 text-green-300">assistant</span>
+                  <span className="whitespace-pre-wrap break-all text-green-100">{entry.text}</span>
+                </div>
+              </div>
+            );
+          }
 
+          if (entry.kind === "tool_call") {
+            return (
+              <div key={`${entry.ts}-tool-${idx}`} className="space-y-1 py-0.5">
+                <div className="flex gap-2">
+                  <span className="text-neutral-600 shrink-0 select-none w-16">{time}</span>
+                  <span className="shrink-0 w-14 text-yellow-300">tool</span>
+                  <span className="text-yellow-100">{entry.name}</span>
+                </div>
+                <pre className="ml-[74px] bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-200">
+                  {JSON.stringify(entry.input, null, 2)}
+                </pre>
+              </div>
+            );
+          }
+
+          if (entry.kind === "init") {
+            return (
+              <div key={`${entry.ts}-init-${idx}`} className="flex gap-2">
+                <span className="text-neutral-600 shrink-0 select-none w-16">{time}</span>
+                <span className="shrink-0 w-14 text-blue-300">init</span>
+                <span className="text-blue-100">Claude initialized (model: {entry.model}{entry.sessionId ? `, session: ${entry.sessionId}` : ""})</span>
+              </div>
+            );
+          }
+
+          if (entry.kind === "result") {
+            return (
+              <div key={`${entry.ts}-result-${idx}`} className="space-y-1 py-0.5">
+                <div className="flex gap-2">
+                  <span className="text-neutral-600 shrink-0 select-none w-16">{time}</span>
+                  <span className="shrink-0 w-14 text-cyan-300">result</span>
+                  <span className="text-cyan-100">
+                    tokens in={formatTokens(entry.inputTokens)} out={formatTokens(entry.outputTokens)} cached={formatTokens(entry.cachedTokens)} cost=${entry.costUsd.toFixed(6)}
+                  </span>
+                </div>
+                {entry.text && (
+                  <div className="ml-[74px] whitespace-pre-wrap break-all text-neutral-100">{entry.text}</div>
+                )}
+              </div>
+            );
+          }
+
+          const rawText = entry.text;
+          const label =
+            entry.kind === "stderr" ? "stderr" :
+            entry.kind === "system" ? "system" :
+            "stdout";
+          const color =
+            entry.kind === "stderr" ? "text-red-300" :
+            entry.kind === "system" ? "text-blue-300" :
+            "text-foreground";
           return (
-            <div key={evt.id} className="flex gap-2">
+            <div key={`${entry.ts}-raw-${idx}`} className="flex gap-2">
               <span className="text-neutral-600 shrink-0 select-none w-16">
-                {new Date(evt.createdAt).toLocaleTimeString("en-US", { hour12: false })}
+                {time}
               </span>
-              {evt.stream && (
-                <span className={cn("shrink-0 w-12", streamColors[evt.stream] ?? "text-neutral-500")}>
-                  [{evt.stream}]
-                </span>
-              )}
-              <span className={cn("break-all", color)}>
-                {evt.message ?? (evt.payload ? JSON.stringify(evt.payload) : "")}
+              <span className={cn("shrink-0 w-14", color)}>
+                {label}
+              </span>
+              <span className={cn("whitespace-pre-wrap break-all", color)}>
+                {rawText}
               </span>
             </div>
-          );
+          )
         })}
+        {logError && <div className="text-red-300">{logError}</div>}
         <div ref={logEndRef} />
       </div>
+
+      {events.length > 0 && (
+        <div>
+          <div className="mb-2 text-xs font-medium text-muted-foreground">Events ({events.length})</div>
+          <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs max-h-56 overflow-y-auto space-y-0.5">
+            {events.map((evt) => {
+              const color = evt.color
+                ?? (evt.level ? levelColors[evt.level] : null)
+                ?? (evt.stream ? streamColors[evt.stream] : null)
+                ?? "text-foreground";
+
+              return (
+                <div key={evt.id} className="flex gap-2">
+                  <span className="text-neutral-600 shrink-0 select-none w-16">
+                    {new Date(evt.createdAt).toLocaleTimeString("en-US", { hour12: false })}
+                  </span>
+                  <span className={cn("shrink-0 w-14", evt.stream ? (streamColors[evt.stream] ?? "text-neutral-500") : "text-neutral-500")}>
+                    {evt.stream ? `[${evt.stream}]` : ""}
+                  </span>
+                  <span className={cn("break-all", color)}>
+                    {evt.message ?? (evt.payload ? JSON.stringify(evt.payload) : "")}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

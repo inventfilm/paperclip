@@ -58,6 +58,7 @@ export function OnboardingWizard() {
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [url, setUrl] = useState("");
+  const [cwdPickerNotice, setCwdPickerNotice] = useState<string | null>(null);
 
   // Step 3
   const [taskTitle, setTaskTitle] = useState("Create your CEO HEARTBEAT.md");
@@ -88,6 +89,7 @@ export function OnboardingWizard() {
     setCommand("");
     setArgs("");
     setUrl("");
+    setCwdPickerNotice(null);
     setTaskTitle("Create your CEO HEARTBEAT.md");
     setTaskDescription("You're the CEO of the company, make sure you have a file agents/ceo/HEARTBEAT.md that tells you your core loop. You MUST use the Paperclip SKILL.");
     setCreatedCompanyId(null);
@@ -406,9 +408,28 @@ export function OnboardingWizard() {
                         className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 transition-colors shrink-0"
                         onClick={async () => {
                           try {
+                            setCwdPickerNotice(null);
                             // @ts-expect-error -- showDirectoryPicker is not in all TS lib defs yet
                             const handle = await window.showDirectoryPicker({ mode: "read" });
-                            setCwd(handle.name);
+                            const pickedPath =
+                              typeof handle === "object" &&
+                              handle !== null &&
+                              typeof (handle as { path?: unknown }).path === "string"
+                                ? String((handle as { path: string }).path)
+                                : "";
+                            if (pickedPath) {
+                              setCwd(pickedPath);
+                              return;
+                            }
+                            const selectedName =
+                              typeof handle === "object" &&
+                              handle !== null &&
+                              typeof (handle as { name?: unknown }).name === "string"
+                                ? String((handle as { name: string }).name)
+                                : "selected folder";
+                            setCwdPickerNotice(
+                              `Directory picker only exposed "${selectedName}". Paste the absolute path manually.`,
+                            );
                           } catch {
                             // user cancelled or API unsupported
                           }
@@ -417,6 +438,9 @@ export function OnboardingWizard() {
                         Choose
                       </button>
                     </div>
+                    {cwdPickerNotice && (
+                      <p className="mt-1 text-xs text-amber-400">{cwdPickerNotice}</p>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">
