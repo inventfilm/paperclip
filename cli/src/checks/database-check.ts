@@ -3,7 +3,19 @@ import path from "node:path";
 import type { PaperclipConfig } from "../config/schema.js";
 import type { CheckResult } from "./index.js";
 
-export async function databaseCheck(config: PaperclipConfig): Promise<CheckResult> {
+function resolveConfigRelativePath(value: string, configPath?: string): string {
+  if (path.isAbsolute(value)) return value;
+  const candidates = [path.resolve(value)];
+  if (configPath) {
+    candidates.unshift(path.resolve(path.dirname(configPath), "..", "server", value));
+    candidates.unshift(path.resolve(path.dirname(configPath), value));
+  }
+  candidates.push(path.resolve(process.cwd(), "server", value));
+  const uniqueCandidates = Array.from(new Set(candidates));
+  return uniqueCandidates.find((candidate) => fs.existsSync(candidate)) ?? uniqueCandidates[0];
+}
+
+export async function databaseCheck(config: PaperclipConfig, configPath?: string): Promise<CheckResult> {
   if (config.database.mode === "postgres") {
     if (!config.database.connectionString) {
       return {
@@ -36,15 +48,16 @@ export async function databaseCheck(config: PaperclipConfig): Promise<CheckResul
   }
 
   if (config.database.mode === "embedded-postgres") {
-    const dataDir = path.resolve(config.database.embeddedPostgresDataDir);
+    const dataDir = resolveConfigRelativePath(config.database.embeddedPostgresDataDir, configPath);
+    const reportedPath = dataDir;
     if (!fs.existsSync(dataDir)) {
       return {
         name: "Database",
         status: "warn",
-        message: `Embedded PostgreSQL data directory does not exist: ${dataDir}`,
+        message: `Embedded PostgreSQL data directory does not exist: ${reportedPath}`,
         canRepair: true,
         repair: () => {
-          fs.mkdirSync(dataDir, { recursive: true });
+          fs.mkdirSync(reportedPath, { recursive: true });
         },
       };
     }

@@ -363,7 +363,7 @@ export function AgentDetail() {
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <div className="flex items-center justify-between">
+        <div className="sticky top-0 z-10 -mx-6 px-6 py-2 bg-background/90 backdrop-blur-sm flex items-center justify-between">
           <PageTabBar
             items={[
               { value: "overview", label: "Overview" },
