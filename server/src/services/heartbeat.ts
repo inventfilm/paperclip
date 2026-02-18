@@ -250,6 +250,16 @@ async function runChildProcess(
   });
 }
 
+function buildPaperclipEnv(agent: { id: string; companyId: string }): Record<string, string> {
+  const vars: Record<string, string> = {
+    PAPERCLIP_AGENT_ID: agent.id,
+    PAPERCLIP_COMPANY_ID: agent.companyId,
+  };
+  const apiUrl = process.env.PAPERCLIP_API_URL ?? `http://localhost:${process.env.PORT ?? 3100}`;
+  vars.PAPERCLIP_API_URL = apiUrl;
+  return vars;
+}
+
 export function heartbeatService(db: Db) {
   const runLogStore = getRunLogStore();
 
@@ -530,6 +540,7 @@ export function heartbeatService(db: Db) {
 
   async function executeProcessRun(
     runId: string,
+    agent: typeof agents.$inferSelect,
     config: Record<string, unknown>,
     onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>,
   ): Promise<AdapterExecutionResult> {
@@ -539,7 +550,7 @@ export function heartbeatService(db: Db) {
     const args = asStringArray(config.args);
     const cwd = asString(config.cwd, process.cwd());
     const envConfig = parseObject(config.env);
-    const env: Record<string, string> = {};
+    const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
     for (const [k, v] of Object.entries(envConfig)) {
       if (typeof v === "string") env[k] = v;
     }
@@ -607,7 +618,7 @@ export function heartbeatService(db: Db) {
 
     const cwd = asString(config.cwd, process.cwd());
     const envConfig = parseObject(config.env);
-    const env: Record<string, string> = {};
+    const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
     for (const [k, v] of Object.entries(envConfig)) {
       if (typeof v === "string") env[k] = v;
     }
@@ -707,7 +718,7 @@ export function heartbeatService(db: Db) {
 
     const cwd = asString(config.cwd, process.cwd());
     const envConfig = parseObject(config.env);
-    const env: Record<string, string> = {};
+    const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
     for (const [k, v] of Object.entries(envConfig)) {
       if (typeof v === "string") env[k] = v;
     }
@@ -886,7 +897,7 @@ export function heartbeatService(db: Db) {
       } else if (agent.adapterType === "codex_local") {
         adapterResult = await executeCodexLocalRun(run.id, agent, runtime, config, context, onLog);
       } else {
-        adapterResult = await executeProcessRun(run.id, config, onLog);
+        adapterResult = await executeProcessRun(run.id, agent, config, onLog);
       }
 
       let outcome: "succeeded" | "failed" | "cancelled" | "timed_out";
