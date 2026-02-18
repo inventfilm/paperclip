@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
+import { getUIAdapter } from "../adapters";
+import { defaultCreateValues } from "./AgentConfigForm";
 import {
   Building2,
   Bot,
@@ -97,33 +99,17 @@ export function OnboardingWizard() {
   }
 
   function buildAdapterConfig(): Record<string, unknown> {
-    if (adapterType === "claude_local") {
-      return {
-        ...(cwd ? { cwd } : {}),
-        ...(model ? { model } : {}),
-        timeoutSec: 900,
-        graceSec: 15,
-        maxTurnsPerRun: 80,
-        dangerouslySkipPermissions: true,
-      };
-    }
-    if (adapterType === "process") {
-      return {
-        ...(command ? { command } : {}),
-        args: args
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-        timeoutSec: 900,
-        graceSec: 15,
-      };
-    }
-    // http
-    return {
-      ...(url ? { url } : {}),
-      method: "POST",
-      timeoutMs: 15000,
-    };
+    const adapter = getUIAdapter(adapterType);
+    return adapter.buildAdapterConfig({
+      ...defaultCreateValues,
+      adapterType,
+      cwd,
+      model,
+      command,
+      args,
+      url,
+      dangerouslySkipPermissions: adapterType === "claude_local",
+    });
   }
 
   async function handleStep1Next() {
@@ -594,11 +580,7 @@ export function OnboardingWizard() {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{agentName}</p>
                     <p className="text-xs text-muted-foreground">
-                      {adapterType === "claude_local"
-                        ? "Claude Code"
-                        : adapterType === "process"
-                          ? "Shell Command"
-                          : "HTTP Webhook"}
+                      {getUIAdapter(adapterType).label}
                     </p>
                   </div>
                   <Check className="h-4 w-4 text-green-500 shrink-0" />

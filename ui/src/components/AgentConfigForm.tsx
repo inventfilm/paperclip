@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AGENT_ADAPTER_TYPES } from "@paperclip/shared";
 import type { Agent } from "@paperclip/shared";
@@ -24,6 +24,8 @@ import {
   help,
   adapterLabels,
 } from "./agent-config-primitives";
+import { getUIAdapter } from "../adapters";
+import { ClaudeLocalAdvancedFields } from "../adapters/claude-local/config-fields";
 
 /* ---- Create mode values ---- */
 
@@ -251,6 +253,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     ? props.values.adapterType
     : overlay.adapterType ?? props.agent.adapterType;
   const isLocal = adapterType === "claude_local" || adapterType === "codex_local";
+  const uiAdapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
 
   // Fetch adapter models for the effective adapter type
   const { data: fetchedModels } = useQuery({
@@ -258,6 +261,19 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     queryFn: () => agentsApi.adapterModels(adapterType),
   });
   const models = fetchedModels ?? externalModels ?? [];
+
+  /** Props passed to adapter-specific config field components */
+  const adapterFieldProps = {
+    mode,
+    isCreate,
+    adapterType,
+    values: isCreate ? props.values : null,
+    set: isCreate ? (patch: Partial<CreateConfigValues>) => props.onChange(patch) : null,
+    config,
+    eff: eff as <T>(group: "adapterConfig", field: string, original: T) => T,
+    mark: mark as (group: "adapterConfig", field: string, value: unknown) => void,
+    models,
+  };
 
   // Section toggle state — advanced always starts collapsed
   const [adapterAdvancedOpen, setAdapterAdvancedOpen] = useState(false);
@@ -443,130 +459,8 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             </Field>
           )}
 
-          {/* Claude-specific: Skip permissions */}
-          {adapterType === "claude_local" && (
-            <ToggleField
-              label="Skip permissions"
-              hint={help.dangerouslySkipPermissions}
-              checked={
-                isCreate
-                  ? val!.dangerouslySkipPermissions
-                  : eff(
-                      "adapterConfig",
-                      "dangerouslySkipPermissions",
-                      config.dangerouslySkipPermissions !== false,
-                    )
-              }
-              onChange={(v) =>
-                isCreate
-                  ? set!({ dangerouslySkipPermissions: v })
-                  : mark("adapterConfig", "dangerouslySkipPermissions", v)
-              }
-            />
-          )}
-
-          {/* Codex-specific: Bypass sandbox + Search */}
-          {adapterType === "codex_local" && (
-            <>
-              <ToggleField
-                label="Bypass sandbox"
-                hint={help.dangerouslyBypassSandbox}
-                checked={
-                  isCreate
-                    ? val!.dangerouslyBypassSandbox
-                    : eff(
-                        "adapterConfig",
-                        "dangerouslyBypassApprovalsAndSandbox",
-                        config.dangerouslyBypassApprovalsAndSandbox !== false,
-                      )
-                }
-                onChange={(v) =>
-                  isCreate
-                    ? set!({ dangerouslyBypassSandbox: v })
-                    : mark("adapterConfig", "dangerouslyBypassApprovalsAndSandbox", v)
-                }
-              />
-              <ToggleField
-                label="Enable search"
-                hint={help.search}
-                checked={
-                  isCreate
-                    ? val!.search
-                    : eff("adapterConfig", "search", !!config.search)
-                }
-                onChange={(v) =>
-                  isCreate
-                    ? set!({ search: v })
-                    : mark("adapterConfig", "search", v)
-                }
-              />
-            </>
-          )}
-
-          {/* Process-specific */}
-          {adapterType === "process" && (
-            <>
-              <Field label="Command" hint={help.command}>
-                <DraftInput
-                  value={
-                    isCreate
-                      ? val!.command
-                      : eff("adapterConfig", "command", String(config.command ?? ""))
-                  }
-                  onCommit={(v) =>
-                    isCreate
-                      ? set!({ command: v })
-                      : mark("adapterConfig", "command", v || undefined)
-                  }
-                  immediate
-                  className={inputClass}
-                  placeholder="e.g. node, python"
-                />
-              </Field>
-              <Field label="Args (comma-separated)" hint={help.args}>
-                <DraftInput
-                  value={
-                    isCreate
-                      ? val!.args
-                      : eff("adapterConfig", "args", formatArgList(config.args))
-                  }
-                  onCommit={(v) =>
-                    isCreate
-                      ? set!({ args: v })
-                      : mark(
-                          "adapterConfig",
-                          "args",
-                          v ? parseCommaArgs(v) : undefined,
-                        )
-                  }
-                  immediate
-                  className={inputClass}
-                  placeholder="e.g. script.js, --flag"
-                />
-              </Field>
-            </>
-          )}
-
-          {/* HTTP-specific */}
-          {adapterType === "http" && (
-            <Field label="Webhook URL" hint={help.webhookUrl}>
-              <DraftInput
-                value={
-                  isCreate
-                    ? val!.url
-                    : eff("adapterConfig", "url", String(config.url ?? ""))
-                }
-                onCommit={(v) =>
-                  isCreate
-                    ? set!({ url: v })
-                    : mark("adapterConfig", "url", v || undefined)
-                }
-                immediate
-                className={inputClass}
-                placeholder="https://..."
-              />
-            </Field>
-          )}
+          {/* Adapter-specific fields */}
+          <uiAdapter.ConfigFields {...adapterFieldProps} />
 
           {/* Advanced adapter section — collapsible in both modes */}
           {isLocal && (
@@ -630,27 +524,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   )}
                 </Field>
                 {adapterType === "claude_local" && (
-                  <Field label="Max turns per run" hint={help.maxTurnsPerRun}>
-                    {isCreate ? (
-                      <input
-                        type="number"
-                        className={inputClass}
-                        value={val!.maxTurnsPerRun}
-                        onChange={(e) => set!({ maxTurnsPerRun: Number(e.target.value) })}
-                      />
-                    ) : (
-                      <DraftNumberInput
-                        value={eff(
-                          "adapterConfig",
-                          "maxTurnsPerRun",
-                          Number(config.maxTurnsPerRun ?? 80),
-                        )}
-                        onCommit={(v) => mark("adapterConfig", "maxTurnsPerRun", v || 80)}
-                        immediate
-                        className={inputClass}
-                      />
-                    )}
-                  </Field>
+                  <ClaudeLocalAdvancedFields {...adapterFieldProps} />
                 )}
 
                 <Field label="Extra args (comma-separated)" hint={help.extraArgs}>

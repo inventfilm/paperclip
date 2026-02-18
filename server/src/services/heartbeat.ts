@@ -1,6 +1,3 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { constants as fsConstants, promises as fs } from "node:fs";
-import path from "node:path";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import {
@@ -15,49 +12,14 @@ import { conflict, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { publishLiveEvent } from "./live-events.js";
 import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
+import { getServerAdapter, runningProcesses } from "../adapters/index.js";
+import type { AdapterExecutionResult, AdapterInvocationMeta } from "../adapters/index.js";
+import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
 
-interface RunningProcess {
-  child: ChildProcess;
-  graceSec: number;
-}
+const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 
-interface RunProcessResult {
-  exitCode: number | null;
-  signal: string | null;
-  timedOut: boolean;
-  stdout: string;
-  stderr: string;
-}
-
-interface UsageSummary {
-  inputTokens: number;
-  outputTokens: number;
-  cachedInputTokens?: number;
-}
-
-interface AdapterExecutionResult {
-  exitCode: number | null;
-  signal: string | null;
-  timedOut: boolean;
-  errorMessage?: string | null;
-  usage?: UsageSummary;
-  sessionId?: string | null;
-  provider?: string | null;
-  model?: string | null;
-  costUsd?: number | null;
-  resultJson?: Record<string, unknown> | null;
-  summary?: string | null;
-  clearSession?: boolean;
-}
-
-interface AdapterInvocationMeta {
-  adapterType: string;
-  command: string;
-  cwd?: string;
-  commandArgs?: string[];
-  env?: Record<string, string>;
-  prompt?: string;
-  context?: Record<string, unknown>;
+function appendExcerpt(prev: string, chunk: string) {
+  return appendWithCap(prev, chunk, MAX_EXCERPT_BYTES);
 }
 
 interface WakeupOptions {
@@ -69,418 +31,6 @@ interface WakeupOptions {
   requestedByActorType?: "user" | "agent" | "system";
   requestedByActorId?: string | null;
   contextSnapshot?: Record<string, unknown>;
-}
-
-const runningProcesses = new Map<string, RunningProcess>();
-const MAX_CAPTURE_BYTES = 4 * 1024 * 1024;
-const MAX_EXCERPT_BYTES = 32 * 1024;
-const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
-const SENSITIVE_ENV_KEY = /(key|token|secret|password|passwd|authorization|cookie)/i;
-
-function parseObject(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return {};
-  }
-  return value as Record<string, unknown>;
-}
-
-function asString(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.length > 0 ? value : fallback;
-}
-
-function asNumber(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-function asBoolean(value: unknown, fallback: boolean): boolean {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function asStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function parseJson(value: string): Record<string, unknown> | null {
-  try {
-    return JSON.parse(value) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-function appendWithCap(prev: string, chunk: string, cap = MAX_CAPTURE_BYTES) {
-  const combined = prev + chunk;
-  return combined.length > cap ? combined.slice(combined.length - cap) : combined;
-}
-
-function appendExcerpt(prev: string, chunk: string) {
-  return appendWithCap(prev, chunk, MAX_EXCERPT_BYTES);
-}
-
-function resolvePathValue(obj: Record<string, unknown>, dottedPath: string) {
-  const parts = dottedPath.split(".");
-  let cursor: unknown = obj;
-
-  for (const part of parts) {
-    if (typeof cursor !== "object" || cursor === null || Array.isArray(cursor)) {
-      return "";
-    }
-    cursor = (cursor as Record<string, unknown>)[part];
-  }
-
-  if (cursor === null || cursor === undefined) return "";
-  if (typeof cursor === "string") return cursor;
-  if (typeof cursor === "number" || typeof cursor === "boolean") return String(cursor);
-
-  try {
-    return JSON.stringify(cursor);
-  } catch {
-    return "";
-  }
-}
-
-function renderTemplate(template: string, data: Record<string, unknown>) {
-  return template.replace(/{{\s*([a-zA-Z0-9_.-]+)\s*}}/g, (_, path) => resolvePathValue(data, path));
-}
-
-function parseCodexJsonl(stdout: string) {
-  let sessionId: string | null = null;
-  const messages: string[] = [];
-  const usage = {
-    inputTokens: 0,
-    cachedInputTokens: 0,
-    outputTokens: 0,
-  };
-
-  for (const rawLine of stdout.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-
-    const event = parseJson(line);
-    if (!event) continue;
-
-    const type = asString(event.type, "");
-    if (type === "thread.started") {
-      sessionId = asString(event.thread_id, sessionId ?? "") || sessionId;
-      continue;
-    }
-
-    if (type === "item.completed") {
-      const item = parseObject(event.item);
-      if (asString(item.type, "") === "agent_message") {
-        const text = asString(item.text, "");
-        if (text) messages.push(text);
-      }
-      continue;
-    }
-
-    if (type === "turn.completed") {
-      const usageObj = parseObject(event.usage);
-      usage.inputTokens = asNumber(usageObj.input_tokens, usage.inputTokens);
-      usage.cachedInputTokens = asNumber(usageObj.cached_input_tokens, usage.cachedInputTokens);
-      usage.outputTokens = asNumber(usageObj.output_tokens, usage.outputTokens);
-    }
-  }
-
-  return {
-    sessionId,
-    summary: messages.join("\n\n").trim(),
-    usage,
-  };
-}
-
-function describeClaudeFailure(parsed: Record<string, unknown>): string | null {
-  const subtype = asString(parsed.subtype, "");
-  const resultText = asString(parsed.result, "").trim();
-  const errors = extractClaudeErrorMessages(parsed);
-
-  let detail = resultText;
-  if (!detail && errors.length > 0) {
-    detail = errors[0] ?? "";
-  }
-
-  const parts = ["Claude run failed"];
-  if (subtype) parts.push(`subtype=${subtype}`);
-  if (detail) parts.push(detail);
-  return parts.length > 1 ? parts.join(": ") : null;
-}
-
-function extractClaudeErrorMessages(parsed: Record<string, unknown>): string[] {
-  const raw = Array.isArray(parsed.errors) ? parsed.errors : [];
-  const messages: string[] = [];
-
-  for (const entry of raw) {
-    if (typeof entry === "string") {
-      const msg = entry.trim();
-      if (msg) messages.push(msg);
-      continue;
-    }
-
-    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
-      continue;
-    }
-
-    const obj = entry as Record<string, unknown>;
-    const msg = asString(obj.message, "") || asString(obj.error, "") || asString(obj.code, "");
-    if (msg) {
-      messages.push(msg);
-      continue;
-    }
-
-    try {
-      messages.push(JSON.stringify(obj));
-    } catch {
-      // skip non-serializable entry
-    }
-  }
-
-  return messages;
-}
-
-function isClaudeUnknownSessionError(parsed: Record<string, unknown>): boolean {
-  const resultText = asString(parsed.result, "").trim();
-  const allMessages = [resultText, ...extractClaudeErrorMessages(parsed)]
-    .map((msg) => msg.trim())
-    .filter(Boolean);
-
-  return allMessages.some((msg) =>
-    /no conversation found with session id|unknown session|session .* not found/i.test(msg),
-  );
-}
-
-function parseClaudeStreamJson(stdout: string) {
-  let sessionId: string | null = null;
-  let model = "";
-  let finalResult: Record<string, unknown> | null = null;
-  const assistantTexts: string[] = [];
-
-  for (const rawLine of stdout.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    const event = parseJson(line);
-    if (!event) continue;
-
-    const type = asString(event.type, "");
-    if (type === "system" && asString(event.subtype, "") === "init") {
-      sessionId = asString(event.session_id, sessionId ?? "") || sessionId;
-      model = asString(event.model, model);
-      continue;
-    }
-
-    if (type === "assistant") {
-      sessionId = asString(event.session_id, sessionId ?? "") || sessionId;
-      const message = parseObject(event.message);
-      const content = Array.isArray(message.content) ? message.content : [];
-      for (const entry of content) {
-        if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
-        const block = entry as Record<string, unknown>;
-        if (asString(block.type, "") === "text") {
-          const text = asString(block.text, "");
-          if (text) assistantTexts.push(text);
-        }
-      }
-      continue;
-    }
-
-    if (type === "result") {
-      finalResult = event;
-      sessionId = asString(event.session_id, sessionId ?? "") || sessionId;
-    }
-  }
-
-  if (!finalResult) {
-    return {
-      sessionId,
-      model,
-      costUsd: null as number | null,
-      usage: null as UsageSummary | null,
-      summary: assistantTexts.join("\n\n").trim(),
-      resultJson: null as Record<string, unknown> | null,
-    };
-  }
-
-  const usageObj = parseObject(finalResult.usage);
-  const usage: UsageSummary = {
-    inputTokens: asNumber(usageObj.input_tokens, 0),
-    cachedInputTokens: asNumber(usageObj.cache_read_input_tokens, 0),
-    outputTokens: asNumber(usageObj.output_tokens, 0),
-  };
-  const costRaw = finalResult.total_cost_usd;
-  const costUsd = typeof costRaw === "number" && Number.isFinite(costRaw) ? costRaw : null;
-  const summary = asString(finalResult.result, assistantTexts.join("\n\n")).trim();
-
-  return {
-    sessionId,
-    model,
-    costUsd,
-    usage,
-    summary,
-    resultJson: finalResult,
-  };
-}
-
-function redactEnvForLogs(env: Record<string, string>): Record<string, string> {
-  const redacted: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    redacted[key] = SENSITIVE_ENV_KEY.test(key) ? "***REDACTED***" : value;
-  }
-  return redacted;
-}
-
-async function runChildProcess(
-  runId: string,
-  command: string,
-  args: string[],
-  opts: {
-    cwd: string;
-    env: Record<string, string>;
-    timeoutSec: number;
-    graceSec: number;
-    onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
-  },
-): Promise<RunProcessResult> {
-  return new Promise<RunProcessResult>((resolve, reject) => {
-    const mergedEnv = ensurePathInEnv({ ...process.env, ...opts.env });
-    const child = spawn(command, args, {
-      cwd: opts.cwd,
-      env: mergedEnv,
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    runningProcesses.set(runId, { child, graceSec: opts.graceSec });
-
-    let timedOut = false;
-    let stdout = "";
-    let stderr = "";
-    let logChain: Promise<void> = Promise.resolve();
-
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-      setTimeout(() => {
-        if (!child.killed) {
-          child.kill("SIGKILL");
-        }
-      }, Math.max(1, opts.graceSec) * 1000);
-    }, Math.max(1, opts.timeoutSec) * 1000);
-
-    child.stdout?.on("data", (chunk) => {
-      const text = String(chunk);
-      stdout = appendWithCap(stdout, text);
-      logChain = logChain
-        .then(() => opts.onLog("stdout", text))
-        .catch((err) => logger.warn({ err, runId }, "failed to append stdout log chunk"));
-    });
-
-    child.stderr?.on("data", (chunk) => {
-      const text = String(chunk);
-      stderr = appendWithCap(stderr, text);
-      logChain = logChain
-        .then(() => opts.onLog("stderr", text))
-        .catch((err) => logger.warn({ err, runId }, "failed to append stderr log chunk"));
-    });
-
-    child.on("error", (err) => {
-      clearTimeout(timeout);
-      runningProcesses.delete(runId);
-      const errno = (err as NodeJS.ErrnoException).code;
-      const pathValue = mergedEnv.PATH ?? mergedEnv.Path ?? "";
-      const msg =
-        errno === "ENOENT"
-          ? `Failed to start command "${command}" in "${opts.cwd}". Verify adapter command, working directory, and PATH (${pathValue}).`
-          : `Failed to start command "${command}" in "${opts.cwd}": ${err.message}`;
-      reject(new Error(msg));
-    });
-
-    child.on("close", (code, signal) => {
-      clearTimeout(timeout);
-      runningProcesses.delete(runId);
-      void logChain.finally(() => {
-        resolve({
-          exitCode: code,
-          signal,
-          timedOut,
-          stdout,
-          stderr,
-        });
-      });
-    });
-  });
-}
-
-function buildPaperclipEnv(agent: { id: string; companyId: string }): Record<string, string> {
-  const vars: Record<string, string> = {
-    PAPERCLIP_AGENT_ID: agent.id,
-    PAPERCLIP_COMPANY_ID: agent.companyId,
-  };
-  const apiUrl = process.env.PAPERCLIP_API_URL ?? `http://localhost:${process.env.PORT ?? 3100}`;
-  vars.PAPERCLIP_API_URL = apiUrl;
-  return vars;
-}
-
-function defaultPathForPlatform() {
-  if (process.platform === "win32") {
-    return "C:\\Windows\\System32;C:\\Windows;C:\\Windows\\System32\\Wbem";
-  }
-  return "/usr/local/bin:/opt/homebrew/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin";
-}
-
-function ensurePathInEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  if (typeof env.PATH === "string" && env.PATH.length > 0) return env;
-  if (typeof env.Path === "string" && env.Path.length > 0) return env;
-  return { ...env, PATH: defaultPathForPlatform() };
-}
-
-async function ensureAbsoluteDirectory(cwd: string) {
-  if (!path.isAbsolute(cwd)) {
-    throw new Error(`Working directory must be an absolute path: "${cwd}"`);
-  }
-
-  let stats;
-  try {
-    stats = await fs.stat(cwd);
-  } catch {
-    throw new Error(`Working directory does not exist: "${cwd}"`);
-  }
-
-  if (!stats.isDirectory()) {
-    throw new Error(`Working directory is not a directory: "${cwd}"`);
-  }
-}
-
-async function ensureCommandResolvable(command: string, cwd: string, env: NodeJS.ProcessEnv) {
-  const hasPathSeparator = command.includes("/") || command.includes("\\");
-  if (hasPathSeparator) {
-    const absolute = path.isAbsolute(command) ? command : path.resolve(cwd, command);
-    try {
-      await fs.access(absolute, fsConstants.X_OK);
-    } catch {
-      throw new Error(`Command is not executable: "${command}" (resolved: "${absolute}")`);
-    }
-    return;
-  }
-
-  const pathValue = env.PATH ?? env.Path ?? "";
-  const delimiter = process.platform === "win32" ? ";" : ":";
-  const dirs = pathValue.split(delimiter).filter(Boolean);
-  const windowsExt = process.platform === "win32"
-    ? (env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";")
-    : [""];
-
-  for (const dir of dirs) {
-    for (const ext of windowsExt) {
-      const candidate = path.join(dir, process.platform === "win32" ? `${command}${ext}` : command);
-      try {
-        await fs.access(candidate, fsConstants.X_OK);
-        return;
-      } catch {
-        // continue scanning PATH
-      }
-    }
-  }
-
-  throw new Error(`Command not found in PATH: "${command}"`);
 }
 
 export function heartbeatService(db: Db) {
@@ -717,414 +267,6 @@ export function heartbeatService(db: Db) {
     }
   }
 
-  async function executeHttpRun(
-    runId: string,
-    agentId: string,
-    config: Record<string, unknown>,
-    context: Record<string, unknown>,
-  ): Promise<AdapterExecutionResult> {
-    const url = asString(config.url, "");
-    if (!url) throw new Error("HTTP adapter missing url");
-
-    const method = asString(config.method, "POST");
-    const timeoutMs = asNumber(config.timeoutMs, 15000);
-    const headers = parseObject(config.headers) as Record<string, string>;
-    const payloadTemplate = parseObject(config.payloadTemplate);
-    const body = { ...payloadTemplate, agentId, runId, context };
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-      const res = await fetch(url, {
-        method,
-        headers: {
-          "content-type": "application/json",
-          ...headers,
-        },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        throw new Error(`HTTP invoke failed with status ${res.status}`);
-      }
-
-      return {
-        exitCode: 0,
-        signal: null,
-        timedOut: false,
-        summary: `HTTP ${method} ${url}`,
-      };
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  async function executeProcessRun(
-    runId: string,
-    agent: typeof agents.$inferSelect,
-    config: Record<string, unknown>,
-    onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>,
-    onMeta?: (meta: AdapterInvocationMeta) => Promise<void>,
-  ): Promise<AdapterExecutionResult> {
-    const command = asString(config.command, "");
-    if (!command) throw new Error("Process adapter missing command");
-
-    const args = asStringArray(config.args);
-    const cwd = asString(config.cwd, process.cwd());
-    const envConfig = parseObject(config.env);
-    const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
-    for (const [k, v] of Object.entries(envConfig)) {
-      if (typeof v === "string") env[k] = v;
-    }
-
-    const timeoutSec = asNumber(config.timeoutSec, 900);
-    const graceSec = asNumber(config.graceSec, 15);
-
-    if (onMeta) {
-      await onMeta({
-        adapterType: "process",
-        command,
-        cwd,
-        commandArgs: args,
-        env: redactEnvForLogs(env),
-      });
-    }
-
-    const proc = await runChildProcess(runId, command, args, {
-      cwd,
-      env,
-      timeoutSec,
-      graceSec,
-      onLog,
-    });
-
-    if (proc.timedOut) {
-      return {
-        exitCode: proc.exitCode,
-        signal: proc.signal,
-        timedOut: true,
-        errorMessage: `Timed out after ${timeoutSec}s`,
-      };
-    }
-
-    if ((proc.exitCode ?? 0) !== 0) {
-      return {
-        exitCode: proc.exitCode,
-        signal: proc.signal,
-        timedOut: false,
-        errorMessage: `Process exited with code ${proc.exitCode ?? -1}`,
-        resultJson: {
-          stdout: proc.stdout,
-          stderr: proc.stderr,
-        },
-      };
-    }
-
-    return {
-      exitCode: proc.exitCode,
-      signal: proc.signal,
-      timedOut: false,
-      resultJson: {
-        stdout: proc.stdout,
-        stderr: proc.stderr,
-      },
-    };
-  }
-
-  async function executeClaudeLocalRun(
-    runId: string,
-    agent: typeof agents.$inferSelect,
-    runtime: typeof agentRuntimeState.$inferSelect,
-    config: Record<string, unknown>,
-    context: Record<string, unknown>,
-    onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>,
-    onMeta?: (meta: AdapterInvocationMeta) => Promise<void>,
-  ): Promise<AdapterExecutionResult> {
-    const promptTemplate = asString(
-      config.promptTemplate,
-      "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
-    );
-    const bootstrapTemplate = asString(config.bootstrapPromptTemplate, promptTemplate);
-    const command = asString(config.command, "claude");
-    const model = asString(config.model, "");
-    const maxTurns = asNumber(config.maxTurnsPerRun, 0);
-    const dangerouslySkipPermissions = asBoolean(config.dangerouslySkipPermissions, false);
-
-    const cwd = asString(config.cwd, process.cwd());
-    await ensureAbsoluteDirectory(cwd);
-    const envConfig = parseObject(config.env);
-    const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
-    for (const [k, v] of Object.entries(envConfig)) {
-      if (typeof v === "string") env[k] = v;
-    }
-    const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
-    await ensureCommandResolvable(command, cwd, runtimeEnv);
-
-    const timeoutSec = asNumber(config.timeoutSec, 1800);
-    const graceSec = asNumber(config.graceSec, 20);
-    const extraArgs = (() => {
-      const fromExtraArgs = asStringArray(config.extraArgs);
-      if (fromExtraArgs.length > 0) return fromExtraArgs;
-      return asStringArray(config.args);
-    })();
-
-    const sessionId = runtime.sessionId;
-    const template = sessionId ? promptTemplate : bootstrapTemplate;
-    const prompt = renderTemplate(template, {
-      company: { id: agent.companyId },
-      agent,
-      run: { id: runId, source: "on_demand" },
-      context,
-    });
-
-    const buildClaudeArgs = (resumeSessionId: string | null) => {
-      const args = ["--print", prompt, "--output-format", "stream-json", "--verbose"];
-      if (resumeSessionId) args.push("--resume", resumeSessionId);
-      if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
-      if (model) args.push("--model", model);
-      if (maxTurns > 0) args.push("--max-turns", String(maxTurns));
-      if (extraArgs.length > 0) args.push(...extraArgs);
-      return args;
-    };
-
-    const parseFallbackErrorMessage = (proc: RunProcessResult) => {
-      const stderrLine =
-        proc.stderr
-          .split(/\r?\n/)
-          .map((line) => line.trim())
-          .find(Boolean) ?? "";
-
-      if ((proc.exitCode ?? 0) === 0) {
-        return "Failed to parse claude JSON output";
-      }
-
-      return stderrLine
-        ? `Claude exited with code ${proc.exitCode ?? -1}: ${stderrLine}`
-        : `Claude exited with code ${proc.exitCode ?? -1}`;
-    };
-
-    const runAttempt = async (resumeSessionId: string | null) => {
-      const args = buildClaudeArgs(resumeSessionId);
-      if (onMeta) {
-        await onMeta({
-          adapterType: "claude_local",
-          command,
-          cwd,
-          commandArgs: args.map((value, idx) => (idx === 1 ? `<prompt ${prompt.length} chars>` : value)),
-          env: redactEnvForLogs(env),
-          prompt,
-          context,
-        });
-      }
-
-      const proc = await runChildProcess(runId, command, args, {
-        cwd,
-        env,
-        timeoutSec,
-        graceSec,
-        onLog,
-      });
-
-      const parsedStream = parseClaudeStreamJson(proc.stdout);
-      const parsed = parsedStream.resultJson ?? parseJson(proc.stdout);
-      return { proc, parsedStream, parsed };
-    };
-
-    const toAdapterResult = (
-      attempt: {
-        proc: RunProcessResult;
-        parsedStream: ReturnType<typeof parseClaudeStreamJson>;
-        parsed: Record<string, unknown> | null;
-      },
-      opts: { fallbackSessionId: string | null; clearSessionOnMissingSession?: boolean },
-    ): AdapterExecutionResult => {
-      const { proc, parsedStream, parsed } = attempt;
-      if (proc.timedOut) {
-        return {
-          exitCode: proc.exitCode,
-          signal: proc.signal,
-          timedOut: true,
-          errorMessage: `Timed out after ${timeoutSec}s`,
-          clearSession: Boolean(opts.clearSessionOnMissingSession),
-        };
-      }
-
-      if (!parsed) {
-        return {
-          exitCode: proc.exitCode,
-          signal: proc.signal,
-          timedOut: false,
-          errorMessage: parseFallbackErrorMessage(proc),
-          resultJson: {
-            stdout: proc.stdout,
-            stderr: proc.stderr,
-          },
-          clearSession: Boolean(opts.clearSessionOnMissingSession),
-        };
-      }
-
-      const usage =
-        parsedStream.usage ??
-        (() => {
-          const usageObj = parseObject(parsed.usage);
-          return {
-            inputTokens: asNumber(usageObj.input_tokens, 0),
-            cachedInputTokens: asNumber(usageObj.cache_read_input_tokens, 0),
-            outputTokens: asNumber(usageObj.output_tokens, 0),
-          };
-        })();
-
-      const resolvedSessionId =
-        parsedStream.sessionId ??
-        (asString(parsed.session_id, opts.fallbackSessionId ?? "") || opts.fallbackSessionId);
-
-      return {
-        exitCode: proc.exitCode,
-        signal: proc.signal,
-        timedOut: false,
-        errorMessage:
-          (proc.exitCode ?? 0) === 0
-            ? null
-            : describeClaudeFailure(parsed) ?? `Claude exited with code ${proc.exitCode ?? -1}`,
-        usage,
-        sessionId: resolvedSessionId,
-        provider: "anthropic",
-        model: parsedStream.model || asString(parsed.model, model),
-        costUsd: parsedStream.costUsd ?? asNumber(parsed.total_cost_usd, 0),
-        resultJson: parsed,
-        summary: parsedStream.summary || asString(parsed.result, ""),
-        clearSession: Boolean(opts.clearSessionOnMissingSession && !resolvedSessionId),
-      };
-    };
-
-    const initial = await runAttempt(sessionId ?? null);
-    if (
-      sessionId &&
-      !initial.proc.timedOut &&
-      (initial.proc.exitCode ?? 0) !== 0 &&
-      initial.parsed &&
-      isClaudeUnknownSessionError(initial.parsed)
-    ) {
-      await onLog(
-        "stderr",
-        `[paperclip] Claude resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
-      );
-      const retry = await runAttempt(null);
-      return toAdapterResult(retry, { fallbackSessionId: null, clearSessionOnMissingSession: true });
-    }
-
-    return toAdapterResult(initial, { fallbackSessionId: runtime.sessionId });
-  }
-
-  async function executeCodexLocalRun(
-    runId: string,
-    agent: typeof agents.$inferSelect,
-    runtime: typeof agentRuntimeState.$inferSelect,
-    config: Record<string, unknown>,
-    context: Record<string, unknown>,
-    onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>,
-    onMeta?: (meta: AdapterInvocationMeta) => Promise<void>,
-  ): Promise<AdapterExecutionResult> {
-    const promptTemplate = asString(
-      config.promptTemplate,
-      "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
-    );
-    const bootstrapTemplate = asString(config.bootstrapPromptTemplate, promptTemplate);
-    const command = asString(config.command, "codex");
-    const model = asString(config.model, "");
-    const search = asBoolean(config.search, false);
-    const bypass = asBoolean(config.dangerouslyBypassApprovalsAndSandbox, false);
-
-    const cwd = asString(config.cwd, process.cwd());
-    await ensureAbsoluteDirectory(cwd);
-    const envConfig = parseObject(config.env);
-    const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
-    for (const [k, v] of Object.entries(envConfig)) {
-      if (typeof v === "string") env[k] = v;
-    }
-    const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
-    await ensureCommandResolvable(command, cwd, runtimeEnv);
-
-    const timeoutSec = asNumber(config.timeoutSec, 1800);
-    const graceSec = asNumber(config.graceSec, 20);
-    const extraArgs = (() => {
-      const fromExtraArgs = asStringArray(config.extraArgs);
-      if (fromExtraArgs.length > 0) return fromExtraArgs;
-      return asStringArray(config.args);
-    })();
-
-    const sessionId = runtime.sessionId;
-    const template = sessionId ? promptTemplate : bootstrapTemplate;
-    const prompt = renderTemplate(template, {
-      company: { id: agent.companyId },
-      agent,
-      run: { id: runId, source: "on_demand" },
-      context,
-    });
-
-    const args = ["exec", "--json"];
-    if (search) args.unshift("--search");
-    if (bypass) args.push("--dangerously-bypass-approvals-and-sandbox");
-    if (model) args.push("--model", model);
-    if (extraArgs.length > 0) args.push(...extraArgs);
-    if (sessionId) args.push("resume", sessionId, prompt);
-    else args.push(prompt);
-
-    if (onMeta) {
-      await onMeta({
-        adapterType: "codex_local",
-        command,
-        cwd,
-        commandArgs: args.map((value, idx) => {
-          if (!sessionId && idx === args.length - 1) return `<prompt ${prompt.length} chars>`;
-          if (sessionId && idx === args.length - 1) return `<prompt ${prompt.length} chars>`;
-          return value;
-        }),
-        env: redactEnvForLogs(env),
-        prompt,
-        context,
-      });
-    }
-
-    const proc = await runChildProcess(runId, command, args, {
-      cwd,
-      env,
-      timeoutSec,
-      graceSec,
-      onLog,
-    });
-
-    if (proc.timedOut) {
-      return {
-        exitCode: proc.exitCode,
-        signal: proc.signal,
-        timedOut: true,
-        errorMessage: `Timed out after ${timeoutSec}s`,
-      };
-    }
-
-    const parsed = parseCodexJsonl(proc.stdout);
-
-    return {
-      exitCode: proc.exitCode,
-      signal: proc.signal,
-      timedOut: false,
-      errorMessage: (proc.exitCode ?? 0) === 0 ? null : `Codex exited with code ${proc.exitCode ?? -1}`,
-      usage: parsed.usage,
-      sessionId: parsed.sessionId ?? runtime.sessionId,
-      provider: "openai",
-      model,
-      costUsd: null,
-      resultJson: {
-        stdout: proc.stdout,
-        stderr: proc.stderr,
-      },
-      summary: parsed.summary,
-    };
-  }
-
   async function executeRun(runId: string) {
     const run = await getRun(runId);
     if (!run) return;
@@ -1238,20 +380,20 @@ export function heartbeatService(db: Db) {
           stream: "system",
           level: "info",
           message: "adapter invocation",
-          payload: meta as Record<string, unknown>,
+          payload: meta as unknown as Record<string, unknown>,
         });
       };
 
-      let adapterResult: AdapterExecutionResult;
-      if (agent.adapterType === "http") {
-        adapterResult = await executeHttpRun(run.id, agent.id, config, context);
-      } else if (agent.adapterType === "claude_local") {
-        adapterResult = await executeClaudeLocalRun(run.id, agent, runtime, config, context, onLog, onAdapterMeta);
-      } else if (agent.adapterType === "codex_local") {
-        adapterResult = await executeCodexLocalRun(run.id, agent, runtime, config, context, onLog, onAdapterMeta);
-      } else {
-        adapterResult = await executeProcessRun(run.id, agent, config, onLog, onAdapterMeta);
-      }
+      const adapter = getServerAdapter(agent.adapterType);
+      const adapterResult = await adapter.execute({
+        runId: run.id,
+        agent,
+        runtime,
+        config,
+        context,
+        onLog,
+        onMeta: onAdapterMeta,
+      });
 
       let outcome: "succeeded" | "failed" | "cancelled" | "timed_out";
       const latestRun = await getRun(run.id);
@@ -1473,9 +615,9 @@ export function heartbeatService(db: Db) {
       .returning()
       .then((rows) => rows[0]);
 
-    const runtime = await getRuntimeState(agent.id);
+    const runtimeForRun = await getRuntimeState(agent.id);
 
-    const run = await db
+    const newRun = await db
       .insert(heartbeatRuns)
       .values({
         companyId: agent.companyId,
@@ -1485,7 +627,7 @@ export function heartbeatService(db: Db) {
         status: "queued",
         wakeupRequestId: wakeupRequest.id,
         contextSnapshot,
-        sessionIdBefore: runtime?.sessionId ?? null,
+        sessionIdBefore: runtimeForRun?.sessionId ?? null,
       })
       .returning()
       .then((rows) => rows[0]);
@@ -1493,28 +635,28 @@ export function heartbeatService(db: Db) {
     await db
       .update(agentWakeupRequests)
       .set({
-        runId: run.id,
+        runId: newRun.id,
         updatedAt: new Date(),
       })
       .where(eq(agentWakeupRequests.id, wakeupRequest.id));
 
     publishLiveEvent({
-      companyId: run.companyId,
+      companyId: newRun.companyId,
       type: "heartbeat.run.queued",
       payload: {
-        runId: run.id,
-        agentId: run.agentId,
-        invocationSource: run.invocationSource,
-        triggerDetail: run.triggerDetail,
-        wakeupRequestId: run.wakeupRequestId,
+        runId: newRun.id,
+        agentId: newRun.agentId,
+        invocationSource: newRun.invocationSource,
+        triggerDetail: newRun.triggerDetail,
+        wakeupRequestId: newRun.wakeupRequestId,
       },
     });
 
-    void executeRun(run.id).catch((err) => {
-      logger.error({ err, runId: run.id }, "heartbeat execution failed");
+    void executeRun(newRun.id).catch((err) => {
+      logger.error({ err, runId: newRun.id }, "heartbeat execution failed");
     });
 
-    return run;
+    return newRun;
   }
 
   return {

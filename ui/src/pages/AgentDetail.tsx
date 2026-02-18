@@ -12,6 +12,8 @@ import { queryKeys } from "../lib/queryKeys";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { PageTabBar } from "../components/PageTabBar";
 import { adapterLabels, roleLabels } from "../components/agent-config-primitives";
+import { getUIAdapter, buildTranscript } from "../adapters";
+import type { TranscriptEntry } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
@@ -106,148 +108,9 @@ function runMetrics(run: HeartbeatRun) {
 
 type RunLogChunk = { ts: string; stream: "stdout" | "stderr" | "system"; chunk: string };
 
-type TranscriptEntry =
-  | { kind: "assistant"; ts: string; text: string }
-  | { kind: "tool_call"; ts: string; name: string; input: unknown }
-  | { kind: "init"; ts: string; model: string; sessionId: string }
-  | { kind: "result"; ts: string; text: string; inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number; subtype: string; isError: boolean; errors: string[] }
-  | { kind: "stderr"; ts: string; text: string }
-  | { kind: "system"; ts: string; text: string }
-  | { kind: "stdout"; ts: string; text: string };
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
-}
-
-function asNumber(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function errorText(value: unknown): string {
-  if (typeof value === "string") return value;
-  const rec = asRecord(value);
-  if (!rec) return "";
-  const msg =
-    (typeof rec.message === "string" && rec.message) ||
-    (typeof rec.error === "string" && rec.error) ||
-    (typeof rec.code === "string" && rec.code) ||
-    "";
-  if (msg) return msg;
-  try {
-    return JSON.stringify(rec);
-  } catch {
-    return "";
-  }
-}
-
-function parseClaudeStdoutLine(line: string, ts: string): TranscriptEntry[] {
-  const parsed = asRecord(safeJsonParse(line));
-  if (!parsed) {
-    return [{ kind: "stdout", ts, text: line }];
-  }
-
-  const type = typeof parsed.type === "string" ? parsed.type : "";
-  if (type === "system" && parsed.subtype === "init") {
-    return [
-      {
-        kind: "init",
-        ts,
-        model: typeof parsed.model === "string" ? parsed.model : "unknown",
-        sessionId: typeof parsed.session_id === "string" ? parsed.session_id : "",
-      },
-    ];
-  }
-
-  if (type === "assistant") {
-    const message = asRecord(parsed.message) ?? {};
-    const content = Array.isArray(message.content) ? message.content : [];
-    const entries: TranscriptEntry[] = [];
-    for (const blockRaw of content) {
-      const block = asRecord(blockRaw);
-      if (!block) continue;
-      const blockType = typeof block.type === "string" ? block.type : "";
-      if (blockType === "text") {
-        const text = typeof block.text === "string" ? block.text : "";
-        if (text) entries.push({ kind: "assistant", ts, text });
-      } else if (blockType === "tool_use") {
-        entries.push({
-          kind: "tool_call",
-          ts,
-          name: typeof block.name === "string" ? block.name : "unknown",
-          input: block.input ?? {},
-        });
-      }
-    }
-    return entries.length > 0 ? entries : [{ kind: "stdout", ts, text: line }];
-  }
-
-  if (type === "result") {
-    const usage = asRecord(parsed.usage) ?? {};
-    const inputTokens = asNumber(usage.input_tokens);
-    const outputTokens = asNumber(usage.output_tokens);
-    const cachedTokens = asNumber(usage.cache_read_input_tokens);
-    const costUsd = asNumber(parsed.total_cost_usd);
-    const subtype = typeof parsed.subtype === "string" ? parsed.subtype : "";
-    const isError = parsed.is_error === true;
-    const errors = Array.isArray(parsed.errors) ? parsed.errors.map(errorText).filter(Boolean) : [];
-    const text = typeof parsed.result === "string" ? parsed.result : "";
-    return [{
-      kind: "result",
-      ts,
-      text,
-      inputTokens,
-      outputTokens,
-      cachedTokens,
-      costUsd,
-      subtype,
-      isError,
-      errors,
-    }];
-  }
-
-  return [{ kind: "stdout", ts, text: line }];
-}
-
-function buildTranscript(chunks: RunLogChunk[]): TranscriptEntry[] {
-  const entries: TranscriptEntry[] = [];
-  let stdoutBuffer = "";
-
-  for (const chunk of chunks) {
-    if (chunk.stream === "stderr") {
-      entries.push({ kind: "stderr", ts: chunk.ts, text: chunk.chunk });
-      continue;
-    }
-    if (chunk.stream === "system") {
-      entries.push({ kind: "system", ts: chunk.ts, text: chunk.chunk });
-      continue;
-    }
-
-    const combined = stdoutBuffer + chunk.chunk;
-    const lines = combined.split(/\r?\n/);
-    stdoutBuffer = lines.pop() ?? "";
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      entries.push(...parseClaudeStdoutLine(trimmed, chunk.ts));
-    }
-  }
-
-  const trailing = stdoutBuffer.trim();
-  if (trailing) {
-    const ts = chunks.length > 0 ? chunks[chunks.length - 1]!.ts : new Date().toISOString();
-    entries.push(...parseClaudeStdoutLine(trailing, ts));
-  }
-
-  return entries;
-}
-
-function safeJsonParse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return null;
-  }
 }
 
 export function AgentDetail() {
@@ -608,7 +471,7 @@ export function AgentDetail() {
 
         {/* RUNS TAB */}
         <TabsContent value="runs" className="mt-4">
-          <RunsTab runs={heartbeats ?? []} companyId={selectedCompanyId!} agentId={agentId!} selectedRunId={urlRunId ?? null} />
+          <RunsTab runs={heartbeats ?? []} companyId={selectedCompanyId!} agentId={agentId!} selectedRunId={urlRunId ?? null} adapterType={agent.adapterType} />
         </TabsContent>
 
         {/* ISSUES TAB */}
@@ -707,7 +570,7 @@ function ConfigurationTab({
 
 /* ---- Runs Tab ---- */
 
-function RunsTab({ runs, companyId, agentId, selectedRunId }: { runs: HeartbeatRun[]; companyId: string; agentId: string; selectedRunId: string | null }) {
+function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { runs: HeartbeatRun[]; companyId: string; agentId: string; selectedRunId: string | null; adapterType: string }) {
   const navigate = useNavigate();
 
   if (runs.length === 0) {
@@ -785,7 +648,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId }: { runs: HeartbeatR
       {/* Right: run detail — natural height, page scrolls */}
       {selectedRun && (
         <div className="flex-1 min-w-0 pl-4">
-          <RunDetail key={selectedRun.id} run={selectedRun} />
+          <RunDetail key={selectedRun.id} run={selectedRun} adapterType={adapterType} />
         </div>
       )}
     </div>
@@ -794,7 +657,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId }: { runs: HeartbeatR
 
 /* ---- Run Detail (expanded) ---- */
 
-function RunDetail({ run }: { run: HeartbeatRun }) {
+function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: string }) {
   const queryClient = useQueryClient();
   const metrics = runMetrics(run);
 
@@ -939,14 +802,14 @@ function RunDetail({ run }: { run: HeartbeatRun }) {
       <Separator />
 
       {/* Log viewer */}
-      <LogViewer run={run} />
+      <LogViewer run={run} adapterType={adapterType} />
     </div>
   );
 }
 
 /* ---- Log Viewer ---- */
 
-function LogViewer({ run }: { run: HeartbeatRun }) {
+function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: string }) {
   const [events, setEvents] = useState<HeartbeatRunEvent[]>([]);
   const [logLines, setLogLines] = useState<Array<{ ts: string; stream: "stdout" | "stderr" | "system"; chunk: string }>>([]);
   const [loading, setLoading] = useState(true);
@@ -1099,7 +962,8 @@ function LogViewer({ run }: { run: HeartbeatRun }) {
     return asRecord(evt?.payload ?? null);
   }, [events]);
 
-  const transcript = useMemo(() => buildTranscript(logLines), [logLines]);
+  const adapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
+  const transcript = useMemo(() => buildTranscript(logLines, adapter.parseStdoutLine), [logLines, adapter]);
 
   if (loading && logLoading) {
     return <p className="text-xs text-muted-foreground">Loading run logs...</p>;

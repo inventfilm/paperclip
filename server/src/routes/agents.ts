@@ -9,31 +9,16 @@ import {
 import { validate } from "../middleware/validate.js";
 import { agentService, heartbeatService, logActivity } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { listAdapterModels } from "../adapters/index.js";
 
 export function agentRoutes(db: Db) {
   const router = Router();
   const svc = agentService(db);
   const heartbeat = heartbeatService(db);
 
-  // Static model lists for adapters — can be extended to query CLIs dynamically
-  const adapterModels: Record<string, { id: string; label: string }[]> = {
-    claude_local: [
-      { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
-      { id: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5" },
-      { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
-    ],
-    codex_local: [
-      { id: "o4-mini", label: "o4-mini" },
-      { id: "o3", label: "o3" },
-      { id: "codex-mini-latest", label: "Codex Mini" },
-    ],
-    process: [],
-    http: [],
-  };
-
   router.get("/adapters/:type/models", (req, res) => {
     const type = req.params.type as string;
-    const models = adapterModels[type] ?? [];
+    const models = listAdapterModels(type);
     res.json(models);
   });
 
