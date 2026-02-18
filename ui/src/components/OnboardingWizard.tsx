@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { companiesApi } from "../api/companies";
@@ -9,6 +9,11 @@ import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
 import {
@@ -23,6 +28,8 @@ import {
   Sparkles,
   Check,
   Loader2,
+  FolderOpen,
+  ChevronDown,
 } from "lucide-react";
 
 type Step = 1 | 2 | 3 | 4;
@@ -37,6 +44,7 @@ export function OnboardingWizard() {
   const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [modelOpen, setModelOpen] = useState(false);
 
   // Step 1
   const [companyName, setCompanyName] = useState("");
@@ -58,6 +66,14 @@ export function OnboardingWizard() {
   // Created entity IDs
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
+
+  const { data: adapterModels } = useQuery({
+    queryKey: ["adapter-models", adapterType],
+    queryFn: () => agentsApi.adapterModels(adapterType),
+    enabled: onboardingOpen && step === 2,
+  });
+
+  const selectedModel = (adapterModels ?? []).find((m) => m.id === model);
 
   function reset() {
     setStep(1);
@@ -377,23 +393,69 @@ export function OnboardingWizard() {
                     <label className="text-xs text-muted-foreground mb-1 block">
                       Working directory
                     </label>
-                    <input
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                      placeholder="/path/to/project"
-                      value={cwd}
-                      onChange={(e) => setCwd(e.target.value)}
-                    />
+                    <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
+                      <FolderOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      <input
+                        className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/50"
+                        placeholder="/path/to/project"
+                        value={cwd}
+                        onChange={(e) => setCwd(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 transition-colors shrink-0"
+                        onClick={async () => {
+                          try {
+                            // @ts-expect-error -- showDirectoryPicker is not in all TS lib defs yet
+                            const handle = await window.showDirectoryPicker({ mode: "read" });
+                            setCwd(handle.name);
+                          } catch {
+                            // user cancelled or API unsupported
+                          }
+                        }}
+                      >
+                        Choose
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">
                       Model
                     </label>
-                    <input
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                      placeholder="claude-sonnet-4-5-20250929"
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                    />
+                    <Popover open={modelOpen} onOpenChange={setModelOpen}>
+                      <PopoverTrigger asChild>
+                        <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
+                          <span className={cn(!model && "text-muted-foreground")}>
+                            {selectedModel ? selectedModel.label : model || "Default"}
+                          </span>
+                          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
+                        <button
+                          className={cn(
+                            "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+                            !model && "bg-accent"
+                          )}
+                          onClick={() => { setModel(""); setModelOpen(false); }}
+                        >
+                          Default
+                        </button>
+                        {(adapterModels ?? []).map((m) => (
+                          <button
+                            key={m.id}
+                            className={cn(
+                              "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+                              m.id === model && "bg-accent"
+                            )}
+                            onClick={() => { setModel(m.id); setModelOpen(false); }}
+                          >
+                            <span>{m.label}</span>
+                            <span className="text-xs text-muted-foreground font-mono">{m.id}</span>
+                          </button>
+                        ))}
+                      </PopoverContent>
+                    </Popover>
                   </div>
                 </div>
               )}
@@ -553,9 +615,6 @@ export function OnboardingWizard() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">
-              {step < 4 && "Cmd+Enter to continue"}
-            </span>
             {step === 1 && (
               <Button
                 size="sm"
