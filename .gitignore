@@ -9,3 +9,11 @@ coverage/
 data/
 .paperclip/
 .pnpm-store/
+tmp-*
+cli/tmp/
+
+# Build artifacts in src directories
+server/src/**/*.js
+server/src/**/*.js.map
+server/src/**/*.d.ts
+server/src/**/*.d.ts.map
