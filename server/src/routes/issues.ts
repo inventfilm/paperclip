@@ -87,7 +87,8 @@ export function issueRoutes(db: Db) {
     }
     assertCompanyAccess(req, existing.companyId);
 
-    const issue = await svc.update(id, req.body);
+    const { comment: commentBody, ...updateFields } = req.body;
+    const issue = await svc.update(id, updateFields);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;
@@ -102,8 +103,42 @@ export function issueRoutes(db: Db) {
       action: "issue.updated",
       entityType: "issue",
       entityId: issue.id,
-      details: req.body,
+      details: updateFields,
     });
+
+    let comment = null;
+    if (commentBody) {
+      comment = await svc.addComment(id, commentBody, {
+        agentId: actor.agentId ?? undefined,
+        userId: actor.actorType === "user" ? actor.actorId : undefined,
+      });
+
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "issue.comment_added",
+        entityType: "issue",
+        entityId: issue.id,
+        details: { commentId: comment.id },
+      });
+
+      // @-mention wakeups
+      svc.findMentionedAgents(issue.companyId, commentBody).then((ids) => {
+        for (const mentionedId of ids) {
+          heartbeat.wakeup(mentionedId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: `Mentioned in comment on issue ${id}`,
+            payload: { issueId: id, commentId: comment!.id },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: { issueId: id, commentId: comment!.id, source: "comment.mention" },
+          }).catch((err) => logger.warn({ err, agentId: mentionedId }, "failed to wake mentioned agent"));
+        }
+      }).catch((err) => logger.warn({ err, issueId: id }, "failed to resolve @-mentions"));
+    }
 
     const assigneeChanged =
       req.body.assigneeAgentId !== undefined && req.body.assigneeAgentId !== existing.assigneeAgentId;
@@ -121,7 +156,7 @@ export function issueRoutes(db: Db) {
         .catch((err) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue update"));
     }
 
-    res.json(issue);
+    res.json({ ...issue, comment });
   });
 
   router.delete("/issues/:id", async (req, res) => {

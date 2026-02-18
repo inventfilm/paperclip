@@ -247,6 +247,13 @@ export function agentRoutes(db: Db) {
     res.json(agent);
   });
 
+  router.get("/agents/:id/keys", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const keys = await svc.listKeys(id);
+    res.json(keys);
+  });
+
   router.post("/agents/:id/keys", validate(createAgentKeySchema), async (req, res) => {
     assertBoard(req);
     const id = req.params.id as string;
@@ -266,6 +273,17 @@ export function agentRoutes(db: Db) {
     }
 
     res.status(201).json(key);
+  });
+
+  router.delete("/agents/:id/keys/:keyId", async (req, res) => {
+    assertBoard(req);
+    const keyId = req.params.keyId as string;
+    const revoked = await svc.revokeKey(keyId);
+    if (!revoked) {
+      res.status(404).json({ error: "Key not found" });
+      return;
+    }
+    res.json({ ok: true });
   });
 
   router.post("/agents/:id/wakeup", validate(wakeAgentSchema), async (req, res) => {

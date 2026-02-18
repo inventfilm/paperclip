@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -33,6 +33,36 @@ import {
 import { cn } from "../lib/utils";
 import type { Project, Agent } from "@paperclip/shared";
 
+const DRAFT_KEY = "paperclip:issue-draft";
+const DEBOUNCE_MS = 800;
+
+interface IssueDraft {
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  assigneeId: string;
+  projectId: string;
+}
+
+function loadDraft(): IssueDraft | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as IssueDraft;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft(draft: IssueDraft) {
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
+}
+
 const statuses = [
   { value: "backlog", label: "Backlog", color: "text-muted-foreground" },
   { value: "todo", label: "Todo", color: "text-blue-400" },
@@ -59,6 +89,7 @@ export function NewIssueDialog() {
   const [assigneeId, setAssigneeId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Popover states
   const [statusOpen, setStatusOpen] = useState(false);
@@ -84,19 +115,55 @@ export function NewIssueDialog() {
       issuesApi.create(selectedCompanyId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+      clearDraft();
       reset();
       closeNewIssue();
     },
   });
 
+  // Debounced draft saving
+  const scheduleSave = useCallback(
+    (draft: IssueDraft) => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+      draftTimer.current = setTimeout(() => {
+        if (draft.title.trim()) saveDraft(draft);
+      }, DEBOUNCE_MS);
+    },
+    [],
+  );
+
+  // Save draft on meaningful changes
   useEffect(() => {
-    if (newIssueOpen) {
+    if (!newIssueOpen) return;
+    scheduleSave({ title, description, status, priority, assigneeId, projectId });
+  }, [title, description, status, priority, assigneeId, projectId, newIssueOpen, scheduleSave]);
+
+  // Restore draft or apply defaults when dialog opens
+  useEffect(() => {
+    if (!newIssueOpen) return;
+
+    const draft = loadDraft();
+    if (draft && draft.title.trim()) {
+      setTitle(draft.title);
+      setDescription(draft.description);
+      setStatus(draft.status || "todo");
+      setPriority(draft.priority);
+      setAssigneeId(newIssueDefaults.assigneeAgentId ?? draft.assigneeId);
+      setProjectId(newIssueDefaults.projectId ?? draft.projectId);
+    } else {
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(newIssueDefaults.projectId ?? "");
       setAssigneeId(newIssueDefaults.assigneeAgentId ?? "");
     }
   }, [newIssueOpen, newIssueDefaults]);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, []);
 
   function reset() {
     setTitle("");
@@ -106,6 +173,12 @@ export function NewIssueDialog() {
     setAssigneeId("");
     setProjectId("");
     setExpanded(false);
+  }
+
+  function discardDraft() {
+    clearDraft();
+    reset();
+    closeNewIssue();
   }
 
   function handleSubmit() {
@@ -127,6 +200,7 @@ export function NewIssueDialog() {
     }
   }
 
+  const hasDraft = title.trim().length > 0 || description.trim().length > 0;
   const currentStatus = statuses.find((s) => s.value === status) ?? statuses[1]!;
   const currentPriority = priorities.find((p) => p.value === priority);
   const currentAssignee = (agents ?? []).find((a) => a.id === assigneeId);
@@ -136,22 +210,21 @@ export function NewIssueDialog() {
     <Dialog
       open={newIssueOpen}
       onOpenChange={(open) => {
-        if (!open) {
-          reset();
-          closeNewIssue();
-        }
+        if (!open) closeNewIssue();
       }}
     >
       <DialogContent
         showCloseButton={false}
         className={cn(
-          "p-0 gap-0",
-          expanded ? "sm:max-w-2xl" : "sm:max-w-lg"
+          "p-0 gap-0 flex flex-col",
+          expanded
+            ? "sm:max-w-2xl h-[calc(100vh-6rem)] max-h-[calc(100vh-6rem)]"
+            : "sm:max-w-lg"
         )}
         onKeyDown={handleKeyDown}
       >
         {/* Header bar */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             {selectedCompany && (
               <span className="bg-muted px-1.5 py-0.5 rounded text-xs font-medium">
@@ -174,7 +247,7 @@ export function NewIssueDialog() {
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
-              onClick={() => { reset(); closeNewIssue(); }}
+              onClick={() => closeNewIssue()}
             >
               <span className="text-lg leading-none">&times;</span>
             </Button>
@@ -182,9 +255,9 @@ export function NewIssueDialog() {
         </div>
 
         {/* Title */}
-        <div className="px-4 pt-3">
+        <div className="px-4 pt-4 pb-2 shrink-0">
           <input
-            className="w-full text-base font-medium bg-transparent outline-none placeholder:text-muted-foreground/50"
+            className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50"
             placeholder="Issue title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -193,11 +266,11 @@ export function NewIssueDialog() {
         </div>
 
         {/* Description */}
-        <div className="px-4 pb-2">
+        <div className={cn("px-4 pb-2", expanded ? "flex-1 min-h-0" : "")}>
           <textarea
             className={cn(
               "w-full bg-transparent outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/40 resize-none",
-              expanded ? "min-h-[200px]" : "min-h-[60px]"
+              expanded ? "h-full" : "min-h-[60px]"
             )}
             placeholder="Add description..."
             value={description}
@@ -206,7 +279,7 @@ export function NewIssueDialog() {
         </div>
 
         {/* Property chips bar */}
-        <div className="flex items-center gap-1.5 px-4 py-2 border-t border-border flex-wrap">
+        <div className="flex items-center gap-1.5 px-4 py-2 border-t border-border flex-wrap shrink-0">
           {/* Status chip */}
           <Popover open={statusOpen} onOpenChange={setStatusOpen}>
             <PopoverTrigger asChild>
@@ -359,13 +432,22 @@ export function NewIssueDialog() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end px-4 py-2.5 border-t border-border">
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={discardDraft}
+            disabled={!hasDraft && !loadDraft()}
+          >
+            Discard Draft
+          </Button>
           <Button
             size="sm"
             disabled={!title.trim() || createIssue.isPending}
             onClick={handleSubmit}
           >
-            {createIssue.isPending ? "Creating..." : "Create issue"}
+            {createIssue.isPending ? "Creating..." : "Create Issue"}
           </Button>
         </div>
       </DialogContent>

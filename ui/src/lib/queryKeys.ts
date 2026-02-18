@@ -8,6 +8,7 @@ export const queryKeys = {
     list: (companyId: string) => ["agents", companyId] as const,
     detail: (id: string) => ["agents", "detail", id] as const,
     runtimeState: (id: string) => ["agents", "runtime-state", id] as const,
+    keys: (agentId: string) => ["agents", "keys", agentId] as const,
   },
   issues: {
     list: (companyId: string) => ["issues", companyId] as const,

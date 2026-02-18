@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import { agents, issues, issueComments } from "@paperclip/db";
 import { conflict, notFound, unprocessable } from "../errors.js";
@@ -55,7 +55,8 @@ export function issueService(db: Db) {
       }
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
 
-      return db.select().from(issues).where(and(...conditions)).orderBy(desc(issues.updatedAt));
+      const priorityOrder = sql`CASE ${issues.priority} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
+      return db.select().from(issues).where(and(...conditions)).orderBy(asc(priorityOrder), desc(issues.updatedAt));
     },
 
     getById: (id: string) =>
@@ -155,6 +156,11 @@ export function issueService(db: Db) {
         .then((rows) => rows[0] ?? null);
 
       if (!current) throw notFound("Issue not found");
+
+      // If this agent already owns it and it's in_progress, return it (no self-409)
+      if (current.assigneeAgentId === agentId && current.status === "in_progress") {
+        return db.select().from(issues).where(eq(issues.id, id)).then((rows) => rows[0]!);
+      }
 
       throw conflict("Issue checkout conflict", {
         issueId: current.id,

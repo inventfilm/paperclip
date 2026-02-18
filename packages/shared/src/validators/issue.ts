@@ -16,7 +16,9 @@ export const createIssueSchema = z.object({
 
 export type CreateIssue = z.infer<typeof createIssueSchema>;
 
-export const updateIssueSchema = createIssueSchema.partial();
+export const updateIssueSchema = createIssueSchema.partial().extend({
+  comment: z.string().min(1).optional(),
+});
 
 export type UpdateIssue = z.infer<typeof updateIssueSchema>;
 

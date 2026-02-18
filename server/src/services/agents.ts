@@ -153,6 +153,26 @@ export function agentService(db: Db) {
       };
     },
 
+    listKeys: (id: string) =>
+      db
+        .select({
+          id: agentApiKeys.id,
+          name: agentApiKeys.name,
+          createdAt: agentApiKeys.createdAt,
+          revokedAt: agentApiKeys.revokedAt,
+        })
+        .from(agentApiKeys)
+        .where(eq(agentApiKeys.agentId, id)),
+
+    revokeKey: async (keyId: string) => {
+      const rows = await db
+        .update(agentApiKeys)
+        .set({ revokedAt: new Date() })
+        .where(eq(agentApiKeys.id, keyId))
+        .returning();
+      return rows[0] ?? null;
+    },
+
     orgForCompany: async (companyId: string) => {
       const rows = await db.select().from(agents).where(eq(agents.companyId, companyId));
       const byManager = new Map<string | null, typeof rows>();

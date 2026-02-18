@@ -31,6 +31,16 @@ function statusIcon(status: string) {
   return null;
 }
 
+function PayloadField({ label, value }: { label: string; value: unknown }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground w-24 shrink-0 text-xs">{label}</span>
+      <span>{String(value)}</span>
+    </div>
+  );
+}
+
 function HireAgentPayload({ payload }: { payload: Record<string, unknown> }) {
   return (
     <div className="mt-3 space-y-1.5 text-sm">
@@ -38,25 +48,15 @@ function HireAgentPayload({ payload }: { payload: Record<string, unknown> }) {
         <span className="text-muted-foreground w-24 shrink-0 text-xs">Name</span>
         <span className="font-medium">{String(payload.name ?? "—")}</span>
       </div>
-      {payload.role && (
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground w-24 shrink-0 text-xs">Role</span>
-          <span>{String(payload.role)}</span>
-        </div>
-      )}
-      {payload.title && (
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground w-24 shrink-0 text-xs">Title</span>
-          <span>{String(payload.title)}</span>
-        </div>
-      )}
-      {payload.capabilities && (
+      <PayloadField label="Role" value={payload.role} />
+      <PayloadField label="Title" value={payload.title} />
+      {!!payload.capabilities && (
         <div className="flex items-start gap-2">
           <span className="text-muted-foreground w-24 shrink-0 text-xs pt-0.5">Capabilities</span>
           <span className="text-muted-foreground">{String(payload.capabilities)}</span>
         </div>
       )}
-      {payload.adapterType && (
+      {!!payload.adapterType && (
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground w-24 shrink-0 text-xs">Adapter</span>
           <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
@@ -72,13 +72,8 @@ function CeoStrategyPayload({ payload }: { payload: Record<string, unknown> }) {
   const plan = payload.plan ?? payload.description ?? payload.strategy ?? payload.text;
   return (
     <div className="mt-3 space-y-1.5 text-sm">
-      {payload.title && (
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground w-24 shrink-0 text-xs">Title</span>
-          <span className="font-medium">{String(payload.title)}</span>
-        </div>
-      )}
-      {plan && (
+      <PayloadField label="Title" value={payload.title} />
+      {!!plan && (
         <div className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-sm text-muted-foreground whitespace-pre-wrap font-mono text-xs max-h-48 overflow-y-auto">
           {String(plan)}
         </div>
