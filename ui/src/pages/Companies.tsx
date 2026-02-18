@@ -1,14 +1,32 @@
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { companiesApi } from "../api/companies";
 import { queryKeys } from "../lib/queryKeys";
-import { formatCents } from "../lib/utils";
+import { formatCents, relativeTime } from "../lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Pencil, Check, X, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Pencil,
+  Check,
+  X,
+  Plus,
+  MoreHorizontal,
+  Trash2,
+  Users,
+  CircleDot,
+  DollarSign,
+  Calendar,
+} from "lucide-react";
 
 export function Companies() {
   const {
@@ -22,9 +40,15 @@ export function Companies() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
 
+  const { data: stats } = useQuery({
+    queryKey: queryKeys.companies.stats,
+    queryFn: () => companiesApi.stats(),
+  });
+
   // Inline edit state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const editMutation = useMutation({
     mutationFn: ({ id, newName }: { id: string; newName: string }) =>
@@ -32,6 +56,15 @@ export function Companies() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       setEditingId(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => companiesApi.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.stats });
+      setConfirmDeleteId(null);
     },
   });
 
@@ -72,10 +105,20 @@ export function Companies() {
         {error && <p className="text-sm text-destructive">{error.message}</p>}
       </div>
 
-      <div className="grid gap-3">
+      <div className="grid gap-4">
         {companies.map((company) => {
           const selected = company.id === selectedCompanyId;
           const isEditing = editingId === company.id;
+          const isConfirmingDelete = confirmDeleteId === company.id;
+          const companyStats = stats?.[company.id];
+          const agentCount = companyStats?.agentCount ?? 0;
+          const issueCount = companyStats?.issueCount ?? 0;
+          const budgetPct =
+            company.budgetMonthlyCents > 0
+              ? Math.round(
+                  (company.spentMonthlyCents / company.budgetMonthlyCents) * 100,
+                )
+              : 0;
 
           return (
             <div
@@ -89,14 +132,20 @@ export function Companies() {
                   setSelectedCompanyId(company.id);
                 }
               }}
-              className={`group text-left bg-card border rounded-lg p-4 transition-colors cursor-pointer ${
-                selected ? "border-primary ring-1 ring-primary" : "border-border hover:border-muted-foreground/30"
+              className={`group text-left bg-card border rounded-lg p-5 transition-colors cursor-pointer ${
+                selected
+                  ? "border-primary ring-1 ring-primary"
+                  : "border-border hover:border-muted-foreground/30"
               }`}
             >
-              <div className="flex items-center justify-between">
+              {/* Header row: name + menu */}
+              <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   {isEditing ? (
-                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <div
+                      className="flex items-center gap-2"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Input
                         value={editName}
                         onChange={(e) => setEditName(e.target.value)}
@@ -121,7 +170,18 @@ export function Companies() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{company.name}</h3>
+                      <h3 className="font-semibold text-base">{company.name}</h3>
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          company.status === "active"
+                            ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                            : company.status === "paused"
+                              ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400"
+                              : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {company.status}
+                      </span>
                       <Button
                         variant="ghost"
                         size="icon-xs"
@@ -136,13 +196,103 @@ export function Companies() {
                     </div>
                   )}
                   {company.description && !isEditing && (
-                    <p className="text-sm text-muted-foreground mt-1">{company.description}</p>
+                    <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                      {company.description}
+                    </p>
                   )}
                 </div>
-                <div className="text-sm text-muted-foreground">
-                  {formatCents(company.spentMonthlyCents)} / {formatCents(company.budgetMonthlyCents)}
+
+                {/* Three-dot menu */}
+                <div onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        className="text-muted-foreground opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => startEdit(company.id, company.name)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Rename
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => setConfirmDeleteId(company.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete Company
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               </div>
+
+              {/* Stats row */}
+              <div className="flex items-center gap-5 mt-4 text-sm text-muted-foreground">
+                <div className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5" />
+                  <span>
+                    {agentCount} {agentCount === 1 ? "agent" : "agents"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <CircleDot className="h-3.5 w-3.5" />
+                  <span>
+                    {issueCount} {issueCount === 1 ? "issue" : "issues"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <DollarSign className="h-3.5 w-3.5" />
+                  <span>
+                    {formatCents(company.spentMonthlyCents)} /{" "}
+                    {formatCents(company.budgetMonthlyCents)}
+                  </span>
+                  {company.budgetMonthlyCents > 0 && (
+                    <span className="text-xs">({budgetPct}%)</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <Calendar className="h-3.5 w-3.5" />
+                  <span>Created {relativeTime(company.createdAt)}</span>
+                </div>
+              </div>
+
+              {/* Delete confirmation */}
+              {isConfirmingDelete && (
+                <div
+                  className="mt-4 flex items-center justify-between bg-destructive/5 border border-destructive/20 rounded-md px-4 py-3"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <p className="text-sm text-destructive font-medium">
+                    Delete this company and all its data? This cannot be undone.
+                  </p>
+                  <div className="flex items-center gap-2 ml-4 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setConfirmDeleteId(null)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => deleteMutation.mutate(company.id)}
+                      disabled={deleteMutation.isPending}
+                    >
+                      {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}

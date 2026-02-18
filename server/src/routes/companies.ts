@@ -14,6 +14,11 @@ export function companyRoutes(db: Db) {
     res.json(result);
   });
 
+  router.get("/stats", async (_req, res) => {
+    const stats = await svc.stats();
+    res.json(stats);
+  });
+
   router.get("/:companyId", async (req, res) => {
     const companyId = req.params.companyId as string;
     const company = await svc.getById(companyId);
@@ -76,6 +81,17 @@ export function companyRoutes(db: Db) {
       entityId: companyId,
     });
     res.json(company);
+  });
+
+  router.delete("/:companyId", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    const company = await svc.remove(companyId);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json({ ok: true });
   });
 
   return router;

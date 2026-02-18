@@ -1,6 +1,21 @@
-import { eq } from "drizzle-orm";
+import { eq, sql, count } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
-import { companies } from "@paperclip/db";
+import {
+  companies,
+  agents,
+  agentApiKeys,
+  agentRuntimeState,
+  agentWakeupRequests,
+  issues,
+  issueComments,
+  projects,
+  goals,
+  heartbeatRuns,
+  heartbeatRunEvents,
+  costEvents,
+  approvals,
+  activityLog,
+} from "@paperclip/db";
 
 export function companyService(db: Db) {
   return {
@@ -35,5 +50,53 @@ export function companyService(db: Db) {
         .where(eq(companies.id, id))
         .returning()
         .then((rows) => rows[0] ?? null),
+
+    remove: (id: string) =>
+      db.transaction(async (tx) => {
+        // Delete from child tables in dependency order
+        await tx.delete(heartbeatRunEvents).where(eq(heartbeatRunEvents.companyId, id));
+        await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));
+        await tx.delete(agentWakeupRequests).where(eq(agentWakeupRequests.companyId, id));
+        await tx.delete(agentApiKeys).where(eq(agentApiKeys.companyId, id));
+        await tx.delete(agentRuntimeState).where(eq(agentRuntimeState.companyId, id));
+        await tx.delete(issueComments).where(eq(issueComments.companyId, id));
+        await tx.delete(costEvents).where(eq(costEvents.companyId, id));
+        await tx.delete(approvals).where(eq(approvals.companyId, id));
+        await tx.delete(issues).where(eq(issues.companyId, id));
+        await tx.delete(goals).where(eq(goals.companyId, id));
+        await tx.delete(projects).where(eq(projects.companyId, id));
+        await tx.delete(agents).where(eq(agents.companyId, id));
+        await tx.delete(activityLog).where(eq(activityLog.companyId, id));
+        const rows = await tx
+          .delete(companies)
+          .where(eq(companies.id, id))
+          .returning();
+        return rows[0] ?? null;
+      }),
+
+    stats: () =>
+      Promise.all([
+        db
+          .select({ companyId: agents.companyId, count: count() })
+          .from(agents)
+          .groupBy(agents.companyId),
+        db
+          .select({ companyId: issues.companyId, count: count() })
+          .from(issues)
+          .groupBy(issues.companyId),
+      ]).then(([agentRows, issueRows]) => {
+        const result: Record<string, { agentCount: number; issueCount: number }> = {};
+        for (const row of agentRows) {
+          result[row.companyId] = { agentCount: row.count, issueCount: 0 };
+        }
+        for (const row of issueRows) {
+          if (result[row.companyId]) {
+            result[row.companyId].issueCount = row.count;
+          } else {
+            result[row.companyId] = { agentCount: 0, issueCount: row.count };
+          }
+        }
+        return result;
+      }),
   };
 }
