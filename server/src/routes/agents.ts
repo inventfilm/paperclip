@@ -51,6 +51,20 @@ export function agentRoutes(db: Db) {
     res.json(tree);
   });
 
+  router.get("/agents/me", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId) {
+      res.status(401).json({ error: "Agent authentication required" });
+      return;
+    }
+    const agent = await svc.getById(req.actor.agentId);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    const chainOfCommand = await svc.getChainOfCommand(agent.id);
+    res.json({ ...agent, chainOfCommand });
+  });
+
   router.get("/agents/:id", async (req, res) => {
     const id = req.params.id as string;
     const agent = await svc.getById(id);
@@ -59,7 +73,8 @@ export function agentRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, agent.companyId);
-    res.json(agent);
+    const chainOfCommand = await svc.getChainOfCommand(agent.id);
+    res.json({ ...agent, chainOfCommand });
   });
 
   router.get("/agents/:id/runtime-state", async (req, res) => {

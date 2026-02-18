@@ -174,6 +174,21 @@ export function agentService(db: Db) {
       return build(null);
     },
 
+    getChainOfCommand: async (agentId: string) => {
+      const chain: { id: string; name: string; role: string; title: string | null }[] = [];
+      const visited = new Set<string>([agentId]);
+      const start = await getById(agentId);
+      let currentId = start?.reportsTo ?? null;
+      while (currentId && !visited.has(currentId) && chain.length < 50) {
+        visited.add(currentId);
+        const mgr = await getById(currentId);
+        if (!mgr) break;
+        chain.push({ id: mgr.id, name: mgr.name, role: mgr.role, title: mgr.title ?? null });
+        currentId = mgr.reportsTo ?? null;
+      }
+      return chain;
+    },
+
     runningForAgent: (agentId: string) =>
       db
         .select()
