@@ -4,6 +4,7 @@ interface NewIssueDefaults {
   status?: string;
   priority?: string;
   projectId?: string;
+  assigneeAgentId?: string;
 }
 
 interface DialogContextValue {

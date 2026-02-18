@@ -94,6 +94,7 @@ export function NewIssueDialog() {
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(newIssueDefaults.projectId ?? "");
+      setAssigneeId(newIssueDefaults.assigneeAgentId ?? "");
     }
   }, [newIssueOpen, newIssueDefaults]);
 

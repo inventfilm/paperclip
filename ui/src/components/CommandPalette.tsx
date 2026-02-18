@@ -25,7 +25,6 @@ import {
   Inbox,
   DollarSign,
   History,
-  GitBranch,
   SquarePen,
   Plus,
 } from "lucide-react";
@@ -113,10 +112,6 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go("/activity")}>
             <History className="mr-2 h-4 w-4" />
             Activity
-          </CommandItem>
-          <CommandItem onSelect={() => go("/org")}>
-            <GitBranch className="mr-2 h-4 w-4" />
-            Org Chart
           </CommandItem>
         </CommandGroup>
 

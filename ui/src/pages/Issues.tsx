@@ -89,21 +89,22 @@ export function Issues() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Issues</h2>
+        <div className="flex items-center gap-4">
+          <h2 className="text-lg font-semibold">Issues</h2>
+          <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)}>
+            <TabsList>
+              <TabsTrigger value="all">All Issues</TabsTrigger>
+              <TabsTrigger value="active">Active</TabsTrigger>
+              <TabsTrigger value="backlog">Backlog</TabsTrigger>
+              <TabsTrigger value="done">Done</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
         <Button size="sm" onClick={() => openNewIssue()}>
           <Plus className="h-4 w-4 mr-1" />
           New Issue
         </Button>
       </div>
-
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)}>
-        <TabsList>
-          <TabsTrigger value="all">All Issues</TabsTrigger>
-          <TabsTrigger value="active">Active</TabsTrigger>
-          <TabsTrigger value="backlog">Backlog</TabsTrigger>
-          <TabsTrigger value="done">Done</TabsTrigger>
-        </TabsList>
-      </Tabs>
 
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}

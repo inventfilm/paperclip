@@ -1,31 +1,26 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
+import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { companiesApi } from "../api/companies";
 import { queryKeys } from "../lib/queryKeys";
 import { formatCents } from "../lib/utils";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Pencil, Check, X } from "lucide-react";
+import { Pencil, Check, X, Plus } from "lucide-react";
 
 export function Companies() {
   const {
     companies,
     selectedCompanyId,
     setSelectedCompanyId,
-    createCompany,
     loading,
     error,
   } = useCompany();
+  const { openOnboarding } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [budget, setBudget] = useState("0");
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Inline edit state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -44,28 +39,6 @@ export function Companies() {
     setBreadcrumbs([{ label: "Companies" }]);
   }, [setBreadcrumbs]);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) return;
-
-    setSubmitting(true);
-    setSubmitError(null);
-    try {
-      await createCompany({
-        name: name.trim(),
-        description: description.trim() || null,
-        budgetMonthlyCents: Number(budget) || 0,
-      });
-      setName("");
-      setDescription("");
-      setBudget("0");
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Failed to create company");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   function startEdit(companyId: string, currentName: string) {
     setEditingId(companyId);
     setEditName(currentName);
@@ -83,39 +56,16 @@ export function Companies() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold">Companies</h2>
-        <p className="text-sm text-muted-foreground">Create and manage your companies.</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Companies</h2>
+          <p className="text-sm text-muted-foreground">Manage your companies.</p>
+        </div>
+        <Button size="sm" onClick={openOnboarding}>
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          New Company
+        </Button>
       </div>
-
-      <Card>
-        <CardContent className="p-4 space-y-3">
-          <h3 className="text-sm font-semibold">Create Company</h3>
-          <form onSubmit={onSubmit} className="space-y-3">
-            <div className="grid md:grid-cols-3 gap-3">
-              <Input
-                placeholder="Company name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-              <Input
-                placeholder="Description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-              <Input
-                placeholder="Monthly budget (cents)"
-                value={budget}
-                onChange={(e) => setBudget(e.target.value.replace(/[^0-9]/g, ""))}
-              />
-            </div>
-            {submitError && <p className="text-sm text-destructive">{submitError}</p>}
-            <Button type="submit" size="sm" disabled={submitting}>
-              {submitting ? "Creating..." : "Create Company"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
 
       <div className="h-6">
         {loading && <p className="text-sm text-muted-foreground">Loading companies...</p>}

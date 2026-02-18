@@ -4,15 +4,14 @@ import {
   Hexagon,
   Target,
   LayoutDashboard,
-  GitBranch,
   Bot,
   DollarSign,
   History,
   Search,
   SquarePen,
-  Building2,
   ListTodo,
-  LayoutList,
+  ShieldCheck,
+  Building2,
 } from "lucide-react";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { SidebarSection } from "./SidebarSection";
@@ -70,8 +69,8 @@ export function Sidebar() {
 
           <SidebarSection label="Company">
             <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} />
-            <SidebarNavItem to="/org" label="Org Chart" icon={GitBranch} />
             <SidebarNavItem to="/agents" label="Agents" icon={Bot} />
+            <SidebarNavItem to="/approvals" label="Approvals" icon={ShieldCheck} />
             <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
             <SidebarNavItem to="/activity" label="Activity" icon={History} />
             <SidebarNavItem to="/companies" label="Companies" icon={Building2} />

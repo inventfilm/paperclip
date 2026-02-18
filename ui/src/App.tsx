@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { Companies } from "./pages/Companies";
-import { Org } from "./pages/Org";
 import { Agents } from "./pages/Agents";
 import { AgentDetail } from "./pages/AgentDetail";
 import { Projects } from "./pages/Projects";
@@ -16,6 +15,7 @@ import { Costs } from "./pages/Costs";
 import { Activity } from "./pages/Activity";
 import { Inbox } from "./pages/Inbox";
 import { MyIssues } from "./pages/MyIssues";
+import { DesignGuide } from "./pages/DesignGuide";
 
 export function App() {
   return (
@@ -24,7 +24,7 @@ export function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="companies" element={<Companies />} />
-        <Route path="org" element={<Org />} />
+        <Route path="org" element={<Navigate to="/agents" replace />} />
         <Route path="agents" element={<Agents />} />
         <Route path="agents/:agentId" element={<AgentDetail />} />
         <Route path="projects" element={<Projects />} />
@@ -38,6 +38,7 @@ export function App() {
         <Route path="activity" element={<Activity />} />
         <Route path="inbox" element={<Inbox />} />
         <Route path="my-issues" element={<MyIssues />} />
+        <Route path="design-guide" element={<DesignGuide />} />
       </Route>
     </Routes>
   );
