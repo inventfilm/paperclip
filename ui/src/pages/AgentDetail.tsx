@@ -6,9 +6,12 @@ import { heartbeatsApi } from "../api/heartbeats";
 import { issuesApi } from "../api/issues";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
+import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { AgentProperties } from "../components/AgentProperties";
+import { AgentConfigForm } from "../components/AgentConfigForm";
+import { adapterLabels, roleLabels } from "../components/agent-config-primitives";
 import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
@@ -35,21 +38,9 @@ import {
   Slash,
   RotateCcw,
   Trash2,
+  Plus,
 } from "lucide-react";
 import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState } from "@paperclip/shared";
-
-const adapterLabels: Record<string, string> = {
-  claude_local: "Claude (local)",
-  codex_local: "Codex (local)",
-  process: "Process",
-  http: "HTTP",
-};
-
-const roleLabels: Record<string, string> = {
-  ceo: "CEO", cto: "CTO", cmo: "CMO", cfo: "CFO",
-  engineer: "Engineer", designer: "Designer", pm: "PM",
-  qa: "QA", devops: "DevOps", researcher: "Researcher", general: "General",
-};
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-400" },
@@ -71,6 +62,7 @@ export function AgentDetail() {
   const { agentId } = useParams<{ agentId: string }>();
   const { selectedCompanyId } = useCompany();
   const { openPanel, closePanel } = usePanel();
+  const { openNewIssue } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -173,6 +165,14 @@ export function AgentDetail() {
           >
             <Play className="h-3.5 w-3.5 mr-1" />
             Invoke
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => openNewIssue({ assigneeAgentId: agentId })}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1" />
+            Assign Task
           </Button>
           {agent.status === "active" || agent.status === "running" ? (
             <Button
@@ -389,6 +389,12 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
 
 function ConfigurationTab({ agent }: { agent: Agent }) {
   const queryClient = useQueryClient();
+
+  const { data: adapterModels } = useQuery({
+    queryKey: ["adapter-models", agent.adapterType],
+    queryFn: () => agentsApi.adapterModels(agent.adapterType),
+  });
+
   const updateAgent = useMutation({
     mutationFn: (data: Record<string, unknown>) => agentsApi.update(agent.id, data),
     onSuccess: () => {
@@ -396,228 +402,14 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
     },
   });
 
-  const config = (agent.adapterConfig ?? {}) as Record<string, unknown>;
-  const heartbeat = ((agent.runtimeConfig ?? {}) as Record<string, unknown>).heartbeat as Record<string, unknown> | undefined;
-
   return (
-    <div className="space-y-6 max-w-2xl">
-      {/* Identity */}
-      <ConfigSection title="Identity">
-        <ConfigField label="Name" value={agent.name} onSave={(v) => updateAgent.mutate({ name: v })} />
-        <ConfigField label="Title" value={agent.title ?? ""} onSave={(v) => updateAgent.mutate({ title: v || null })} />
-        <ConfigField label="Role" value={roleLabels[agent.role] ?? agent.role} readOnly />
-        <ConfigField label="Capabilities" value={agent.capabilities ?? ""} onSave={(v) => updateAgent.mutate({ capabilities: v || null })} />
-      </ConfigSection>
-
-      {/* Adapter Config */}
-      <ConfigSection title="Adapter Configuration">
-        <ConfigField label="Type" value={adapterLabels[agent.adapterType] ?? agent.adapterType} readOnly />
-        <ConfigField
-          label="Working directory"
-          value={String(config.cwd ?? "")}
-          mono
-          onSave={(v) => updateAgent.mutate({ adapterConfig: { ...config, cwd: v || undefined } })}
-        />
-        <ConfigField
-          label="Prompt template"
-          value={String(config.promptTemplate ?? "")}
-          mono
-          multiline
-          onSave={(v) => updateAgent.mutate({ adapterConfig: { ...config, promptTemplate: v || undefined } })}
-        />
-        <ConfigField
-          label="Bootstrap prompt"
-          value={String(config.bootstrapPromptTemplate ?? "")}
-          mono
-          multiline
-          onSave={(v) => updateAgent.mutate({ adapterConfig: { ...config, bootstrapPromptTemplate: v || undefined } })}
-        />
-        <ConfigField
-          label="Model"
-          value={String(config.model ?? "")}
-          mono
-          onSave={(v) => updateAgent.mutate({ adapterConfig: { ...config, model: v || undefined } })}
-        />
-        <ConfigField label="Timeout (sec)" value={String(config.timeoutSec ?? 900)} mono
-          onSave={(v) => updateAgent.mutate({ adapterConfig: { ...config, timeoutSec: Number(v) || 900 } })}
-        />
-
-        {agent.adapterType === "claude_local" && (
-          <>
-            <ConfigField label="Max turns per run" value={String(config.maxTurnsPerRun ?? 80)} mono
-              onSave={(v) => updateAgent.mutate({ adapterConfig: { ...config, maxTurnsPerRun: Number(v) || 80 } })}
-            />
-            <ConfigBool label="Skip permissions" value={config.dangerouslySkipPermissions !== false}
-              onToggle={(v) => updateAgent.mutate({ adapterConfig: { ...config, dangerouslySkipPermissions: v } })}
-            />
-          </>
-        )}
-        {agent.adapterType === "codex_local" && (
-          <>
-            <ConfigBool label="Search" value={!!config.search}
-              onToggle={(v) => updateAgent.mutate({ adapterConfig: { ...config, search: v } })}
-            />
-            <ConfigBool label="Bypass sandbox" value={config.dangerouslyBypassApprovalsAndSandbox !== false}
-              onToggle={(v) => updateAgent.mutate({ adapterConfig: { ...config, dangerouslyBypassApprovalsAndSandbox: v } })}
-            />
-          </>
-        )}
-      </ConfigSection>
-
-      {/* Heartbeat Policy */}
-      <ConfigSection title="Heartbeat Policy">
-        <ConfigBool label="Enabled" value={heartbeat?.enabled !== false}
-          onToggle={(v) => updateAgent.mutate({ runtimeConfig: { ...agent.runtimeConfig as object, heartbeat: { ...heartbeat, enabled: v } } })}
-        />
-        <ConfigField label="Interval (sec)" value={String(heartbeat?.intervalSec ?? 300)} mono
-          onSave={(v) => updateAgent.mutate({ runtimeConfig: { ...agent.runtimeConfig as object, heartbeat: { ...heartbeat, intervalSec: Number(v) || 300 } } })}
-        />
-        <ConfigBool label="Wake on assignment" value={heartbeat?.wakeOnAssignment !== false}
-          onToggle={(v) => updateAgent.mutate({ runtimeConfig: { ...agent.runtimeConfig as object, heartbeat: { ...heartbeat, wakeOnAssignment: v } } })}
-        />
-        <ConfigBool label="Wake on on-demand" value={heartbeat?.wakeOnOnDemand !== false}
-          onToggle={(v) => updateAgent.mutate({ runtimeConfig: { ...agent.runtimeConfig as object, heartbeat: { ...heartbeat, wakeOnOnDemand: v } } })}
-        />
-        <ConfigBool label="Wake on automation" value={heartbeat?.wakeOnAutomation !== false}
-          onToggle={(v) => updateAgent.mutate({ runtimeConfig: { ...agent.runtimeConfig as object, heartbeat: { ...heartbeat, wakeOnAutomation: v } } })}
-        />
-        <ConfigField label="Cooldown (sec)" value={String(heartbeat?.cooldownSec ?? 10)} mono
-          onSave={(v) => updateAgent.mutate({ runtimeConfig: { ...agent.runtimeConfig as object, heartbeat: { ...heartbeat, cooldownSec: Number(v) || 10 } } })}
-        />
-      </ConfigSection>
-
-      {/* Runtime */}
-      <ConfigSection title="Runtime">
-        <ConfigField label="Context mode" value={agent.contextMode} readOnly />
-        <ConfigField label="Monthly budget (cents)" value={String(agent.budgetMonthlyCents)} mono
-          onSave={(v) => updateAgent.mutate({ budgetMonthlyCents: Number(v) || 0 })}
-        />
-      </ConfigSection>
-    </div>
-  );
-}
-
-function ConfigSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <h3 className="text-sm font-medium mb-3">{title}</h3>
-      <div className="border border-border rounded-lg divide-y divide-border">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function ConfigField({
-  label,
-  value,
-  mono,
-  multiline,
-  readOnly,
-  onSave,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-  multiline?: boolean;
-  readOnly?: boolean;
-  onSave?: (value: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
-
-  useEffect(() => { setDraft(value); }, [value]);
-
-  function handleSave() {
-    if (draft !== value && onSave) {
-      onSave(draft);
-    }
-    setEditing(false);
-  }
-
-  function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !multiline) {
-      e.preventDefault();
-      handleSave();
-    }
-    if (e.key === "Escape") {
-      setDraft(value);
-      setEditing(false);
-    }
-  }
-
-  return (
-    <div className="flex items-start gap-4 px-4 py-2.5">
-      <span className="text-xs text-muted-foreground w-40 shrink-0 pt-0.5">{label}</span>
-      <div className="flex-1 min-w-0">
-        {editing && !readOnly ? (
-          multiline ? (
-            <textarea
-              ref={inputRef as React.RefObject<HTMLTextAreaElement>}
-              className={cn("w-full bg-accent/30 rounded px-2 py-1 text-sm outline-none resize-none min-h-[60px]", mono && "font-mono")}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={handleSave}
-              onKeyDown={handleKeyDown}
-              autoFocus
-            />
-          ) : (
-            <input
-              ref={inputRef as React.RefObject<HTMLInputElement>}
-              className={cn("w-full bg-accent/30 rounded px-2 py-1 text-sm outline-none", mono && "font-mono")}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={handleSave}
-              onKeyDown={handleKeyDown}
-              autoFocus
-            />
-          )
-        ) : (
-          <button
-            className={cn(
-              "text-sm text-left w-full truncate",
-              mono && "font-mono",
-              !readOnly && "hover:bg-accent/30 rounded px-2 py-0.5 -mx-2 -my-0.5 cursor-text",
-              !value && "text-muted-foreground"
-            )}
-            onClick={() => !readOnly && setEditing(true)}
-            disabled={readOnly}
-          >
-            {value || (readOnly ? "-" : "Click to edit")}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ConfigBool({
-  label,
-  value,
-  onToggle,
-}: {
-  label: string;
-  value: boolean;
-  onToggle: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center gap-4 px-4 py-2.5">
-      <span className="text-xs text-muted-foreground w-40 shrink-0">{label}</span>
-      <button
-        className={cn(
-          "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-          value ? "bg-green-600" : "bg-muted"
-        )}
-        onClick={() => onToggle(!value)}
-      >
-        <span
-          className={cn(
-            "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
-            value ? "translate-x-4.5" : "translate-x-0.5"
-          )}
-        />
-      </button>
+    <div className="max-w-2xl border border-border rounded-lg overflow-hidden">
+      <AgentConfigForm
+        mode="edit"
+        agent={agent}
+        onSave={(patch) => updateAgent.mutate(patch)}
+        adapterModels={adapterModels}
+      />
     </div>
   );
 }
