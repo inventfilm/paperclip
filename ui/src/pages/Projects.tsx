@@ -35,8 +35,7 @@ export function Projects() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Projects</h2>
+      <div className="flex items-center justify-end">
         <Button size="sm" onClick={openNewProject}>
           <Plus className="h-4 w-4 mr-1" />
           Add Project
@@ -56,7 +55,7 @@ export function Projects() {
       )}
 
       {projects && projects.length > 0 && (
-        <div className="border border-border rounded-md">
+        <div className="border border-border">
           {projects.map((project) => (
             <EntityRow
               key={project.id}

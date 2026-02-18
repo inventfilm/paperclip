@@ -89,17 +89,14 @@ export function Issues() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold">Issues</h2>
-          <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)}>
-            <TabsList>
-              <TabsTrigger value="all">All Issues</TabsTrigger>
-              <TabsTrigger value="active">Active</TabsTrigger>
-              <TabsTrigger value="backlog">Backlog</TabsTrigger>
-              <TabsTrigger value="done">Done</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)}>
+          <TabsList variant="line">
+            <TabsTrigger value="all">All Issues</TabsTrigger>
+            <TabsTrigger value="active">Active</TabsTrigger>
+            <TabsTrigger value="backlog">Backlog</TabsTrigger>
+            <TabsTrigger value="done">Done</TabsTrigger>
+          </TabsList>
+        </Tabs>
         <Button size="sm" onClick={() => openNewIssue()}>
           <Plus className="h-4 w-4 mr-1" />
           New Issue
@@ -120,7 +117,7 @@ export function Issues() {
 
       {orderedGroups.map(({ status, items }) => (
         <div key={status}>
-          <div className="flex items-center gap-2 px-4 py-2 bg-muted/50 rounded-t-md">
+          <div className="flex items-center gap-2 px-4 py-2 bg-muted/50">
             <StatusIcon status={status} />
             <span className="text-xs font-semibold uppercase tracking-wide">
               {statusLabel(status)}
@@ -135,7 +132,7 @@ export function Issues() {
               <Plus className="h-3 w-3" />
             </Button>
           </div>
-          <div className="border border-border rounded-b-md">
+          <div className="border border-border">
             {items.map((issue) => (
               <EntityRow
                 key={issue.id}

@@ -106,8 +106,6 @@ export function Org() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Org Chart</h2>
-
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
@@ -119,7 +117,7 @@ export function Org() {
       )}
 
       {data && data.length > 0 && (
-        <div className="border border-border rounded-md py-1">
+        <div className="border border-border py-1">
           <OrgTree nodes={data} onSelect={(id) => navigate(`/agents/${id}`)} />
         </div>
       )}

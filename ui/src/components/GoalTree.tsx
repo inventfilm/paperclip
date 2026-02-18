@@ -25,7 +25,7 @@ function GoalNode({ goal, children, allGoals, depth, onSelect }: GoalNodeProps) 
     <div>
       <div
         className={cn(
-          "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors cursor-pointer hover:bg-accent/50",
+          "flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer hover:bg-accent/50",
         )}
         style={{ paddingLeft: `${depth * 20 + 12}px` }}
         onClick={() => onSelect?.(goal)}
@@ -75,7 +75,7 @@ export function GoalTree({ goals, onSelect }: GoalTreeProps) {
   }
 
   return (
-    <div className="border border-border rounded-md py-1">
+    <div className="border border-border py-1">
       {roots.map((goal) => (
         <GoalNode
           key={goal.id}

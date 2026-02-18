@@ -87,7 +87,7 @@ export function ProjectDetail() {
           {projectIssues.length === 0 ? (
             <p className="text-sm text-muted-foreground">No issues in this project.</p>
           ) : (
-            <div className="border border-border rounded-md">
+            <div className="border border-border">
               {projectIssues.map((issue) => (
                 <EntityRow
                   key={issue.id}

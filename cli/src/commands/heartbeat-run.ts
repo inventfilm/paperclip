@@ -174,6 +174,8 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
       }
       if (typeof logResult.nextOffset === "number") {
         logOffset = logResult.nextOffset;
+      } else if (logResult.content) {
+        logOffset += Buffer.byteLength(logResult.content, "utf8");
       }
     }
 

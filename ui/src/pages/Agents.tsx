@@ -93,20 +93,17 @@ export function Agents() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-semibold">Agents</h2>
-          <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-            <TabsList>
-              <TabsTrigger value="all">All{agents ? ` (${agents.length})` : ""}</TabsTrigger>
-              <TabsTrigger value="active">Active</TabsTrigger>
-              <TabsTrigger value="paused">Paused</TabsTrigger>
-              <TabsTrigger value="error">Error</TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
+          <TabsList variant="line">
+            <TabsTrigger value="all">All{agents ? ` (${agents.length})` : ""}</TabsTrigger>
+            <TabsTrigger value="active">Active</TabsTrigger>
+            <TabsTrigger value="paused">Paused</TabsTrigger>
+            <TabsTrigger value="error">Error</TabsTrigger>
+          </TabsList>
+        </Tabs>
         <div className="flex items-center gap-2">
           {/* View toggle */}
-          <div className="flex items-center border border-border rounded-md">
+          <div className="flex items-center border border-border">
             <button
               className={cn(
                 "p-1.5 transition-colors",
@@ -147,7 +144,7 @@ export function Agents() {
 
       {/* List view */}
       {view === "list" && filtered.length > 0 && (
-        <div className="border border-border rounded-md">
+        <div className="border border-border">
           {filtered.map((agent) => {
             const budgetPct =
               agent.budgetMonthlyCents > 0
@@ -221,7 +218,7 @@ export function Agents() {
 
       {/* Org chart view */}
       {view === "org" && filteredOrg.length > 0 && (
-        <div className="border border-border rounded-md py-1">
+        <div className="border border-border py-1">
           {filteredOrg.map((node) => (
             <OrgTreeNode key={node.id} node={node} depth={0} navigate={navigate} agentMap={agentMap} />
           ))}
@@ -275,7 +272,7 @@ function OrgTreeNode({
   return (
     <div style={{ paddingLeft: depth * 24 }}>
       <button
-        className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-accent/30 transition-colors w-full text-left"
+        className="flex items-center gap-3 px-3 py-2 hover:bg-accent/30 transition-colors w-full text-left"
         onClick={() => navigate(`/agents/${node.id}`)}
       >
         <span className="relative flex h-2.5 w-2.5 shrink-0">

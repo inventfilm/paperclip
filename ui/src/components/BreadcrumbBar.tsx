@@ -15,8 +15,20 @@ export function BreadcrumbBar() {
 
   if (breadcrumbs.length === 0) return null;
 
+  // Single breadcrumb = page title (uppercase)
+  if (breadcrumbs.length === 1) {
+    return (
+      <div className="border-b border-border px-6 py-4">
+        <h1 className="text-sm font-semibold uppercase tracking-wider">
+          {breadcrumbs[0].label}
+        </h1>
+      </div>
+    );
+  }
+
+  // Multiple breadcrumbs = breadcrumb trail
   return (
-    <div className="border-b border-border px-6 py-2">
+    <div className="border-b border-border px-6 py-3">
       <Breadcrumb>
         <BreadcrumbList>
           {breadcrumbs.map((crumb, i) => {

@@ -38,8 +38,6 @@ export function MyIssues() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">My Issues</h2>
-
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
@@ -48,7 +46,7 @@ export function MyIssues() {
       )}
 
       {myIssues.length > 0 && (
-        <div className="border border-border rounded-md">
+        <div className="border border-border">
           {myIssues.map((issue) => (
             <EntityRow
               key={issue.id}

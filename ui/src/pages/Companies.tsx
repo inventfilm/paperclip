@@ -89,11 +89,7 @@ export function Companies() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">Companies</h2>
-          <p className="text-sm text-muted-foreground">Manage your companies.</p>
-        </div>
+      <div className="flex items-center justify-end">
         <Button size="sm" onClick={openOnboarding}>
           <Plus className="h-3.5 w-3.5 mr-1.5" />
           New Company

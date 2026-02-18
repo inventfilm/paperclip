@@ -1,12 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AGENT_ADAPTER_TYPES } from "@paperclip/shared";
 import type { Agent } from "@paperclip/shared";
 import type { AdapterModel } from "../api/agents";
+import { agentsApi } from "../api/agents";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
 import { FolderOpen, Heart, ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
@@ -18,7 +21,6 @@ import {
   DraftInput,
   DraftTextarea,
   DraftNumberInput,
-  HintIcon,
   help,
   adapterLabels,
 } from "./agent-config-primitives";
@@ -73,8 +75,36 @@ type AgentConfigFormProps = {
       mode: "edit";
       agent: Agent;
       onSave: (patch: Record<string, unknown>) => void;
+      isSaving?: boolean;
     }
 );
+
+/* ---- Edit mode overlay (dirty tracking) ---- */
+
+interface Overlay {
+  identity: Record<string, unknown>;
+  adapterType?: string;
+  adapterConfig: Record<string, unknown>;
+  heartbeat: Record<string, unknown>;
+  runtime: Record<string, unknown>;
+}
+
+const emptyOverlay: Overlay = {
+  identity: {},
+  adapterConfig: {},
+  heartbeat: {},
+  runtime: {},
+};
+
+function isOverlayDirty(o: Overlay): boolean {
+  return (
+    Object.keys(o.identity).length > 0 ||
+    o.adapterType !== undefined ||
+    Object.keys(o.adapterConfig).length > 0 ||
+    Object.keys(o.heartbeat).length > 0 ||
+    Object.keys(o.runtime).length > 0
+  );
+}
 
 /* ---- Shared input class ---- */
 const inputClass =
@@ -83,20 +113,87 @@ const inputClass =
 /* ---- Form ---- */
 
 export function AgentConfigForm(props: AgentConfigFormProps) {
-  const { mode, adapterModels } = props;
+  const { mode, adapterModels: externalModels } = props;
   const isCreate = mode === "create";
 
-  // Resolve adapter type + config + heartbeat from props
-  const adapterType = isCreate ? props.values.adapterType : props.agent.adapterType;
-  const isLocal = adapterType === "claude_local" || adapterType === "codex_local";
+  // ---- Edit mode: overlay for dirty tracking ----
+  const [overlay, setOverlay] = useState<Overlay>(emptyOverlay);
+  const agentRef = useRef<Agent | null>(null);
 
-  // Edit mode: extract from agent
+  // Clear overlay when agent data refreshes (after save)
+  useEffect(() => {
+    if (!isCreate) {
+      if (agentRef.current !== null && props.agent !== agentRef.current) {
+        setOverlay({ ...emptyOverlay });
+      }
+      agentRef.current = props.agent;
+    }
+  }, [isCreate, !isCreate ? props.agent : undefined]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isDirty = !isCreate && isOverlayDirty(overlay);
+
+  /** Read effective value: overlay if dirty, else original */
+  function eff<T>(group: keyof Omit<Overlay, "adapterType">, field: string, original: T): T {
+    const o = overlay[group];
+    if (field in o) return o[field] as T;
+    return original;
+  }
+
+  /** Mark field dirty in overlay */
+  function mark(group: keyof Omit<Overlay, "adapterType">, field: string, value: unknown) {
+    setOverlay((prev) => ({
+      ...prev,
+      [group]: { ...prev[group], [field]: value },
+    }));
+  }
+
+  /** Build accumulated patch and send to parent */
+  function handleSave() {
+    if (isCreate || !isDirty) return;
+    const agent = props.agent;
+    const patch: Record<string, unknown> = {};
+
+    if (Object.keys(overlay.identity).length > 0) {
+      Object.assign(patch, overlay.identity);
+    }
+    if (overlay.adapterType !== undefined) {
+      patch.adapterType = overlay.adapterType;
+    }
+    if (Object.keys(overlay.adapterConfig).length > 0) {
+      const existing = (agent.adapterConfig ?? {}) as Record<string, unknown>;
+      patch.adapterConfig = { ...existing, ...overlay.adapterConfig };
+    }
+    if (Object.keys(overlay.heartbeat).length > 0) {
+      const existingRc = (agent.runtimeConfig ?? {}) as Record<string, unknown>;
+      const existingHb = (existingRc.heartbeat ?? {}) as Record<string, unknown>;
+      patch.runtimeConfig = { ...existingRc, heartbeat: { ...existingHb, ...overlay.heartbeat } };
+    }
+    if (Object.keys(overlay.runtime).length > 0) {
+      Object.assign(patch, overlay.runtime);
+    }
+
+    props.onSave(patch);
+  }
+
+  // ---- Resolve values ----
   const config = !isCreate ? ((props.agent.adapterConfig ?? {}) as Record<string, unknown>) : {};
   const runtimeConfig = !isCreate ? ((props.agent.runtimeConfig ?? {}) as Record<string, unknown>) : {};
   const heartbeat = !isCreate ? ((runtimeConfig.heartbeat ?? {}) as Record<string, unknown>) : {};
 
-  // Section toggle state
-  const [adapterAdvancedOpen, setAdapterAdvancedOpen] = useState(!isCreate);
+  const adapterType = isCreate
+    ? props.values.adapterType
+    : overlay.adapterType ?? props.agent.adapterType;
+  const isLocal = adapterType === "claude_local" || adapterType === "codex_local";
+
+  // Fetch adapter models for the effective adapter type
+  const { data: fetchedModels } = useQuery({
+    queryKey: ["adapter-models", adapterType],
+    queryFn: () => agentsApi.adapterModels(adapterType),
+  });
+  const models = fetchedModels ?? externalModels ?? [];
+
+  // Section toggle state — advanced always starts collapsed
+  const [adapterAdvancedOpen, setAdapterAdvancedOpen] = useState(false);
   const [heartbeatOpen, setHeartbeatOpen] = useState(!isCreate);
 
   // Popover states
@@ -108,27 +205,29 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     ? (patch: Partial<CreateConfigValues>) => props.onChange(patch)
     : null;
 
-  // Edit mode helpers
-  const saveConfig = !isCreate
-    ? (field: string, value: unknown) =>
-        props.onSave({ adapterConfig: { ...config, [field]: value } })
-    : null;
-  const saveHeartbeat = !isCreate
-    ? (field: string, value: unknown) =>
-        props.onSave({
-          runtimeConfig: { ...runtimeConfig, heartbeat: { ...heartbeat, [field]: value } },
-        })
-    : null;
-  const saveIdentity = !isCreate
-    ? (field: string, value: unknown) => props.onSave({ [field]: value })
-    : null;
-
   // Current model for display
-  const currentModelId = isCreate ? val!.model : String(config.model ?? "");
-  const selectedModel = (adapterModels ?? []).find((m) => m.id === currentModelId);
+  const currentModelId = isCreate
+    ? val!.model
+    : eff("adapterConfig", "model", String(config.model ?? ""));
 
   return (
-    <div>
+    <div className="relative">
+      {/* ---- Floating Save button (edit mode, when dirty) ---- */}
+      {isDirty && (
+        <div className="sticky top-0 z-10 flex items-center justify-end px-4 py-2 bg-background/90 backdrop-blur-sm border-b border-primary/20">
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">Unsaved changes</span>
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={!isCreate && props.isSaving}
+            >
+              {!isCreate && props.isSaving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* ---- Identity (edit only) ---- */}
       {!isCreate && (
         <div className="border-b border-border">
@@ -136,24 +235,24 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           <div className="px-4 pb-3 space-y-3">
             <Field label="Name" hint={help.name}>
               <DraftInput
-                value={props.agent.name}
-                onCommit={(v) => saveIdentity!("name", v)}
+                value={eff("identity", "name", props.agent.name)}
+                onCommit={(v) => mark("identity", "name", v)}
                 className={inputClass}
                 placeholder="Agent name"
               />
             </Field>
             <Field label="Title" hint={help.title}>
               <DraftInput
-                value={props.agent.title ?? ""}
-                onCommit={(v) => saveIdentity!("title", v || null)}
+                value={eff("identity", "title", props.agent.title ?? "")}
+                onCommit={(v) => mark("identity", "title", v || null)}
                 className={inputClass}
                 placeholder="e.g. VP of Engineering"
               />
             </Field>
             <Field label="Capabilities" hint={help.capabilities}>
               <DraftTextarea
-                value={props.agent.capabilities ?? ""}
-                onCommit={(v) => saveIdentity!("capabilities", v || null)}
+                value={eff("identity", "capabilities", props.agent.capabilities ?? "")}
+                onCommit={(v) => mark("identity", "capabilities", v || null)}
                 placeholder="Describe what this agent can do..."
                 minRows={2}
               />
@@ -167,9 +266,17 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         <Field label="Adapter" hint={help.adapterType}>
           <AdapterTypeDropdown
             value={adapterType}
-            onChange={(t) =>
-              isCreate ? set!({ adapterType: t }) : props.onSave({ adapterType: t })
-            }
+            onChange={(t) => {
+              if (isCreate) {
+                set!({ adapterType: t });
+              } else {
+                setOverlay((prev) => ({
+                  ...prev,
+                  adapterType: t,
+                  adapterConfig: {}, // clear adapter config when type changes
+                }));
+              }
+            }}
           />
         </Field>
       </div>
@@ -186,9 +293,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               <div className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5">
                 <FolderOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                 <DraftInput
-                  value={isCreate ? val!.cwd : String(config.cwd ?? "")}
+                  value={
+                    isCreate
+                      ? val!.cwd
+                      : eff("adapterConfig", "cwd", String(config.cwd ?? ""))
+                  }
                   onCommit={(v) =>
-                    isCreate ? set!({ cwd: v }) : saveConfig!("cwd", v || undefined)
+                    isCreate
+                      ? set!({ cwd: v })
+                      : mark("adapterConfig", "cwd", v || undefined)
                   }
                   immediate={isCreate}
                   className="w-full bg-transparent outline-none text-sm font-mono placeholder:text-muted-foreground/40"
@@ -202,7 +315,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       // @ts-expect-error -- showDirectoryPicker is not in all TS lib defs yet
                       const handle = await window.showDirectoryPicker({ mode: "read" });
                       if (isCreate) set!({ cwd: handle.name });
-                      else saveConfig!("cwd", handle.name);
+                      else mark("adapterConfig", "cwd", handle.name);
                     } catch {
                       // user cancelled or API unsupported
                     }
@@ -226,8 +339,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 />
               ) : (
                 <DraftTextarea
-                  value={String(config.promptTemplate ?? "")}
-                  onCommit={(v) => saveConfig!("promptTemplate", v || undefined)}
+                  value={eff(
+                    "adapterConfig",
+                    "promptTemplate",
+                    String(config.promptTemplate ?? ""),
+                  )}
+                  onCommit={(v) =>
+                    mark("adapterConfig", "promptTemplate", v || undefined)
+                  }
                   placeholder="You are agent {{ agent.name }}. Your role is {{ agent.role }}..."
                   minRows={4}
                 />
@@ -243,12 +362,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               checked={
                 isCreate
                   ? val!.dangerouslySkipPermissions
-                  : config.dangerouslySkipPermissions !== false
+                  : eff(
+                      "adapterConfig",
+                      "dangerouslySkipPermissions",
+                      config.dangerouslySkipPermissions !== false,
+                    )
               }
               onChange={(v) =>
                 isCreate
                   ? set!({ dangerouslySkipPermissions: v })
-                  : saveConfig!("dangerouslySkipPermissions", v)
+                  : mark("adapterConfig", "dangerouslySkipPermissions", v)
               }
             />
           )}
@@ -262,20 +385,30 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 checked={
                   isCreate
                     ? val!.dangerouslyBypassSandbox
-                    : config.dangerouslyBypassApprovalsAndSandbox !== false
+                    : eff(
+                        "adapterConfig",
+                        "dangerouslyBypassApprovalsAndSandbox",
+                        config.dangerouslyBypassApprovalsAndSandbox !== false,
+                      )
                 }
                 onChange={(v) =>
                   isCreate
                     ? set!({ dangerouslyBypassSandbox: v })
-                    : saveConfig!("dangerouslyBypassApprovalsAndSandbox", v)
+                    : mark("adapterConfig", "dangerouslyBypassApprovalsAndSandbox", v)
                 }
               />
               <ToggleField
                 label="Enable search"
                 hint={help.search}
-                checked={isCreate ? val!.search : !!config.search}
+                checked={
+                  isCreate
+                    ? val!.search
+                    : eff("adapterConfig", "search", !!config.search)
+                }
                 onChange={(v) =>
-                  isCreate ? set!({ search: v }) : saveConfig!("search", v)
+                  isCreate
+                    ? set!({ search: v })
+                    : mark("adapterConfig", "search", v)
                 }
               />
             </>
@@ -286,9 +419,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             <>
               <Field label="Command" hint={help.command}>
                 <DraftInput
-                  value={isCreate ? val!.command : String(config.command ?? "")}
+                  value={
+                    isCreate
+                      ? val!.command
+                      : eff("adapterConfig", "command", String(config.command ?? ""))
+                  }
                   onCommit={(v) =>
-                    isCreate ? set!({ command: v }) : saveConfig!("command", v || undefined)
+                    isCreate
+                      ? set!({ command: v })
+                      : mark("adapterConfig", "command", v || undefined)
                   }
                   immediate={isCreate}
                   className={inputClass}
@@ -297,11 +436,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               </Field>
               <Field label="Args (comma-separated)" hint={help.args}>
                 <DraftInput
-                  value={isCreate ? val!.args : String(config.args ?? "")}
+                  value={
+                    isCreate
+                      ? val!.args
+                      : eff("adapterConfig", "args", String(config.args ?? ""))
+                  }
                   onCommit={(v) =>
                     isCreate
                       ? set!({ args: v })
-                      : saveConfig!(
+                      : mark(
+                          "adapterConfig",
                           "args",
                           v
                             ? v
@@ -323,9 +467,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           {adapterType === "http" && (
             <Field label="Webhook URL" hint={help.webhookUrl}>
               <DraftInput
-                value={isCreate ? val!.url : String(config.url ?? "")}
+                value={
+                  isCreate
+                    ? val!.url
+                    : eff("adapterConfig", "url", String(config.url ?? ""))
+                }
                 onCommit={(v) =>
-                  isCreate ? set!({ url: v }) : saveConfig!("url", v || undefined)
+                  isCreate
+                    ? set!({ url: v })
+                    : mark("adapterConfig", "url", v || undefined)
                 }
                 immediate={isCreate}
                 className={inputClass}
@@ -334,90 +484,100 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             </Field>
           )}
 
-          {/* Advanced adapter section */}
+          {/* Advanced adapter section — collapsible in both modes */}
           {isLocal && (
-            <>
-              {isCreate ? (
-                <CollapsibleSection
-                  title="Advanced Adapter Configuration"
-                  open={adapterAdvancedOpen}
-                  onToggle={() => setAdapterAdvancedOpen(!adapterAdvancedOpen)}
-                >
-                  <div className="space-y-3">
-                    <ModelDropdown
-                      models={adapterModels ?? []}
-                      value={val!.model}
-                      onChange={(v) => set!({ model: v })}
-                      open={modelOpen}
-                      onOpenChange={setModelOpen}
+            <CollapsibleSection
+              title="Advanced Adapter Settings"
+              open={adapterAdvancedOpen}
+              onToggle={() => setAdapterAdvancedOpen(!adapterAdvancedOpen)}
+            >
+              <div className="space-y-3">
+                <ModelDropdown
+                  models={models}
+                  value={currentModelId}
+                  onChange={(v) =>
+                    isCreate
+                      ? set!({ model: v })
+                      : mark("adapterConfig", "model", v || undefined)
+                  }
+                  open={modelOpen}
+                  onOpenChange={setModelOpen}
+                />
+                <Field label="Bootstrap prompt (first run)" hint={help.bootstrapPrompt}>
+                  {isCreate ? (
+                    <AutoExpandTextarea
+                      placeholder="Optional initial setup prompt for the first run"
+                      value={val!.bootstrapPrompt}
+                      onChange={(v) => set!({ bootstrapPrompt: v })}
+                      minRows={2}
                     />
-                    <Field label="Bootstrap prompt (first run)" hint={help.bootstrapPrompt}>
-                      <AutoExpandTextarea
-                        placeholder="Optional initial setup prompt for the first run"
-                        value={val!.bootstrapPrompt}
-                        onChange={(v) => set!({ bootstrapPrompt: v })}
-                        minRows={2}
-                      />
-                    </Field>
-                    {adapterType === "claude_local" && (
-                      <Field label="Max turns per run" hint={help.maxTurnsPerRun}>
-                        <input
-                          type="number"
-                          className={inputClass}
-                          value={val!.maxTurnsPerRun}
-                          onChange={(e) => set!({ maxTurnsPerRun: Number(e.target.value) })}
-                        />
-                      </Field>
-                    )}
-                  </div>
-                </CollapsibleSection>
-              ) : (
-                /* Edit mode: show advanced fields inline (no collapse) */
-                <div className="space-y-3 pt-2 border-t border-border/50">
-                  <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
-                    Advanced
-                  </div>
-                  <ModelDropdown
-                    models={adapterModels ?? []}
-                    value={String(config.model ?? "")}
-                    onChange={(v) => saveConfig!("model", v || undefined)}
-                    open={modelOpen}
-                    onOpenChange={setModelOpen}
-                  />
-                  <Field label="Bootstrap prompt (first run)" hint={help.bootstrapPrompt}>
+                  ) : (
                     <DraftTextarea
-                      value={String(config.bootstrapPromptTemplate ?? "")}
-                      onCommit={(v) => saveConfig!("bootstrapPromptTemplate", v || undefined)}
+                      value={eff(
+                        "adapterConfig",
+                        "bootstrapPromptTemplate",
+                        String(config.bootstrapPromptTemplate ?? ""),
+                      )}
+                      onCommit={(v) =>
+                        mark("adapterConfig", "bootstrapPromptTemplate", v || undefined)
+                      }
                       placeholder="Optional initial setup prompt for the first run"
                       minRows={2}
                     />
-                  </Field>
-                  {adapterType === "claude_local" && (
-                    <Field label="Max turns per run" hint={help.maxTurnsPerRun}>
+                  )}
+                </Field>
+                {adapterType === "claude_local" && (
+                  <Field label="Max turns per run" hint={help.maxTurnsPerRun}>
+                    {isCreate ? (
+                      <input
+                        type="number"
+                        className={inputClass}
+                        value={val!.maxTurnsPerRun}
+                        onChange={(e) => set!({ maxTurnsPerRun: Number(e.target.value) })}
+                      />
+                    ) : (
                       <DraftNumberInput
-                        value={Number(config.maxTurnsPerRun ?? 80)}
-                        onCommit={(v) => saveConfig!("maxTurnsPerRun", v || 80)}
+                        value={eff(
+                          "adapterConfig",
+                          "maxTurnsPerRun",
+                          Number(config.maxTurnsPerRun ?? 80),
+                        )}
+                        onCommit={(v) => mark("adapterConfig", "maxTurnsPerRun", v || 80)}
+                        className={inputClass}
+                      />
+                    )}
+                  </Field>
+                )}
+
+                {/* Edit-only: timeout + grace period */}
+                {!isCreate && (
+                  <>
+                    <Field label="Timeout (sec)" hint={help.timeoutSec}>
+                      <DraftNumberInput
+                        value={eff(
+                          "adapterConfig",
+                          "timeoutSec",
+                          Number(config.timeoutSec ?? 0),
+                        )}
+                        onCommit={(v) => mark("adapterConfig", "timeoutSec", v)}
                         className={inputClass}
                       />
                     </Field>
-                  )}
-                  <Field label="Timeout (sec)" hint={help.timeoutSec}>
-                    <DraftNumberInput
-                      value={Number(config.timeoutSec ?? 0)}
-                      onCommit={(v) => saveConfig!("timeoutSec", v)}
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="Interrupt grace period (sec)" hint={help.graceSec}>
-                    <DraftNumberInput
-                      value={Number(config.graceSec ?? 15)}
-                      onCommit={(v) => saveConfig!("graceSec", v)}
-                      className={inputClass}
-                    />
-                  </Field>
-                </div>
-              )}
-            </>
+                    <Field label="Interrupt grace period (sec)" hint={help.graceSec}>
+                      <DraftNumberInput
+                        value={eff(
+                          "adapterConfig",
+                          "graceSec",
+                          Number(config.graceSec ?? 15),
+                        )}
+                        onCommit={(v) => mark("adapterConfig", "graceSec", v)}
+                        className={inputClass}
+                      />
+                    </Field>
+                  </>
+                )}
+              </div>
+            </CollapsibleSection>
           )}
         </div>
       </div>
@@ -456,14 +616,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             <ToggleWithNumber
               label="Heartbeat on interval"
               hint={help.heartbeatInterval}
-              checked={heartbeat.enabled !== false}
-              onCheckedChange={(v) => saveHeartbeat!("enabled", v)}
-              number={Number(heartbeat.intervalSec ?? 300)}
-              onNumberChange={(v) => saveHeartbeat!("intervalSec", v)}
+              checked={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
+              onCheckedChange={(v) => mark("heartbeat", "enabled", v)}
+              number={eff("heartbeat", "intervalSec", Number(heartbeat.intervalSec ?? 300))}
+              onNumberChange={(v) => mark("heartbeat", "intervalSec", v)}
               numberLabel="sec"
               numberPrefix="Run heartbeat every"
               numberHint={help.intervalSec}
-              showNumber={heartbeat.enabled !== false}
+              showNumber={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
             />
 
             {/* Edit-only: wake-on-* and cooldown */}
@@ -474,25 +634,41 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               <ToggleField
                 label="Wake on assignment"
                 hint={help.wakeOnAssignment}
-                checked={heartbeat.wakeOnAssignment !== false}
-                onChange={(v) => saveHeartbeat!("wakeOnAssignment", v)}
+                checked={eff(
+                  "heartbeat",
+                  "wakeOnAssignment",
+                  heartbeat.wakeOnAssignment !== false,
+                )}
+                onChange={(v) => mark("heartbeat", "wakeOnAssignment", v)}
               />
               <ToggleField
                 label="Wake on on-demand"
                 hint={help.wakeOnOnDemand}
-                checked={heartbeat.wakeOnOnDemand !== false}
-                onChange={(v) => saveHeartbeat!("wakeOnOnDemand", v)}
+                checked={eff(
+                  "heartbeat",
+                  "wakeOnOnDemand",
+                  heartbeat.wakeOnOnDemand !== false,
+                )}
+                onChange={(v) => mark("heartbeat", "wakeOnOnDemand", v)}
               />
               <ToggleField
                 label="Wake on automation"
                 hint={help.wakeOnAutomation}
-                checked={heartbeat.wakeOnAutomation !== false}
-                onChange={(v) => saveHeartbeat!("wakeOnAutomation", v)}
+                checked={eff(
+                  "heartbeat",
+                  "wakeOnAutomation",
+                  heartbeat.wakeOnAutomation !== false,
+                )}
+                onChange={(v) => mark("heartbeat", "wakeOnAutomation", v)}
               />
               <Field label="Cooldown (sec)" hint={help.cooldownSec}>
                 <DraftNumberInput
-                  value={Number(heartbeat.cooldownSec ?? 10)}
-                  onCommit={(v) => saveHeartbeat!("cooldownSec", v)}
+                  value={eff(
+                    "heartbeat",
+                    "cooldownSec",
+                    Number(heartbeat.cooldownSec ?? 10),
+                  )}
+                  onCommit={(v) => mark("heartbeat", "cooldownSec", v)}
                   className={inputClass}
                 />
               </Field>
@@ -513,8 +689,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             </Field>
             <Field label="Monthly budget (cents)" hint={help.budgetMonthlyCents}>
               <DraftNumberInput
-                value={props.agent.budgetMonthlyCents}
-                onCommit={(v) => saveIdentity!("budgetMonthlyCents", v)}
+                value={eff(
+                  "runtime",
+                  "budgetMonthlyCents",
+                  props.agent.budgetMonthlyCents,
+                )}
+                onCommit={(v) => mark("runtime", "budgetMonthlyCents", v)}
                 className={inputClass}
               />
             </Field>

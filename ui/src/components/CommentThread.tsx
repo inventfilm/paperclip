@@ -37,7 +37,7 @@ export function CommentThread({ comments, onAdd }: CommentThreadProps) {
 
       <div className="space-y-3">
         {comments.map((comment) => (
-          <div key={comment.id} className="rounded-md border border-border p-3">
+          <div key={comment.id} className="border border-border p-3">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-medium text-muted-foreground">
                 {comment.authorAgentId ? "Agent" : "Human"}

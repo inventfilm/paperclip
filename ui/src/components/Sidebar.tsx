@@ -12,13 +12,14 @@ import {
   ListTodo,
   ShieldCheck,
   Building2,
+  BookOpen,
+  Paperclip,
 } from "lucide-react";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { useDialog } from "../context/DialogContext";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function Sidebar() {
@@ -29,8 +30,15 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-60 h-full border-r border-border bg-card flex flex-col">
-      <div className="flex items-center gap-1 p-3">
+    <aside className="w-60 h-full border-r border-border bg-background flex flex-col">
+      {/* Logo */}
+      <div className="flex items-center gap-2 px-4 py-3">
+        <Paperclip className="h-5 w-5 text-foreground" />
+        <span className="text-sm font-semibold tracking-tight text-foreground">Paperclip</span>
+      </div>
+
+      {/* Company switcher + actions */}
+      <div className="flex items-center gap-1 px-3 pb-3">
         <div className="flex-1 min-w-0">
           <CompanySwitcher />
         </div>
@@ -52,10 +60,8 @@ export function Sidebar() {
         </Button>
       </div>
 
-      <Separator />
-
       <ScrollArea className="flex-1">
-        <nav className="flex flex-col gap-3 p-3">
+        <nav className="flex flex-col gap-4 px-3 py-2">
           <div className="flex flex-col gap-0.5">
             <SidebarNavItem to="/inbox" label="Inbox" icon={Inbox} />
             <SidebarNavItem to="/my-issues" label="My Issues" icon={ListTodo} />
@@ -77,6 +83,11 @@ export function Sidebar() {
           </SidebarSection>
         </nav>
       </ScrollArea>
+
+      {/* Bottom links */}
+      <div className="border-t border-border px-3 py-2">
+        <SidebarNavItem to="/docs" label="Documentation" icon={BookOpen} />
+      </div>
     </aside>
   );
 }

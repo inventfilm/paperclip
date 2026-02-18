@@ -101,8 +101,7 @@ export function Activity() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Activity</h2>
+      <div className="flex items-center justify-end">
         <Select value={filter} onValueChange={setFilter}>
           <SelectTrigger className="w-[140px] h-8 text-xs">
             <SelectValue placeholder="Filter by type" />
@@ -126,7 +125,7 @@ export function Activity() {
       )}
 
       {filtered && filtered.length > 0 && (
-        <div className="border border-border rounded-md divide-y divide-border">
+        <div className="border border-border divide-y divide-border">
           {filtered.map((event) => {
             const link = entityLink(event.entityType, event.entityId);
             return (

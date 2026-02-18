@@ -113,12 +113,9 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-lg font-semibold">Dashboard</h2>
-        {selectedCompany && (
-          <p className="text-sm text-muted-foreground">{selectedCompany.name}</p>
-        )}
-      </div>
+      {selectedCompany && (
+        <p className="text-sm text-muted-foreground">{selectedCompany.name}</p>
+      )}
 
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
@@ -159,7 +156,7 @@ export function Dashboard() {
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
                   Recent Activity
                 </h3>
-                <div className="border border-border rounded-md divide-y divide-border">
+                <div className="border border-border divide-y divide-border">
                   {activity.slice(0, 10).map((event) => (
                     <div key={event.id} className="px-4 py-2 flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2 min-w-0">
@@ -185,11 +182,11 @@ export function Dashboard() {
                 Stale Tasks
               </h3>
               {staleIssues.length === 0 ? (
-                <div className="border border-border rounded-md p-4">
+                <div className="border border-border p-4">
                   <p className="text-sm text-muted-foreground">No stale tasks. All work is up to date.</p>
                 </div>
               ) : (
-                <div className="border border-border rounded-md divide-y divide-border">
+                <div className="border border-border divide-y divide-border">
                   {staleIssues.slice(0, 10).map((issue) => (
                     <div
                       key={issue.id}

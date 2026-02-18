@@ -367,7 +367,7 @@ export function AgentDetail() {
           {assignedIssues.length === 0 ? (
             <p className="text-sm text-muted-foreground">No assigned issues.</p>
           ) : (
-            <div className="border border-border rounded-md">
+            <div className="border border-border">
               {assignedIssues.map((issue) => (
                 <EntityRow
                   key={issue.id}
@@ -429,6 +429,7 @@ function ConfigurationTab({ agent }: { agent: Agent }) {
         mode="edit"
         agent={agent}
         onSave={(patch) => updateAgent.mutate(patch)}
+        isSaving={updateAgent.isPending}
         adapterModels={adapterModels}
       />
     </div>
@@ -450,7 +451,7 @@ function RunsTab({ runs, companyId }: { runs: HeartbeatRun[]; companyId: string 
   );
 
   return (
-    <div className="border border-border rounded-md">
+    <div className="border border-border">
       {sorted.map((run) => {
         const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
         const StatusIcon = statusInfo.icon;
@@ -975,7 +976,7 @@ function KeysTab({ agentId }: { agentId: string }) {
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             Active Keys
           </h3>
-          <div className="border border-border rounded-md divide-y divide-border">
+          <div className="border border-border divide-y divide-border">
             {activeKeys.map((key: AgentKey) => (
               <div key={key.id} className="flex items-center justify-between px-4 py-2.5">
                 <div>
@@ -1005,7 +1006,7 @@ function KeysTab({ agentId }: { agentId: string }) {
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
             Revoked Keys
           </h3>
-          <div className="border border-border rounded-md divide-y divide-border opacity-50">
+          <div className="border border-border divide-y divide-border opacity-50">
             {revokedKeys.map((key: AgentKey) => (
               <div key={key.id} className="flex items-center justify-between px-4 py-2.5">
                 <div>

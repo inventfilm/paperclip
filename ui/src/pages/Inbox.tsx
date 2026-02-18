@@ -116,8 +116,6 @@ export function Inbox() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold">Inbox</h2>
-
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
@@ -140,7 +138,7 @@ export function Inbox() {
               See all approvals <ExternalLink className="inline h-3 w-3 ml-0.5" />
             </button>
           </div>
-          <div className="border border-border rounded-md divide-y divide-border">
+          <div className="border border-border divide-y divide-border">
             {approvals!.map((approval) => (
               <div key={approval.id} className="p-4 space-y-2">
                 <div className="flex items-center gap-2">
@@ -191,7 +189,7 @@ export function Inbox() {
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
               Alerts
             </h3>
-            <div className="border border-border rounded-md divide-y divide-border">
+            <div className="border border-border divide-y divide-border">
               {dashboard!.agents.error > 0 && (
                 <div
                   className="px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-accent/50 transition-colors"
@@ -232,7 +230,7 @@ export function Inbox() {
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
               Stale Work
             </h3>
-            <div className="border border-border rounded-md divide-y divide-border">
+            <div className="border border-border divide-y divide-border">
               {staleIssues.map((issue) => (
                 <div
                   key={issue.id}

@@ -278,7 +278,7 @@ export function OnboardingWizard() {
           {step === 1 && (
             <div className="p-4 space-y-4">
               <div className="flex items-center gap-3 mb-2">
-                <div className="rounded-lg bg-muted/50 p-2">
+                <div className="bg-muted/50 p-2">
                   <Building2 className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
@@ -317,7 +317,7 @@ export function OnboardingWizard() {
           {step === 2 && (
             <div className="p-4 space-y-4">
               <div className="flex items-center gap-3 mb-2">
-                <div className="rounded-lg bg-muted/50 p-2">
+                <div className="bg-muted/50 p-2">
                   <Bot className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
@@ -506,7 +506,7 @@ export function OnboardingWizard() {
           {step === 3 && (
             <div className="p-4 space-y-4">
               <div className="flex items-center gap-3 mb-2">
-                <div className="rounded-lg bg-muted/50 p-2">
+                <div className="bg-muted/50 p-2">
                   <ListTodo className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
@@ -546,7 +546,7 @@ export function OnboardingWizard() {
           {step === 4 && (
             <div className="p-4 space-y-4">
               <div className="flex items-center gap-3 mb-2">
-                <div className="rounded-lg bg-muted/50 p-2">
+                <div className="bg-muted/50 p-2">
                   <Rocket className="h-5 w-5 text-muted-foreground" />
                 </div>
                 <div>
@@ -556,7 +556,7 @@ export function OnboardingWizard() {
                   </p>
                 </div>
               </div>
-              <div className="rounded-md border border-border divide-y divide-border">
+              <div className="border border-border divide-y divide-border">
                 <div className="flex items-center gap-3 px-3 py-2.5">
                   <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
                   <div className="flex-1 min-w-0">

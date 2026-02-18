@@ -36,8 +36,6 @@ export function Costs() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-semibold">Costs</h2>
-
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 

@@ -23,14 +23,14 @@ export function SidebarSection({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex items-center gap-1 w-full px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors">
+      <CollapsibleTrigger className="flex items-center justify-between w-full px-3 py-1.5 text-[10px] font-medium uppercase tracking-widest font-mono text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+        {label}
         <ChevronRight
           className={cn(
             "h-3 w-3 transition-transform",
             open && "rotate-90"
           )}
         />
-        {label}
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="flex flex-col gap-0.5 mt-0.5">{children}</div>
