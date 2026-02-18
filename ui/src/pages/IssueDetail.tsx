@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { useCompany } from "../context/CompanyContext";
@@ -12,6 +12,7 @@ import { IssueProperties } from "../components/IssueProperties";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { Separator } from "@/components/ui/separator";
+import { ChevronRight } from "lucide-react";
 
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
@@ -69,8 +70,31 @@ export function IssueDetail() {
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!issue) return null;
 
+  // Ancestors are returned oldest-first from the server (root at end, immediate parent at start)
+  const ancestors = issue.ancestors ?? [];
+
   return (
     <div className="max-w-2xl space-y-6">
+      {/* Parent chain breadcrumb */}
+      {ancestors.length > 0 && (
+        <nav className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
+          {[...ancestors].reverse().map((ancestor, i) => (
+            <span key={ancestor.id} className="flex items-center gap-1">
+              {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
+              <Link
+                to={`/issues/${ancestor.id}`}
+                className="hover:text-foreground transition-colors truncate max-w-[200px]"
+                title={ancestor.title}
+              >
+                {ancestor.title}
+              </Link>
+            </span>
+          ))}
+          <ChevronRight className="h-3 w-3 shrink-0" />
+          <span className="text-foreground/60 truncate max-w-[200px]">{issue.title}</span>
+        </nav>
+      )}
+
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <StatusIcon

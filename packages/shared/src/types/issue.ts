@@ -1,11 +1,23 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
 
+export interface IssueAncestor {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  assigneeAgentId: string | null;
+  projectId: string | null;
+  goalId: string | null;
+}
+
 export interface Issue {
   id: string;
   companyId: string;
   projectId: string | null;
   goalId: string | null;
   parentId: string | null;
+  ancestors?: IssueAncestor[];
   title: string;
   description: string | null;
   status: IssueStatus;

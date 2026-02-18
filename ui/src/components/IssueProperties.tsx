@@ -1,6 +1,8 @@
+import { Link } from "react-router-dom";
 import type { Issue } from "@paperclip/shared";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi } from "../api/agents";
+import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusIcon } from "./StatusIcon";
@@ -33,10 +35,17 @@ function priorityLabel(priority: string): string {
 
 export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
+
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
+  });
+
+  const { data: projects } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!),
+    queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && !!issue.projectId,
   });
 
   const agentName = (id: string | null) => {
@@ -44,6 +53,16 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
     const agent = agents.find((a) => a.id === id);
     return agent?.name ?? id.slice(0, 8);
   };
+
+  const projectName = (id: string | null) => {
+    if (!id || !projects) return id?.slice(0, 8) ?? "None";
+    const project = projects.find((p) => p.id === id);
+    return project?.name ?? id.slice(0, 8);
+  };
+
+  const assignee = issue.assigneeAgentId
+    ? agents?.find((a) => a.id === issue.assigneeAgentId)
+    : null;
 
   return (
     <div className="space-y-4">
@@ -65,16 +84,45 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
         </PropertyRow>
 
         <PropertyRow label="Assignee">
-          <span className="text-sm">
-            {issue.assigneeAgentId ? agentName(issue.assigneeAgentId) : "Unassigned"}
-          </span>
+          {assignee ? (
+            <Link
+              to={`/agents/${assignee.id}`}
+              className="text-sm hover:underline"
+            >
+              {assignee.name}
+            </Link>
+          ) : (
+            <span className="text-sm text-muted-foreground">Unassigned</span>
+          )}
         </PropertyRow>
 
-        <PropertyRow label="Project">
-          <span className="text-sm text-muted-foreground">
-            {issue.projectId ? issue.projectId.slice(0, 8) : "None"}
-          </span>
-        </PropertyRow>
+        {issue.projectId && (
+          <PropertyRow label="Project">
+            <Link
+              to={`/projects/${issue.projectId}`}
+              className="text-sm hover:underline"
+            >
+              {projectName(issue.projectId)}
+            </Link>
+          </PropertyRow>
+        )}
+
+        {issue.parentId && (
+          <PropertyRow label="Parent">
+            <Link
+              to={`/issues/${issue.parentId}`}
+              className="text-sm hover:underline"
+            >
+              {issue.ancestors?.[0]?.title ?? issue.parentId.slice(0, 8)}
+            </Link>
+          </PropertyRow>
+        )}
+
+        {issue.requestDepth > 0 && (
+          <PropertyRow label="Depth">
+            <span className="text-sm font-mono">{issue.requestDepth}</span>
+          </PropertyRow>
+        )}
       </div>
 
       <Separator />
