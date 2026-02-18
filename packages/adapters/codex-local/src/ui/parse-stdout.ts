@@ -1,4 +1,4 @@
-import type { TranscriptEntry } from "../types";
+import type { TranscriptEntry } from "@paperclip/adapter-utils";
 
 function safeJsonParse(text: string): unknown {
   try {

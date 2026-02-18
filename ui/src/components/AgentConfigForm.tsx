@@ -29,24 +29,10 @@ import { ClaudeLocalAdvancedFields } from "../adapters/claude-local/config-field
 
 /* ---- Create mode values ---- */
 
-export interface CreateConfigValues {
-  adapterType: string;
-  cwd: string;
-  promptTemplate: string;
-  model: string;
-  dangerouslySkipPermissions: boolean;
-  search: boolean;
-  dangerouslyBypassSandbox: boolean;
-  command: string;
-  args: string;
-  extraArgs: string;
-  envVars: string;
-  url: string;
-  bootstrapPrompt: string;
-  maxTurnsPerRun: number;
-  heartbeatEnabled: boolean;
-  intervalSec: number;
-}
+// Canonical type lives in @paperclip/adapter-utils; re-exported here
+// so existing imports from this file keep working.
+export type { CreateConfigValues } from "@paperclip/adapter-utils";
+import type { CreateConfigValues } from "@paperclip/adapter-utils";
 
 export const defaultCreateValues: CreateConfigValues = {
   adapterType: "claude_local",

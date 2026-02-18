@@ -1,16 +1,8 @@
 import type { ComponentType } from "react";
-import type { CreateConfigValues } from "../components/AgentConfigForm";
+import type { CreateConfigValues } from "@paperclip/adapter-utils";
 
-export type TranscriptEntry =
-  | { kind: "assistant"; ts: string; text: string }
-  | { kind: "tool_call"; ts: string; name: string; input: unknown }
-  | { kind: "init"; ts: string; model: string; sessionId: string }
-  | { kind: "result"; ts: string; text: string; inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number; subtype: string; isError: boolean; errors: string[] }
-  | { kind: "stderr"; ts: string; text: string }
-  | { kind: "system"; ts: string; text: string }
-  | { kind: "stdout"; ts: string; text: string };
-
-export type StdoutLineParser = (line: string, ts: string) => TranscriptEntry[];
+// Re-export shared types so local consumers don't need to change imports
+export type { TranscriptEntry, StdoutLineParser, CreateConfigValues } from "@paperclip/adapter-utils";
 
 export interface AdapterConfigFieldsProps {
   mode: "create" | "edit";
@@ -33,7 +25,7 @@ export interface AdapterConfigFieldsProps {
 export interface UIAdapterModule {
   type: string;
   label: string;
-  parseStdoutLine: StdoutLineParser;
+  parseStdoutLine: (line: string, ts: string) => import("@paperclip/adapter-utils").TranscriptEntry[];
   ConfigFields: ComponentType<AdapterConfigFieldsProps>;
   buildAdapterConfig: (values: CreateConfigValues) => Record<string, unknown>;
 }

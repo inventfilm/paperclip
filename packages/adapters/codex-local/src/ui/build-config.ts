@@ -1,4 +1,4 @@
-import type { CreateConfigValues } from "../../components/AgentConfigForm";
+import type { CreateConfigValues } from "@paperclip/adapter-utils";
 
 function parseCommaArgs(value: string): string[] {
   return value
@@ -22,7 +22,7 @@ function parseEnvVars(text: string): Record<string, string> {
   return env;
 }
 
-export function buildClaudeLocalConfig(v: CreateConfigValues): Record<string, unknown> {
+export function buildCodexLocalConfig(v: CreateConfigValues): Record<string, unknown> {
   const ac: Record<string, unknown> = {};
   if (v.cwd) ac.cwd = v.cwd;
   if (v.promptTemplate) ac.promptTemplate = v.promptTemplate;
@@ -32,8 +32,8 @@ export function buildClaudeLocalConfig(v: CreateConfigValues): Record<string, un
   ac.graceSec = 15;
   const env = parseEnvVars(v.envVars);
   if (Object.keys(env).length > 0) ac.env = env;
-  ac.maxTurnsPerRun = v.maxTurnsPerRun;
-  ac.dangerouslySkipPermissions = v.dangerouslySkipPermissions;
+  ac.search = v.search;
+  ac.dangerouslyBypassApprovalsAndSandbox = v.dangerouslyBypassSandbox;
   if (v.command) ac.command = v.command;
   if (v.extraArgs) ac.extraArgs = parseCommaArgs(v.extraArgs);
   return ac;

@@ -10,6 +10,9 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@paperclip/adapter-claude-local": "workspace:*",
+    "@paperclip/adapter-codex-local": "workspace:*",
+    "@paperclip/adapter-utils": "workspace:*",
     "@paperclip/shared": "workspace:*",
     "@radix-ui/react-slot": "^1.2.4",
     "@tanstack/react-query": "^5.90.21",

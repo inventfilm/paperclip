@@ -20,6 +20,15 @@ importers:
       '@clack/prompts':
         specifier: ^0.10.0
         version: 0.10.1
+      '@paperclip/adapter-claude-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/claude-local
+      '@paperclip/adapter-codex-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/codex-local
+      '@paperclip/adapter-utils':
+        specifier: workspace:*
+        version: link:../packages/adapter-utils
       '@paperclip/db':
         specifier: workspace:*
         version: link:../packages/db
@@ -39,6 +48,38 @@ importers:
       tsx:
         specifier: ^4.19.2
         version: 4.21.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/adapter-utils:
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/adapters/claude-local:
+    dependencies:
+      '@paperclip/adapter-utils':
+        specifier: workspace:*
+        version: link:../../adapter-utils
+      picocolors:
+        specifier: ^1.1.1
+        version: 1.1.1
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/adapters/codex-local:
+    dependencies:
+      '@paperclip/adapter-utils':
+        specifier: workspace:*
+        version: link:../../adapter-utils
+      picocolors:
+        specifier: ^1.1.1
+        version: 1.1.1
+    devDependencies:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
@@ -80,6 +121,15 @@ importers:
 
   server:
     dependencies:
+      '@paperclip/adapter-claude-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/claude-local
+      '@paperclip/adapter-codex-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/codex-local
+      '@paperclip/adapter-utils':
+        specifier: workspace:*
+        version: link:../packages/adapter-utils
       '@paperclip/db':
         specifier: workspace:*
         version: link:../packages/db
@@ -139,6 +189,15 @@ importers:
 
   ui:
     dependencies:
+      '@paperclip/adapter-claude-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/claude-local
+      '@paperclip/adapter-codex-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/codex-local
+      '@paperclip/adapter-utils':
+        specifier: workspace:*
+        version: link:../packages/adapter-utils
       '@paperclip/shared':
         specifier: workspace:*
         version: link:../packages/shared

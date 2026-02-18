@@ -1,4 +1,4 @@
-import { asString, asNumber, parseObject, parseJson } from "../utils.js";
+import { asString, asNumber, parseObject, parseJson } from "@paperclip/adapter-utils/server-utils";
 
 export function parseCodexJsonl(stdout: string) {
   let sessionId: string | null = null;

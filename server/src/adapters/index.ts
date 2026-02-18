@@ -5,7 +5,7 @@ export type {
   AdapterExecutionResult,
   AdapterInvocationMeta,
   UsageSummary,
-  AgentRecord,
-  AgentRuntimeStateRecord,
-} from "./types.js";
+  AdapterAgent,
+  AdapterRuntime,
+} from "@paperclip/adapter-utils";
 export { runningProcesses } from "./utils.js";

@@ -1,5 +1,5 @@
-import type { AdapterExecutionContext, AdapterExecutionResult } from "../types.js";
-import type { RunProcessResult } from "../utils.js";
+import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip/adapter-utils";
+import type { RunProcessResult } from "@paperclip/adapter-utils/server-utils";
 import {
   asString,
   asNumber,
@@ -14,7 +14,7 @@ import {
   ensurePathInEnv,
   renderTemplate,
   runChildProcess,
-} from "../utils.js";
+} from "@paperclip/adapter-utils/server-utils";
 import { parseClaudeStreamJson, describeClaudeFailure, isClaudeUnknownSessionError } from "./parse.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {

@@ -1,7 +1,7 @@
 import type { UIAdapterModule } from "../types";
-import { parseClaudeStdoutLine } from "./parse-stdout";
+import { parseClaudeStdoutLine } from "@paperclip/adapter-claude-local/ui";
 import { ClaudeLocalConfigFields } from "./config-fields";
-import { buildClaudeLocalConfig } from "./build-config";
+import { buildClaudeLocalConfig } from "@paperclip/adapter-claude-local/ui";
 
 export const claudeLocalUIAdapter: UIAdapterModule = {
   type: "claude_local",

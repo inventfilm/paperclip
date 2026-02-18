@@ -1,4 +1,4 @@
-import type { AdapterExecutionContext, AdapterExecutionResult } from "../types.js";
+import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip/adapter-utils";
 import {
   asString,
   asNumber,
@@ -12,7 +12,7 @@ import {
   ensurePathInEnv,
   renderTemplate,
   runChildProcess,
-} from "../utils.js";
+} from "@paperclip/adapter-utils/server-utils";
 import { parseCodexJsonl } from "./parse.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {

@@ -1,7 +1,7 @@
 import type { UIAdapterModule } from "../types";
-import { parseCodexStdoutLine } from "./parse-stdout";
+import { parseCodexStdoutLine } from "@paperclip/adapter-codex-local/ui";
 import { CodexLocalConfigFields } from "./config-fields";
-import { buildCodexLocalConfig } from "./build-config";
+import { buildCodexLocalConfig } from "@paperclip/adapter-codex-local/ui";
 
 export const codexLocalUIAdapter: UIAdapterModule = {
   type: "codex_local",
