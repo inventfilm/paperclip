@@ -35,7 +35,8 @@ export function issueRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, issue.companyId);
-    res.json(issue);
+    const ancestors = await svc.getAncestors(id);
+    res.json({ ...issue, ancestors });
   });
 
   router.post("/companies/:companyId/issues", validate(createIssueSchema), async (req, res) => {
@@ -261,6 +262,21 @@ export function issueRoutes(db: Db) {
       entityId: issue.id,
       details: { commentId: comment.id },
     });
+
+    // @-mention wakeups
+    svc.findMentionedAgents(issue.companyId, req.body.body).then((ids) => {
+      for (const mentionedId of ids) {
+        heartbeat.wakeup(mentionedId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: `Mentioned in comment on issue ${id}`,
+          payload: { issueId: id, commentId: comment.id },
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: { issueId: id, commentId: comment.id, source: "comment.mention" },
+        }).catch((err) => logger.warn({ err, agentId: mentionedId }, "failed to wake mentioned agent"));
+      }
+    }).catch((err) => logger.warn({ err, issueId: id }, "failed to resolve @-mentions"));
 
     res.status(201).json(comment);
   });

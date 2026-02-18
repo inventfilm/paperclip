@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
-import { issues, issueComments } from "@paperclip/db";
+import { agents, issues, issueComments } from "@paperclip/db";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
 const ISSUE_TRANSITIONS: Record<string, string[]> = {
@@ -214,6 +214,46 @@ export function issueService(db: Db) {
         })
         .returning()
         .then((rows) => rows[0]);
+    },
+
+    findMentionedAgents: async (companyId: string, body: string) => {
+      const re = /\B@([^\s@,!?.]+)/g;
+      const tokens = new Set<string>();
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(body)) !== null) tokens.add(m[1].toLowerCase());
+      if (tokens.size === 0) return [];
+      const rows = await db.select({ id: agents.id, name: agents.name })
+        .from(agents).where(eq(agents.companyId, companyId));
+      return rows.filter(a => tokens.has(a.name.toLowerCase())).map(a => a.id);
+    },
+
+    getAncestors: async (issueId: string) => {
+      const ancestors: Array<{
+        id: string; title: string; description: string | null;
+        status: string; priority: string;
+        assigneeAgentId: string | null; projectId: string | null; goalId: string | null;
+      }> = [];
+      const visited = new Set<string>([issueId]);
+      const start = await db.select().from(issues).where(eq(issues.id, issueId)).then(r => r[0] ?? null);
+      let currentId = start?.parentId ?? null;
+      while (currentId && !visited.has(currentId) && ancestors.length < 50) {
+        visited.add(currentId);
+        const parent = await db.select({
+          id: issues.id, title: issues.title, description: issues.description,
+          status: issues.status, priority: issues.priority,
+          assigneeAgentId: issues.assigneeAgentId, projectId: issues.projectId,
+          goalId: issues.goalId, parentId: issues.parentId,
+        }).from(issues).where(eq(issues.id, currentId)).then(r => r[0] ?? null);
+        if (!parent) break;
+        ancestors.push({
+          id: parent.id, title: parent.title, description: parent.description ?? null,
+          status: parent.status, priority: parent.priority,
+          assigneeAgentId: parent.assigneeAgentId ?? null,
+          projectId: parent.projectId ?? null, goalId: parent.goalId ?? null,
+        });
+        currentId = parent.parentId ?? null;
+      }
+      return ancestors;
     },
 
     staleCount: async (companyId: string, minutes = 60) => {
