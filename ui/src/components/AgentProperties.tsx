@@ -42,9 +42,6 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
         <PropertyRow label="Adapter">
           <span className="text-sm font-mono">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span>
         </PropertyRow>
-        <PropertyRow label="Context">
-          <span className="text-sm">{agent.contextMode}</span>
-        </PropertyRow>
       </div>
 
       <Separator />

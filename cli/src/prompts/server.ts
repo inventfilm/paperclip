@@ -20,16 +20,5 @@ export async function promptServer(): Promise<ServerConfig> {
   }
 
   const port = Number(portStr) || 3100;
-
-  const serveUi = await p.confirm({
-    message: "Serve the UI from the server?",
-    initialValue: false,
-  });
-
-  if (p.isCancel(serveUi)) {
-    p.cancel("Setup cancelled.");
-    process.exit(0);
-  }
-
-  return { port, serveUi };
+  return { port, serveUi: true };
 }

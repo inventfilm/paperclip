@@ -11,9 +11,6 @@ export const AGENT_STATUSES = [
 ] as const;
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
 
-export const AGENT_CONTEXT_MODES = ["thin", "fat"] as const;
-export type AgentContextMode = (typeof AGENT_CONTEXT_MODES)[number];
-
 export const AGENT_ADAPTER_TYPES = ["process", "http", "claude_local", "codex_local"] as const;
 export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
 

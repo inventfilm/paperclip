@@ -33,11 +33,8 @@ export const help: Record<string, string> = {
   intervalSec: "Seconds between automatic heartbeat invocations.",
   timeoutSec: "Maximum seconds a run can take before being terminated. 0 means no timeout.",
   graceSec: "Seconds to wait after sending interrupt before force-killing the process.",
-  wakeOnAssignment: "Automatically wake this agent when a new issue is assigned to it.",
-  wakeOnOnDemand: "Allow this agent to be woken on demand via the API or UI.",
-  wakeOnAutomation: "Allow automated systems to wake this agent.",
+  wakeOnDemand: "Allow this agent to be woken by assignments, API calls, UI actions, or automated systems.",
   cooldownSec: "Minimum seconds between consecutive heartbeat runs.",
-  contextMode: "How context is managed between runs (thin = fresh context each run).",
   budgetMonthlyCents: "Monthly spending limit in cents. 0 means no limit.",
 };
 

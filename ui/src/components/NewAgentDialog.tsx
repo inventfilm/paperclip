@@ -112,13 +112,10 @@ export function NewAgentDialog() {
         heartbeat: {
           enabled: configValues.heartbeatEnabled,
           intervalSec: configValues.intervalSec,
-          wakeOnAssignment: true,
-          wakeOnOnDemand: true,
-          wakeOnAutomation: true,
+          wakeOnDemand: true,
           cooldownSec: 10,
         },
       },
-      contextMode: "thin",
       budgetMonthlyCents: 0,
     });
   }

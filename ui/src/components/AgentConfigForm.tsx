@@ -642,34 +642,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 Advanced
               </div>
               <ToggleField
-                label="Wake on assignment"
-                hint={help.wakeOnAssignment}
+                label="Wake on demand"
+                hint={help.wakeOnDemand}
                 checked={eff(
                   "heartbeat",
-                  "wakeOnAssignment",
-                  heartbeat.wakeOnAssignment !== false,
+                  "wakeOnDemand",
+                  heartbeat.wakeOnDemand !== false,
                 )}
-                onChange={(v) => mark("heartbeat", "wakeOnAssignment", v)}
-              />
-              <ToggleField
-                label="Wake on on-demand"
-                hint={help.wakeOnOnDemand}
-                checked={eff(
-                  "heartbeat",
-                  "wakeOnOnDemand",
-                  heartbeat.wakeOnOnDemand !== false,
-                )}
-                onChange={(v) => mark("heartbeat", "wakeOnOnDemand", v)}
-              />
-              <ToggleField
-                label="Wake on automation"
-                hint={help.wakeOnAutomation}
-                checked={eff(
-                  "heartbeat",
-                  "wakeOnAutomation",
-                  heartbeat.wakeOnAutomation !== false,
-                )}
-                onChange={(v) => mark("heartbeat", "wakeOnAutomation", v)}
+                onChange={(v) => mark("heartbeat", "wakeOnDemand", v)}
               />
               <Field label="Cooldown (sec)" hint={help.cooldownSec}>
                 <DraftNumberInput
@@ -693,11 +673,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         <div className="border-b border-border">
           <div className="px-4 py-2 text-xs font-medium text-muted-foreground">Runtime</div>
           <div className="px-4 pb-3 space-y-3">
-            <Field label="Context mode" hint={help.contextMode}>
-              <div className="text-sm font-mono px-2.5 py-1.5">
-                {props.agent.contextMode}
-              </div>
-            </Field>
             <Field label="Monthly budget (cents)" hint={help.budgetMonthlyCents}>
               <DraftNumberInput
                 value={eff(

@@ -152,9 +152,7 @@ export function OnboardingWizard() {
           heartbeat: {
             enabled: true,
             intervalSec: 300,
-            wakeOnAssignment: true,
-            wakeOnOnDemand: true,
-            wakeOnAutomation: true,
+            wakeOnDemand: true,
             cooldownSec: 10,
           },
         },

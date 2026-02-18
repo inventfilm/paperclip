@@ -67,7 +67,6 @@ export function approvalService(db: Db) {
             typeof payload.adapterConfig === "object" && payload.adapterConfig !== null
               ? (payload.adapterConfig as Record<string, unknown>)
               : {},
-          contextMode: String(payload.contextMode ?? "thin"),
           budgetMonthlyCents:
             typeof payload.budgetMonthlyCents === "number" ? payload.budgetMonthlyCents : 0,
           metadata:

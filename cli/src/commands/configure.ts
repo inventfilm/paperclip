@@ -34,7 +34,7 @@ function defaultConfig(): PaperclipConfig {
     },
     server: {
       port: 3100,
-      serveUi: false,
+      serveUi: true,
     },
   };
 }

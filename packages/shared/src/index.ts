@@ -1,7 +1,6 @@
 export {
   COMPANY_STATUSES,
   AGENT_STATUSES,
-  AGENT_CONTEXT_MODES,
   AGENT_ADAPTER_TYPES,
   AGENT_ROLES,
   ISSUE_STATUSES,
@@ -18,7 +17,6 @@ export {
   LIVE_EVENT_TYPES,
   type CompanyStatus,
   type AgentStatus,
-  type AgentContextMode,
   type AgentAdapterType,
   type AgentRole,
   type IssueStatus,

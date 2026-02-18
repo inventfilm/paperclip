@@ -25,7 +25,7 @@ export const loggingConfigSchema = z.object({
 
 export const serverConfigSchema = z.object({
   port: z.number().int().min(1).max(65535).default(3100),
-  serveUi: z.boolean().default(false),
+  serveUi: z.boolean().default(true),
 });
 
 export const paperclipConfigSchema = z.object({

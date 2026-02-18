@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   AGENT_ADAPTER_TYPES,
-  AGENT_CONTEXT_MODES,
   AGENT_ROLES,
   AGENT_STATUSES,
 } from "../constants.js";
@@ -15,7 +14,6 @@ export const createAgentSchema = z.object({
   adapterType: z.enum(AGENT_ADAPTER_TYPES).optional().default("process"),
   adapterConfig: z.record(z.unknown()).optional().default({}),
   runtimeConfig: z.record(z.unknown()).optional().default({}),
-  contextMode: z.enum(AGENT_CONTEXT_MODES).optional().default("thin"),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
   metadata: z.record(z.unknown()).optional().nullable(),
 });
