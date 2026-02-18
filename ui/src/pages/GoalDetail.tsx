@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
 import { usePanel } from "../context/PanelContext";
@@ -10,6 +10,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { GoalProperties } from "../components/GoalProperties";
 import { GoalTree } from "../components/GoalTree";
 import { StatusBadge } from "../components/StatusBadge";
+import { InlineEditor } from "../components/InlineEditor";
 import { EntityRow } from "../components/EntityRow";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Goal, Project } from "@paperclip/shared";
@@ -20,6 +21,7 @@ export function GoalDetail() {
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data: goal, isLoading, error } = useQuery({
     queryKey: queryKeys.goals.detail(goalId!),
@@ -39,6 +41,16 @@ export function GoalDetail() {
     enabled: !!selectedCompanyId,
   });
 
+  const updateGoal = useMutation({
+    mutationFn: (data: Record<string, unknown>) => goalsApi.update(goalId!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.goals.detail(goalId!) });
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(selectedCompanyId) });
+      }
+    },
+  });
+
   const childGoals = (allGoals ?? []).filter((g) => g.parentId === goalId);
   const linkedProjects = (allProjects ?? []).filter((p) => p.goalId === goalId);
 
@@ -51,7 +63,9 @@ export function GoalDetail() {
 
   useEffect(() => {
     if (goal) {
-      openPanel(<GoalProperties goal={goal} />);
+      openPanel(
+        <GoalProperties goal={goal} onUpdate={(data) => updateGoal.mutate(data)} />
+      );
     }
     return () => closePanel();
   }, [goal]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -62,15 +76,27 @@ export function GoalDetail() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="space-y-3">
         <div className="flex items-center gap-2">
           <span className="text-xs uppercase text-muted-foreground">{goal.level}</span>
           <StatusBadge status={goal.status} />
         </div>
-        <h2 className="text-xl font-bold mt-1">{goal.title}</h2>
-        {goal.description && (
-          <p className="text-sm text-muted-foreground mt-1">{goal.description}</p>
-        )}
+
+        <InlineEditor
+          value={goal.title}
+          onSave={(title) => updateGoal.mutate({ title })}
+          as="h2"
+          className="text-xl font-bold"
+        />
+
+        <InlineEditor
+          value={goal.description ?? ""}
+          onSave={(description) => updateGoal.mutate({ description })}
+          as="p"
+          className="text-sm text-muted-foreground"
+          placeholder="Add a description..."
+          multiline
+        />
       </div>
 
       <Tabs defaultValue="children">

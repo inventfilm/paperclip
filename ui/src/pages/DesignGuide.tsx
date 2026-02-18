@@ -117,6 +117,10 @@ export function DesignGuide() {
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("medium");
   const [inlineText, setInlineText] = useState("Click to edit this text");
+  const [inlineTitle, setInlineTitle] = useState("Editable Title");
+  const [inlineDesc, setInlineDesc] = useState(
+    "This is an editable description. Click to edit it — the textarea auto-sizes to fit the content without layout shift."
+  );
   const [filters, setFilters] = useState<FilterValue[]>([
     { key: "status", label: "Status", value: "Active" },
     { key: "priority", label: "Priority", value: "High" },
@@ -402,15 +406,37 @@ export function DesignGuide() {
           </SubSection>
 
           <SubSection title="Inline Editor">
-            <InlineEditor
-              value={inlineText}
-              onSave={setInlineText}
-              as="p"
-              className="text-sm"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Click the text above to edit inline.
-            </p>
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Title (single-line)</p>
+                <InlineEditor
+                  value={inlineTitle}
+                  onSave={setInlineTitle}
+                  as="h2"
+                  className="text-xl font-bold"
+                />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Body text (single-line)</p>
+                <InlineEditor
+                  value={inlineText}
+                  onSave={setInlineText}
+                  as="p"
+                  className="text-sm"
+                />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Description (multiline, auto-sizing)</p>
+                <InlineEditor
+                  value={inlineDesc}
+                  onSave={setInlineDesc}
+                  as="p"
+                  className="text-sm text-muted-foreground"
+                  placeholder="Add a description..."
+                  multiline
+                />
+              </div>
+            </div>
           </SubSection>
         </div>
       </Section>

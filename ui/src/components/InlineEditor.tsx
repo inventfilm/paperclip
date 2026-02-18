@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { cn } from "../lib/utils";
 
 interface InlineEditorProps {
@@ -9,6 +9,9 @@ interface InlineEditorProps {
   placeholder?: string;
   multiline?: boolean;
 }
+
+/** Shared padding so display and edit modes occupy the exact same box. */
+const pad = "px-1 -mx-1";
 
 export function InlineEditor({
   value,
@@ -26,12 +29,21 @@ export function InlineEditor({
     setDraft(value);
   }, [value]);
 
+  const autoSize = useCallback((el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
   useEffect(() => {
     if (editing && inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
+      if (multiline && inputRef.current instanceof HTMLTextAreaElement) {
+        autoSize(inputRef.current);
+      }
     }
-  }, [editing]);
+  }, [editing, multiline, autoSize]);
 
   function commit() {
     const trimmed = draft.trim();
@@ -58,26 +70,49 @@ export function InlineEditor({
     const sharedProps = {
       ref: inputRef as any,
       value: draft,
-      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-        setDraft(e.target.value),
+      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        setDraft(e.target.value);
+        if (multiline && e.target instanceof HTMLTextAreaElement) {
+          autoSize(e.target);
+        }
+      },
       onBlur: commit,
       onKeyDown: handleKeyDown,
-      className: cn(
-        "bg-transparent border border-border rounded px-2 py-1 w-full outline-none focus:ring-1 focus:ring-ring",
-        className
-      ),
     };
 
     if (multiline) {
-      return <textarea {...sharedProps} rows={4} />;
+      return (
+        <textarea
+          {...sharedProps}
+          rows={1}
+          className={cn(
+            "w-full resize-none bg-accent/30 rounded outline-none",
+            pad,
+            "py-0.5",
+            className
+          )}
+        />
+      );
     }
-    return <input type="text" {...sharedProps} />;
+
+    return (
+      <input
+        type="text"
+        {...sharedProps}
+        className={cn(
+          "w-full bg-transparent rounded outline-none",
+          pad,
+          className
+        )}
+      />
+    );
   }
 
   return (
     <Tag
       className={cn(
-        "cursor-pointer rounded px-1 -mx-1 hover:bg-accent/50 transition-colors",
+        "cursor-pointer rounded hover:bg-accent/50 transition-colors",
+        pad,
         !value && "text-muted-foreground italic",
         className
       )}

@@ -63,6 +63,9 @@ export function parseClaudeStdoutLine(line: string, ts: string): TranscriptEntry
       if (blockType === "text") {
         const text = typeof block.text === "string" ? block.text : "";
         if (text) entries.push({ kind: "assistant", ts, text });
+      } else if (blockType === "thinking") {
+        const text = typeof block.thinking === "string" ? block.thinking : "";
+        if (text) entries.push({ kind: "thinking", ts, text });
       } else if (blockType === "tool_use") {
         entries.push({
           kind: "tool_call",
@@ -83,7 +86,10 @@ export function parseClaudeStdoutLine(line: string, ts: string): TranscriptEntry
       const block = asRecord(blockRaw);
       if (!block) continue;
       const blockType = typeof block.type === "string" ? block.type : "";
-      if (blockType === "tool_result") {
+      if (blockType === "text") {
+        const text = typeof block.text === "string" ? block.text : "";
+        if (text) entries.push({ kind: "user", ts, text });
+      } else if (blockType === "tool_result") {
         const toolUseId = typeof block.tool_use_id === "string" ? block.tool_use_id : "";
         const isError = block.is_error === true;
         let text = "";
@@ -101,7 +107,7 @@ export function parseClaudeStdoutLine(line: string, ts: string): TranscriptEntry
       }
     }
     if (entries.length > 0) return entries;
-    // fall through to stdout for user messages without tool_result blocks
+    // fall through to stdout for user messages without recognized blocks
   }
 
   if (type === "result") {

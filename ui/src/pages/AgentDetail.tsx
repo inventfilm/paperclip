@@ -58,6 +58,41 @@ const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string 
   cancelled: { icon: Slash, color: "text-neutral-400" },
 };
 
+const REDACTED_ENV_VALUE = "***REDACTED***";
+const SECRET_ENV_KEY_RE =
+  /(api[-_]?key|access[-_]?token|auth(?:_?token)?|authorization|bearer|secret|passwd|password|credential|jwt|private[-_]?key|cookie|connectionstring)/i;
+const JWT_VALUE_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/;
+
+function shouldRedactSecretValue(key: string, value: unknown): boolean {
+  if (SECRET_ENV_KEY_RE.test(key)) return true;
+  if (typeof value !== "string") return false;
+  return JWT_VALUE_RE.test(value);
+}
+
+function redactEnvValue(key: string, value: unknown): string {
+  if (shouldRedactSecretValue(key, value)) return REDACTED_ENV_VALUE;
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function formatEnvForDisplay(envValue: unknown): string {
+  const env = asRecord(envValue);
+  if (!env) return "<unable-to-parse>";
+
+  const keys = Object.keys(env);
+  if (keys.length === 0) return "<empty>";
+
+  return keys
+    .sort()
+    .map((key) => `${key}=${redactEnvValue(key, env[key])}`)
+    .join("\n");
+}
+
 const sourceLabels: Record<string, string> = {
   timer: "Timer",
   assignment: "Assignment",
@@ -590,11 +625,12 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
 
   return (
     <div className="flex gap-0">
-      {/* Left: run list — sticky, scrolls independently */}
+      {/* Left: run list — border stretches full height, content sticks */}
       <div className={cn(
-        "shrink-0 border border-border rounded-lg overflow-y-auto sticky top-4 self-start",
+        "shrink-0 border border-border rounded-lg",
         selectedRun ? "w-72" : "w-full",
-      )} style={{ maxHeight: "calc(100vh - 2rem)" }}>
+      )}>
+        <div className="sticky top-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 2rem)" }}>
         {sorted.map((run) => {
           const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
           const StatusIcon = statusInfo.icon;
@@ -645,6 +681,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
             </button>
           );
         })}
+        </div>
       </div>
 
       {/* Right: run detail — natural height, page scrolls */}
@@ -1038,8 +1075,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           {adapterInvokePayload.env !== undefined && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Environment</div>
-              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
-                {JSON.stringify(adapterInvokePayload.env, null, 2)}
+              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap font-mono">
+                {formatEnvForDisplay(adapterInvokePayload.env)}
               </pre>
             </div>
           )}
@@ -1060,7 +1097,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           </span>
         )}
       </div>
-      <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5" style={{ maxHeight: "200vh" }}>
+      <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5">
         {transcript.length === 0 && !run.logRef && (
           <div className="text-neutral-500">No persisted transcript for this run.</div>
         )}
@@ -1078,6 +1115,26 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                 <span className={tsCell}>{time}</span>
                 <span className={cn(lblCell, "text-green-300")}>assistant</span>
                 <span className={cn(contentCell, "text-green-100")}>{entry.text}</span>
+              </div>
+            );
+          }
+
+          if (entry.kind === "thinking") {
+            return (
+              <div key={`${entry.ts}-thinking-${idx}`} className={cn(grid, "py-0.5")}>
+                <span className={tsCell}>{time}</span>
+                <span className={cn(lblCell, "text-green-300/60")}>thinking</span>
+                <span className={cn(contentCell, "text-green-100/60 italic")}>{entry.text}</span>
+              </div>
+            );
+          }
+
+          if (entry.kind === "user") {
+            return (
+              <div key={`${entry.ts}-user-${idx}`} className={cn(grid, "py-0.5")}>
+                <span className={tsCell}>{time}</span>
+                <span className={cn(lblCell, "text-neutral-400")}>user</span>
+                <span className={cn(contentCell, "text-neutral-300")}>{entry.text}</span>
               </div>
             );
           }
@@ -1102,7 +1159,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                 <span className={cn(lblCell, entry.isError ? "text-red-300" : "text-purple-300")}>tool_result</span>
                 {entry.isError ? <span className="text-red-400 min-w-0">error</span> : <span />}
                 <pre className={cn(expandCell, "bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-300 max-h-60 overflow-y-auto")}>
-                  {entry.content}
+                  {(() => { try { return JSON.stringify(JSON.parse(entry.content), null, 2); } catch { return entry.content; } })()}
                 </pre>
               </div>
             );
@@ -1199,7 +1256,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
       {events.length > 0 && (
         <div>
           <div className="mb-2 text-xs font-medium text-muted-foreground">Events ({events.length})</div>
-          <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5" style={{ maxHeight: "100vh" }}>
+          <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5">
             {events.map((evt) => {
               const color = evt.color
                 ?? (evt.level ? levelColors[evt.level] : null)
