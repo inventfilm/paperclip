@@ -3,6 +3,7 @@ import { Command } from "commander";
 import { onboard } from "./commands/onboard.js";
 import { doctor } from "./commands/doctor.js";
 import { configure } from "./commands/configure.js";
+import { heartbeatRun } from "./commands/heartbeat-run.js";
 
 const program = new Command();
 
@@ -32,5 +33,21 @@ program
   .option("-c, --config <path>", "Path to config file")
   .option("-s, --section <section>", "Section to configure (llm, database, logging, server)")
   .action(configure);
+
+const heartbeat = program.command("heartbeat").description("Heartbeat utilities");
+
+heartbeat
+  .command("run")
+  .description("Run one agent heartbeat and stream live logs")
+  .requiredOption("-a, --agent-id <agentId>", "Agent ID to invoke")
+  .option("-c, --config <path>", "Path to config file")
+  .option(
+    "--source <source>",
+    "Invocation source (timer | assignment | on_demand | automation)",
+    "on_demand",
+  )
+  .option("--trigger <trigger>", "Trigger detail (manual | ping | callback | system)", "manual")
+  .option("--timeout-ms <ms>", "Max time to wait before giving up", "0")
+  .action(heartbeatRun);
 
 program.parse();
