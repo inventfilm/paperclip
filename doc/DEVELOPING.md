@@ -19,14 +19,14 @@ pnpm dev
 This starts:
 
 - API server: `http://localhost:3100`
-- UI: `http://localhost:5173`
+- UI: served by the API server in dev middleware mode (same origin as API)
 
 ## Database in Dev (Auto-Handled)
 
 For local development, leave `DATABASE_URL` unset.
-The server will automatically use embedded PGlite and persist data at:
+The server will automatically use embedded PostgreSQL and persist data at:
 
-- `./data/pglite`
+- `./data/embedded-postgres`
 
 No Docker or external database is required for this mode.
 
@@ -49,10 +49,10 @@ Expected:
 To wipe local dev data and start fresh:
 
 ```sh
-rm -rf data/pglite
+rm -rf server/data/embedded-postgres
 pnpm dev
 ```
 
 ## Optional: Use External Postgres
 
-If you set `DATABASE_URL`, the server will use that instead of embedded PGlite.
+If you set `DATABASE_URL`, the server will use that instead of embedded PostgreSQL.

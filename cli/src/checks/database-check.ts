@@ -35,23 +35,32 @@ export async function databaseCheck(config: PaperclipConfig): Promise<CheckResul
     }
   }
 
-  // PGlite mode — check data dir
-  const dataDir = path.resolve(config.database.pgliteDataDir);
-  if (!fs.existsSync(dataDir)) {
+  if (config.database.mode === "embedded-postgres") {
+    const dataDir = path.resolve(config.database.embeddedPostgresDataDir);
+    if (!fs.existsSync(dataDir)) {
+      return {
+        name: "Database",
+        status: "warn",
+        message: `Embedded PostgreSQL data directory does not exist: ${dataDir}`,
+        canRepair: true,
+        repair: () => {
+          fs.mkdirSync(dataDir, { recursive: true });
+        },
+      };
+    }
+
     return {
       name: "Database",
-      status: "warn",
-      message: `PGlite data directory does not exist: ${dataDir}`,
-      canRepair: true,
-      repair: () => {
-        fs.mkdirSync(dataDir, { recursive: true });
-      },
+      status: "pass",
+      message: `Embedded PostgreSQL configured at ${dataDir} (port ${config.database.embeddedPostgresPort})`,
     };
   }
 
   return {
     name: "Database",
-    status: "pass",
-    message: `PGlite data directory exists: ${dataDir}`,
+    status: "fail",
+    message: `Unknown database mode: ${String(config.database.mode)}`,
+    canRepair: false,
+    repairHint: "Run `paperclip configure --section database`",
   };
 }

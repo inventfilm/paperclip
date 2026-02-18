@@ -60,8 +60,8 @@ export function OnboardingWizard() {
   const [url, setUrl] = useState("");
 
   // Step 3
-  const [taskTitle, setTaskTitle] = useState("");
-  const [taskDescription, setTaskDescription] = useState("");
+  const [taskTitle, setTaskTitle] = useState("Create your CEO HEARTBEAT.md");
+  const [taskDescription, setTaskDescription] = useState("You're the CEO of the company, make sure you have a file agents/ceo/HEARTBEAT.md that tells you your core loop. You MUST use the Paperclip SKILL.");
 
   // Created entity IDs
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(null);
@@ -88,8 +88,8 @@ export function OnboardingWizard() {
     setCommand("");
     setArgs("");
     setUrl("");
-    setTaskTitle("");
-    setTaskDescription("");
+    setTaskTitle("Create your CEO HEARTBEAT.md");
+    setTaskDescription("You're the CEO of the company, make sure you have a file agents/ceo/HEARTBEAT.md that tells you your core loop. You MUST use the Paperclip SKILL.");
     setCreatedCompanyId(null);
     setCreatedAgentId(null);
   }

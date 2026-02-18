@@ -2,9 +2,9 @@
 
 Paperclip uses PostgreSQL via [Drizzle ORM](https://orm.drizzle.team/). There are three ways to run the database, from simplest to most production-ready.
 
-## 1. Embedded (PGlite) — zero config
+## 1. Embedded PostgreSQL — zero config
 
-If you don't set `DATABASE_URL`, the server automatically starts an embedded PostgreSQL instance powered by [PGlite](https://pglite.dev/). No installation, no Docker, no setup.
+If you don't set `DATABASE_URL`, the server automatically starts an embedded PostgreSQL instance and manages a local data directory.
 
 ```sh
 pnpm dev
@@ -12,19 +12,14 @@ pnpm dev
 
 That's it. On first start the server:
 
-1. Creates a `./data/pglite/` directory for storage
-2. Pushes the Drizzle schema to create all tables
-3. Starts serving requests
+1. Creates a `./server/data/embedded-postgres/` directory for storage
+2. Ensures the `paperclip` database exists
+3. Runs migrations automatically for empty databases
+4. Starts serving requests
 
-Data persists across restarts in the `./data/pglite/` directory. To reset the database, delete that directory.
+Data persists across restarts in `./server/data/embedded-postgres/`. To reset local dev data, delete that directory.
 
-**Limitations:**
-
-- Single connection only (no concurrent access from multiple processes)
-- Slower than native PostgreSQL (runs in WebAssembly)
-- Not suitable for production
-
-This mode is ideal for getting started, local development, and demos.
+This mode is ideal for local development and one-command installs.
 
 ## 2. Local PostgreSQL (Docker)
 
@@ -116,11 +111,11 @@ See [Supabase pricing](https://supabase.com/pricing) for current details.
 
 ## Switching between modes
 
-The database mode is controlled entirely by the `DATABASE_URL` environment variable:
+The database mode is controlled by `DATABASE_URL`:
 
 | `DATABASE_URL` | Mode |
 |---|---|
-| Not set | Embedded PGlite (`./data/pglite/`) |
+| Not set | Embedded PostgreSQL (`./server/data/embedded-postgres/`) |
 | `postgres://...localhost...` | Local Docker PostgreSQL |
 | `postgres://...supabase.com...` | Hosted Supabase |
 

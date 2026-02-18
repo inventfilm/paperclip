@@ -1,8 +1,6 @@
-import { mkdirSync } from "node:fs";
 import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
-import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
+import { migrate as migratePg } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
-import { PGlite } from "@electric-sql/pglite";
 import * as schema from "./schema/index.js";
 
 export function createDb(url: string) {
@@ -10,17 +8,66 @@ export function createDb(url: string) {
   return drizzlePg(sql, { schema });
 }
 
-export async function createPgliteDb(dataDir: string) {
-  mkdirSync(dataDir, { recursive: true });
-  const client = new PGlite(dataDir);
-  const db = drizzlePglite({ client, schema });
+export type MigrationBootstrapResult =
+  | { migrated: true; reason: "migrated-empty-db"; tableCount: 0 }
+  | { migrated: false; reason: "already-migrated"; tableCount: number }
+  | { migrated: false; reason: "not-empty-no-migration-journal"; tableCount: number };
 
-  // Auto-push schema to PGlite on startup (like drizzle-kit push)
-  const { pushSchema } = await import("drizzle-kit/api");
-  const { apply } = await pushSchema(schema, db as any);
-  await apply();
+export async function migratePostgresIfEmpty(url: string): Promise<MigrationBootstrapResult> {
+  const sql = postgres(url, { max: 1 });
 
-  return db;
+  try {
+    const journal = await sql<{ regclass: string | null }[]>`
+      select to_regclass('public.__drizzle_migrations') as regclass
+    `;
+
+    const tableCountResult = await sql<{ count: number }[]>`
+      select count(*)::int as count
+      from information_schema.tables
+      where table_schema = 'public'
+        and table_type = 'BASE TABLE'
+    `;
+
+    const tableCount = tableCountResult[0]?.count ?? 0;
+
+    if (journal[0]?.regclass) {
+      return { migrated: false, reason: "already-migrated", tableCount };
+    }
+
+    if (tableCount > 0) {
+      return { migrated: false, reason: "not-empty-no-migration-journal", tableCount };
+    }
+
+    const db = drizzlePg(sql);
+    const migrationsFolder = new URL("./migrations", import.meta.url).pathname;
+    await migratePg(db, { migrationsFolder });
+
+    return { migrated: true, reason: "migrated-empty-db", tableCount: 0 };
+  } finally {
+    await sql.end();
+  }
+}
+
+export async function ensurePostgresDatabase(
+  url: string,
+  databaseName: string,
+): Promise<"created" | "exists"> {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(databaseName)) {
+    throw new Error(`Unsafe database name: ${databaseName}`);
+  }
+
+  const sql = postgres(url, { max: 1 });
+  try {
+    const existing = await sql<{ one: number }[]>`
+      select 1 as one from pg_database where datname = ${databaseName} limit 1
+    `;
+    if (existing.length > 0) return "exists";
+
+    await sql.unsafe(`create database "${databaseName}"`);
+    return "created";
+  } finally {
+    await sql.end();
+  }
 }
 
 export type Db = ReturnType<typeof createDb>;

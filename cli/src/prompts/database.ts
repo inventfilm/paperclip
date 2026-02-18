@@ -5,7 +5,7 @@ export async function promptDatabase(): Promise<DatabaseConfig> {
   const mode = await p.select({
     message: "Database mode",
     options: [
-      { value: "pglite" as const, label: "PGlite (embedded, no setup needed)", hint: "recommended" },
+      { value: "embedded-postgres" as const, label: "Embedded PostgreSQL (managed locally)", hint: "recommended" },
       { value: "postgres" as const, label: "PostgreSQL (external server)" },
     ],
   });
@@ -30,19 +30,43 @@ export async function promptDatabase(): Promise<DatabaseConfig> {
       process.exit(0);
     }
 
-    return { mode: "postgres", connectionString, pgliteDataDir: "./data/pglite" };
+    return {
+      mode: "postgres",
+      connectionString,
+      embeddedPostgresDataDir: "./data/embedded-postgres",
+      embeddedPostgresPort: 54329,
+    };
   }
 
-  const pgliteDataDir = await p.text({
-    message: "PGlite data directory",
-    defaultValue: "./data/pglite",
-    placeholder: "./data/pglite",
+  const embeddedPostgresDataDir = await p.text({
+    message: "Embedded PostgreSQL data directory",
+    defaultValue: "./data/embedded-postgres",
+    placeholder: "./data/embedded-postgres",
   });
 
-  if (p.isCancel(pgliteDataDir)) {
+  if (p.isCancel(embeddedPostgresDataDir)) {
     p.cancel("Setup cancelled.");
     process.exit(0);
   }
 
-  return { mode: "pglite", pgliteDataDir: pgliteDataDir || "./data/pglite" };
+  const embeddedPostgresPort = await p.text({
+    message: "Embedded PostgreSQL port",
+    defaultValue: "54329",
+    placeholder: "54329",
+    validate: (val) => {
+      const n = Number(val);
+      if (!Number.isInteger(n) || n < 1 || n > 65535) return "Port must be an integer between 1 and 65535";
+    },
+  });
+
+  if (p.isCancel(embeddedPostgresPort)) {
+    p.cancel("Setup cancelled.");
+    process.exit(0);
+  }
+
+  return {
+    mode: "embedded-postgres",
+    embeddedPostgresDataDir: embeddedPostgresDataDir || "./data/embedded-postgres",
+    embeddedPostgresPort: Number(embeddedPostgresPort || "54329"),
+  };
 }

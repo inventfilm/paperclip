@@ -12,9 +12,10 @@ export const llmConfigSchema = z.object({
 });
 
 export const databaseConfigSchema = z.object({
-  mode: z.enum(["pglite", "postgres"]),
+  mode: z.enum(["embedded-postgres", "postgres"]).default("embedded-postgres"),
   connectionString: z.string().optional(),
-  pgliteDataDir: z.string().default("./data/pglite"),
+  embeddedPostgresDataDir: z.string().default("./data/embedded-postgres"),
+  embeddedPostgresPort: z.number().int().min(1).max(65535).default(54329),
 });
 
 export const loggingConfigSchema = z.object({

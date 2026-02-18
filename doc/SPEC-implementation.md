@@ -42,7 +42,7 @@ These decisions close open questions from `SPEC.md` for V1.
 | Auth | Session auth for board, API keys for agents |
 | Budget period | Monthly UTC calendar window |
 | Budget enforcement | Soft alerts + hard limit auto-pause |
-| Deployment modes | Embedded PGlite default; Docker/hosted Postgres supported |
+| Deployment modes | Embedded PostgreSQL default; Docker/hosted Postgres supported |
 
 ## 4. Current Baseline (Repo Snapshot)
 
@@ -50,7 +50,7 @@ As of 2026-02-17, the repo already includes:
 
 - Node + TypeScript backend with REST CRUD for `agents`, `projects`, `goals`, `issues`, `activity`
 - React UI pages for dashboard/agents/projects/goals/issues lists
-- PostgreSQL schema via Drizzle with embedded PGlite fallback when `DATABASE_URL` is unset
+- PostgreSQL schema via Drizzle with embedded PostgreSQL fallback when `DATABASE_URL` is unset
 
 V1 implementation extends this baseline into a company-centric, governance-aware control plane.
 
@@ -86,13 +86,13 @@ V1 implementation extends this baseline into a company-centric, governance-aware
 
 - `server/`: REST API, auth, orchestration services
 - `ui/`: Board operator interface
-- `packages/db/`: Drizzle schema, migrations, DB clients (Postgres and PGlite)
+- `packages/db/`: Drizzle schema, migrations, DB clients (Postgres)
 - `packages/shared/`: Shared API types, validators, constants
 
 ## 6.2 Data Stores
 
 - Primary: PostgreSQL
-- Local default: embedded PGlite at `./data/pglite`
+- Local default: embedded PostgreSQL at `./server/data/embedded-postgres`
 - Optional local prod-like: Docker Postgres
 - Optional hosted: Supabase/Postgres-compatible
 
@@ -754,7 +754,7 @@ V1 is complete only when all criteria are true:
 6. Budget hard limit auto-pauses an agent and prevents new invocations.
 7. Dashboard shows accurate counts/spend from live DB data.
 8. Every mutation is auditable in activity log.
-9. App runs with embedded PGlite by default and with external Postgres via `DATABASE_URL`.
+9. App runs with embedded PostgreSQL by default and with external Postgres via `DATABASE_URL`.
 
 ## 20. Post-V1 Backlog (Explicitly Deferred)
 

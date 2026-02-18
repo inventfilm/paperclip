@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm --parallel --filter @paperclip/server --filter @paperclip/ui dev",
+    "dev": "PAPERCLIP_UI_DEV_MIDDLEWARE=true pnpm --filter @paperclip/server dev",
     "dev:server": "pnpm --filter @paperclip/server dev",
     "dev:ui": "pnpm --filter @paperclip/ui dev",
     "build": "pnpm -r build",
