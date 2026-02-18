@@ -1,5 +1,6 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
+import type { PaperclipConfig } from "../config/schema.js";
 import { readConfig } from "../config/store.js";
 import {
   configCheck,
@@ -35,7 +36,22 @@ export async function doctor(opts: {
     return;
   }
 
-  const config = readConfig(opts.config)!;
+  let config: PaperclipConfig;
+  try {
+    config = readConfig(opts.config)!;
+  } catch (err) {
+    const readResult: CheckResult = {
+      name: "Config file",
+      status: "fail",
+      message: `Could not read config: ${err instanceof Error ? err.message : String(err)}`,
+      canRepair: false,
+      repairHint: "Run `paperclip configure --section database` or `paperclip onboard`",
+    };
+    results.push(readResult);
+    printResult(readResult);
+    printSummary(results);
+    return;
+  }
 
   // 2. Database check
   const dbResult = await databaseCheck(config);

@@ -23,9 +23,11 @@ interface HeartbeatRunOptions {
   source: string;
   trigger: string;
   timeoutMs: string;
+  debug?: boolean;
 }
 
 export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
+  const debug = Boolean(opts.debug);
   const parsedTimeout = Number.parseInt(opts.timeoutMs, 10);
   const timeoutMs = Number.isFinite(parsedTimeout) ? parsedTimeout : 0;
   const source = HEARTBEAT_SOURCES.includes(opts.source as HeartbeatSource)
@@ -35,7 +37,16 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
     ? (opts.trigger as HeartbeatTrigger)
     : "manual";
 
-  const config = readConfig(opts.config);
+  let config: PaperclipConfig | null = null;
+  try {
+    config = readConfig(opts.config);
+  } catch (err) {
+    console.error(
+      pc.yellow(
+        `Config warning: ${err instanceof Error ? err.message : String(err)}\nContinuing with API base fallback settings.`,
+      ),
+    );
+  }
   const apiBase = getApiBase(config, opts.apiBase);
 
   const agent = await requestJson<Agent>(`${apiBase}/api/agents/${opts.agentId}`, {
@@ -73,6 +84,143 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
   let activeRunId: string | null = null;
   let lastEventSeq = 0;
   let logOffset = 0;
+  let stdoutJsonBuffer = "";
+
+  const printRawChunk = (stream: "stdout" | "stderr" | "system", chunk: string) => {
+    if (stream === "stdout") process.stdout.write(pc.green("[stdout] ") + chunk);
+    else if (stream === "stderr") process.stdout.write(pc.red("[stderr] ") + chunk);
+    else process.stdout.write(pc.yellow("[system] ") + chunk);
+  };
+
+  const printAdapterInvoke = (payload: Record<string, unknown>) => {
+    const adapterType = typeof payload.adapterType === "string" ? payload.adapterType : "unknown";
+    const command = typeof payload.command === "string" ? payload.command : "";
+    const cwd = typeof payload.cwd === "string" ? payload.cwd : "";
+    const args =
+      Array.isArray(payload.commandArgs) &&
+      (payload.commandArgs as unknown[]).every((v) => typeof v === "string")
+        ? (payload.commandArgs as string[])
+        : [];
+    const env =
+      typeof payload.env === "object" && payload.env !== null && !Array.isArray(payload.env)
+        ? (payload.env as Record<string, unknown>)
+        : null;
+    const prompt = typeof payload.prompt === "string" ? payload.prompt : "";
+    const context =
+      typeof payload.context === "object" && payload.context !== null && !Array.isArray(payload.context)
+        ? (payload.context as Record<string, unknown>)
+        : null;
+
+    console.log(pc.cyan(`Adapter: ${adapterType}`));
+    if (cwd) console.log(pc.cyan(`Working dir: ${cwd}`));
+    if (command) {
+      const rendered = args.length > 0 ? `${command} ${args.join(" ")}` : command;
+      console.log(pc.cyan(`Command: ${rendered}`));
+    }
+    if (env) {
+      console.log(pc.cyan("Env:"));
+      console.log(pc.gray(JSON.stringify(env, null, 2)));
+    }
+    if (context) {
+      console.log(pc.cyan("Context:"));
+      console.log(pc.gray(JSON.stringify(context, null, 2)));
+    }
+    if (prompt) {
+      console.log(pc.cyan("Prompt:"));
+      console.log(prompt);
+    }
+  };
+
+  const printClaudeStreamEvent = (raw: string) => {
+    const line = raw.trim();
+    if (!line) return;
+
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      console.log(line);
+      return;
+    }
+
+    const type = typeof parsed.type === "string" ? parsed.type : "";
+
+    if (type === "system" && parsed.subtype === "init") {
+      const model = typeof parsed.model === "string" ? parsed.model : "unknown";
+      const sessionId = typeof parsed.session_id === "string" ? parsed.session_id : "";
+      console.log(pc.blue(`Claude initialized (model: ${model}${sessionId ? `, session: ${sessionId}` : ""})`));
+      return;
+    }
+
+    if (type === "assistant") {
+      const message =
+        typeof parsed.message === "object" && parsed.message !== null && !Array.isArray(parsed.message)
+          ? (parsed.message as Record<string, unknown>)
+          : {};
+      const content = Array.isArray(message.content) ? message.content : [];
+      for (const blockRaw of content) {
+        if (typeof blockRaw !== "object" || blockRaw === null || Array.isArray(blockRaw)) continue;
+        const block = blockRaw as Record<string, unknown>;
+        const blockType = typeof block.type === "string" ? block.type : "";
+        if (blockType === "text") {
+          const text = typeof block.text === "string" ? block.text : "";
+          if (text) console.log(pc.green(`assistant: ${text}`));
+        } else if (blockType === "tool_use") {
+          const name = typeof block.name === "string" ? block.name : "unknown";
+          console.log(pc.yellow(`tool_call: ${name}`));
+          if (block.input !== undefined) {
+            console.log(pc.gray(JSON.stringify(block.input, null, 2)));
+          }
+        }
+      }
+      return;
+    }
+
+    if (type === "result") {
+      const usage =
+        typeof parsed.usage === "object" && parsed.usage !== null && !Array.isArray(parsed.usage)
+          ? (parsed.usage as Record<string, unknown>)
+          : {};
+      const input = Number(usage.input_tokens ?? 0);
+      const output = Number(usage.output_tokens ?? 0);
+      const cached = Number(usage.cache_read_input_tokens ?? 0);
+      const cost = Number(parsed.total_cost_usd ?? 0);
+      const resultText = typeof parsed.result === "string" ? parsed.result : "";
+      if (resultText) {
+        console.log(pc.green("result:"));
+        console.log(resultText);
+      }
+      console.log(
+        pc.blue(
+          `tokens: in=${Number.isFinite(input) ? input : 0} out=${Number.isFinite(output) ? output : 0} cached=${Number.isFinite(cached) ? cached : 0} cost=$${Number.isFinite(cost) ? cost.toFixed(6) : "0.000000"}`,
+        ),
+      );
+      return;
+    }
+
+    if (debug) {
+      console.log(pc.gray(line));
+    }
+  };
+
+  const handleStreamChunk = (stream: "stdout" | "stderr" | "system", chunk: string) => {
+    if (debug) {
+      printRawChunk(stream, chunk);
+      return;
+    }
+
+    if (stream !== "stdout") {
+      printRawChunk(stream, chunk);
+      return;
+    }
+
+    const combined = stdoutJsonBuffer + chunk;
+    const lines = combined.split(/\r?\n/);
+    stdoutJsonBuffer = lines.pop() ?? "";
+    for (const line of lines) {
+      printClaudeStreamEvent(line);
+    }
+  };
 
   const handleEvent = (event: HeartbeatRunEventRecord) => {
     const payload = normalizePayload(event.payload);
@@ -88,16 +236,14 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
       if (status) {
         console.log(pc.blue(`[status] ${status}`));
       }
+    } else if (eventType === "adapter.invoke") {
+      printAdapterInvoke(payload);
     } else if (eventType === "heartbeat.run.log") {
       const stream = typeof payload.stream === "string" ? payload.stream : "system";
       const chunk = typeof payload.chunk === "string" ? payload.chunk : "";
       if (!chunk) return;
-      if (stream === "stdout") {
-        process.stdout.write(pc.green("[stdout] ") + chunk);
-      } else if (stream === "stderr") {
-        process.stdout.write(pc.red("[stderr] ") + chunk);
-      } else {
-        process.stdout.write(pc.yellow("[system] ") + chunk);
+      if (stream === "stdout" || stream === "stderr" || stream === "system") {
+        handleStreamChunk(stream, chunk);
       }
     } else if (typeof event.message === "string") {
       console.log(pc.gray(`[event] ${eventType || "heartbeat.run.event"}: ${event.message}`));
@@ -164,13 +310,7 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
         if (!chunk) continue;
         const parsed = safeParseLogLine(chunk);
         if (!parsed) continue;
-        if (parsed.stream === "stdout") {
-          process.stdout.write(pc.green("[stdout] ") + parsed.chunk);
-        } else if (parsed.stream === "stderr") {
-          process.stdout.write(pc.red("[stderr] ") + parsed.chunk);
-        } else {
-          process.stdout.write(pc.yellow("[system] ") + parsed.chunk);
-        }
+        handleStreamChunk(parsed.stream, parsed.chunk);
       }
       if (typeof logResult.nextOffset === "number") {
         logOffset = logResult.nextOffset;
@@ -183,6 +323,10 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
   }
 
   if (finalStatus) {
+    if (!debug && stdoutJsonBuffer.trim()) {
+      printClaudeStreamEvent(stdoutJsonBuffer);
+      stdoutJsonBuffer = "";
+    }
     const label = `Run ${activeRunId} completed with status ${finalStatus}`;
     if (finalStatus === "succeeded") {
       console.log(pc.green(label));

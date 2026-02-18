@@ -27,7 +27,7 @@ export function configCheck(configPath?: string): CheckResult {
       status: "fail",
       message: `Invalid config: ${err instanceof Error ? err.message : String(err)}`,
       canRepair: false,
-      repairHint: "Run `paperclip onboard` to recreate",
+      repairHint: "Run `paperclip configure --section database` (or `paperclip onboard` to recreate)",
     };
   }
 }

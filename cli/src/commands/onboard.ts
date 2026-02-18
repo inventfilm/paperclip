@@ -12,17 +12,24 @@ export async function onboard(opts: { config?: string }): Promise<void> {
 
   // Check for existing config
   if (configExists(opts.config)) {
-    const existing = readConfig(opts.config);
-    if (existing) {
-      const overwrite = await p.confirm({
-        message: "A config file already exists. Overwrite it?",
-        initialValue: false,
-      });
+    try {
+      readConfig(opts.config);
+    } catch (err) {
+      p.log.message(
+        pc.yellow(
+          `Existing config appears invalid and will be replaced if you continue.\n${err instanceof Error ? err.message : String(err)}`,
+        ),
+      );
+    }
 
-      if (p.isCancel(overwrite) || !overwrite) {
-        p.cancel("Keeping existing configuration.");
-        return;
-      }
+    const overwrite = await p.confirm({
+      message: "A config file already exists. Overwrite it?",
+      initialValue: false,
+    });
+
+    if (p.isCancel(overwrite) || !overwrite) {
+      p.cancel("Keeping existing configuration.");
+      return;
     }
   }
 

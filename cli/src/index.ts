@@ -49,6 +49,7 @@ heartbeat
   )
   .option("--trigger <trigger>", "Trigger detail (manual | ping | callback | system)", "manual")
   .option("--timeout-ms <ms>", "Max time to wait before giving up", "0")
+  .option("--debug", "Show raw adapter stdout/stderr JSON chunks")
   .action(heartbeatRun);
 
 program.parse();

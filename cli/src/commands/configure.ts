@@ -16,6 +16,29 @@ const SECTION_LABELS: Record<Section, string> = {
   server: "Server",
 };
 
+function defaultConfig(): PaperclipConfig {
+  return {
+    $meta: {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      source: "configure",
+    },
+    database: {
+      mode: "embedded-postgres",
+      embeddedPostgresDataDir: "./data/embedded-postgres",
+      embeddedPostgresPort: 54329,
+    },
+    logging: {
+      mode: "file",
+      logDir: "./data/logs",
+    },
+    server: {
+      port: 3100,
+      serveUi: false,
+    },
+  };
+}
+
 export async function configure(opts: {
   config?: string;
   section?: string;
@@ -28,11 +51,16 @@ export async function configure(opts: {
     return;
   }
 
-  const config = readConfig(opts.config);
-  if (!config) {
-    p.log.error("Could not read config file. Run `paperclip onboard` to recreate.");
-    p.outro("");
-    return;
+  let config: PaperclipConfig;
+  try {
+    config = readConfig(opts.config) ?? defaultConfig();
+  } catch (err) {
+    p.log.message(
+      pc.yellow(
+        `Existing config is invalid. Loading defaults so you can repair it now.\n${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
+    config = defaultConfig();
   }
 
   let section: Section | undefined = opts.section as Section | undefined;
