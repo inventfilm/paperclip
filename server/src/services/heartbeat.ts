@@ -47,6 +47,7 @@ interface AdapterExecutionResult {
   costUsd?: number | null;
   resultJson?: Record<string, unknown> | null;
   summary?: string | null;
+  clearSession?: boolean;
 }
 
 interface AdapterInvocationMeta {
@@ -186,6 +187,65 @@ function parseCodexJsonl(stdout: string) {
     summary: messages.join("\n\n").trim(),
     usage,
   };
+}
+
+function describeClaudeFailure(parsed: Record<string, unknown>): string | null {
+  const subtype = asString(parsed.subtype, "");
+  const resultText = asString(parsed.result, "").trim();
+  const errors = extractClaudeErrorMessages(parsed);
+
+  let detail = resultText;
+  if (!detail && errors.length > 0) {
+    detail = errors[0] ?? "";
+  }
+
+  const parts = ["Claude run failed"];
+  if (subtype) parts.push(`subtype=${subtype}`);
+  if (detail) parts.push(detail);
+  return parts.length > 1 ? parts.join(": ") : null;
+}
+
+function extractClaudeErrorMessages(parsed: Record<string, unknown>): string[] {
+  const raw = Array.isArray(parsed.errors) ? parsed.errors : [];
+  const messages: string[] = [];
+
+  for (const entry of raw) {
+    if (typeof entry === "string") {
+      const msg = entry.trim();
+      if (msg) messages.push(msg);
+      continue;
+    }
+
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      continue;
+    }
+
+    const obj = entry as Record<string, unknown>;
+    const msg = asString(obj.message, "") || asString(obj.error, "") || asString(obj.code, "");
+    if (msg) {
+      messages.push(msg);
+      continue;
+    }
+
+    try {
+      messages.push(JSON.stringify(obj));
+    } catch {
+      // skip non-serializable entry
+    }
+  }
+
+  return messages;
+}
+
+function isClaudeUnknownSessionError(parsed: Record<string, unknown>): boolean {
+  const resultText = asString(parsed.result, "").trim();
+  const allMessages = [resultText, ...extractClaudeErrorMessages(parsed)]
+    .map((msg) => msg.trim())
+    .filter(Boolean);
+
+  return allMessages.some((msg) =>
+    /no conversation found with session id|unknown session|session .* not found/i.test(msg),
+  );
 }
 
 function parseClaudeStreamJson(stdout: string) {
@@ -623,7 +683,7 @@ export function heartbeatService(db: Db) {
       .update(agentRuntimeState)
       .set({
         adapterType: agent.adapterType,
-        sessionId: result.sessionId ?? existing.sessionId,
+        sessionId: result.clearSession ? null : (result.sessionId ?? existing.sessionId),
         lastRunId: run.id,
         lastRunStatus: run.status,
         lastError: result.errorMessage ?? null,
@@ -819,86 +879,143 @@ export function heartbeatService(db: Db) {
       context,
     });
 
-    const args = ["--print", prompt, "--output-format", "stream-json", "--verbose"];
-    if (sessionId) args.push("--resume", sessionId);
-    if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
-    if (model) args.push("--model", model);
-    if (maxTurns > 0) args.push("--max-turns", String(maxTurns));
-    if (extraArgs.length > 0) args.push(...extraArgs);
+    const buildClaudeArgs = (resumeSessionId: string | null) => {
+      const args = ["--print", prompt, "--output-format", "stream-json", "--verbose"];
+      if (resumeSessionId) args.push("--resume", resumeSessionId);
+      if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
+      if (model) args.push("--model", model);
+      if (maxTurns > 0) args.push("--max-turns", String(maxTurns));
+      if (extraArgs.length > 0) args.push(...extraArgs);
+      return args;
+    };
 
-    if (onMeta) {
-      await onMeta({
-        adapterType: "claude_local",
-        command,
+    const parseFallbackErrorMessage = (proc: RunProcessResult) => {
+      const stderrLine =
+        proc.stderr
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .find(Boolean) ?? "";
+
+      if ((proc.exitCode ?? 0) === 0) {
+        return "Failed to parse claude JSON output";
+      }
+
+      return stderrLine
+        ? `Claude exited with code ${proc.exitCode ?? -1}: ${stderrLine}`
+        : `Claude exited with code ${proc.exitCode ?? -1}`;
+    };
+
+    const runAttempt = async (resumeSessionId: string | null) => {
+      const args = buildClaudeArgs(resumeSessionId);
+      if (onMeta) {
+        await onMeta({
+          adapterType: "claude_local",
+          command,
+          cwd,
+          commandArgs: args.map((value, idx) => (idx === 1 ? `<prompt ${prompt.length} chars>` : value)),
+          env: redactEnvForLogs(env),
+          prompt,
+          context,
+        });
+      }
+
+      const proc = await runChildProcess(runId, command, args, {
         cwd,
-        commandArgs: args.map((value, idx) => (idx === 1 ? `<prompt ${prompt.length} chars>` : value)),
-        env: redactEnvForLogs(env),
-        prompt,
-        context,
+        env,
+        timeoutSec,
+        graceSec,
+        onLog,
       });
-    }
 
-    const proc = await runChildProcess(runId, command, args, {
-      cwd,
-      env,
-      timeoutSec,
-      graceSec,
-      onLog,
-    });
+      const parsedStream = parseClaudeStreamJson(proc.stdout);
+      const parsed = parsedStream.resultJson ?? parseJson(proc.stdout);
+      return { proc, parsedStream, parsed };
+    };
 
-    if (proc.timedOut) {
-      return {
-        exitCode: proc.exitCode,
-        signal: proc.signal,
-        timedOut: true,
-        errorMessage: `Timed out after ${timeoutSec}s`,
-      };
-    }
+    const toAdapterResult = (
+      attempt: {
+        proc: RunProcessResult;
+        parsedStream: ReturnType<typeof parseClaudeStreamJson>;
+        parsed: Record<string, unknown> | null;
+      },
+      opts: { fallbackSessionId: string | null; clearSessionOnMissingSession?: boolean },
+    ): AdapterExecutionResult => {
+      const { proc, parsedStream, parsed } = attempt;
+      if (proc.timedOut) {
+        return {
+          exitCode: proc.exitCode,
+          signal: proc.signal,
+          timedOut: true,
+          errorMessage: `Timed out after ${timeoutSec}s`,
+          clearSession: Boolean(opts.clearSessionOnMissingSession),
+        };
+      }
 
-    const parsedStream = parseClaudeStreamJson(proc.stdout);
-    const parsed = parsedStream.resultJson ?? parseJson(proc.stdout);
-    if (!parsed) {
+      if (!parsed) {
+        return {
+          exitCode: proc.exitCode,
+          signal: proc.signal,
+          timedOut: false,
+          errorMessage: parseFallbackErrorMessage(proc),
+          resultJson: {
+            stdout: proc.stdout,
+            stderr: proc.stderr,
+          },
+          clearSession: Boolean(opts.clearSessionOnMissingSession),
+        };
+      }
+
+      const usage =
+        parsedStream.usage ??
+        (() => {
+          const usageObj = parseObject(parsed.usage);
+          return {
+            inputTokens: asNumber(usageObj.input_tokens, 0),
+            cachedInputTokens: asNumber(usageObj.cache_read_input_tokens, 0),
+            outputTokens: asNumber(usageObj.output_tokens, 0),
+          };
+        })();
+
+      const resolvedSessionId =
+        parsedStream.sessionId ??
+        (asString(parsed.session_id, opts.fallbackSessionId ?? "") || opts.fallbackSessionId);
+
       return {
         exitCode: proc.exitCode,
         signal: proc.signal,
         timedOut: false,
         errorMessage:
           (proc.exitCode ?? 0) === 0
-            ? "Failed to parse claude JSON output"
-            : `Claude exited with code ${proc.exitCode ?? -1}`,
-        resultJson: {
-          stdout: proc.stdout,
-          stderr: proc.stderr,
-        },
+            ? null
+            : describeClaudeFailure(parsed) ?? `Claude exited with code ${proc.exitCode ?? -1}`,
+        usage,
+        sessionId: resolvedSessionId,
+        provider: "anthropic",
+        model: parsedStream.model || asString(parsed.model, model),
+        costUsd: parsedStream.costUsd ?? asNumber(parsed.total_cost_usd, 0),
+        resultJson: parsed,
+        summary: parsedStream.summary || asString(parsed.result, ""),
+        clearSession: Boolean(opts.clearSessionOnMissingSession && !resolvedSessionId),
       };
+    };
+
+    const initial = await runAttempt(sessionId ?? null);
+    if (
+      sessionId &&
+      !initial.proc.timedOut &&
+      (initial.proc.exitCode ?? 0) !== 0 &&
+      initial.parsed &&
+      isClaudeUnknownSessionError(initial.parsed)
+    ) {
+      await onLog(
+        "stderr",
+        `[paperclip] Claude resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+      );
+      const retry = await runAttempt(null);
+      return toAdapterResult(retry, { fallbackSessionId: null, clearSessionOnMissingSession: true });
     }
 
-    const usage =
-      parsedStream.usage ??
-      (() => {
-        const usageObj = parseObject(parsed.usage);
-        return {
-          inputTokens: asNumber(usageObj.input_tokens, 0),
-          cachedInputTokens: asNumber(usageObj.cache_read_input_tokens, 0),
-          outputTokens: asNumber(usageObj.output_tokens, 0),
-        };
-      })();
-
-    return {
-      exitCode: proc.exitCode,
-      signal: proc.signal,
-      timedOut: false,
-      errorMessage: (proc.exitCode ?? 0) === 0 ? null : `Claude exited with code ${proc.exitCode ?? -1}`,
-      usage,
-      sessionId:
-        parsedStream.sessionId ??
-        (asString(parsed.session_id, runtime.sessionId ?? "") || runtime.sessionId),
-      provider: "anthropic",
-      model: parsedStream.model || asString(parsed.model, model),
-      costUsd: parsedStream.costUsd ?? asNumber(parsed.total_cost_usd, 0),
-      resultJson: parsed,
-      summary: parsedStream.summary || asString(parsed.result, ""),
-    };
+    return toAdapterResult(initial, { fallbackSessionId: runtime.sessionId });
   }
 
   async function executeCodexLocalRun(

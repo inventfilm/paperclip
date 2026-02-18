@@ -26,6 +26,29 @@ interface HeartbeatRunOptions {
   debug?: boolean;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asErrorText(value: unknown): string {
+  if (typeof value === "string") return value;
+  const obj = asRecord(value);
+  if (!obj) return "";
+  const message =
+    (typeof obj.message === "string" && obj.message) ||
+    (typeof obj.error === "string" && obj.error) ||
+    (typeof obj.code === "string" && obj.code) ||
+    "";
+  if (message) return message;
+  try {
+    return JSON.stringify(obj);
+  } catch {
+    return "";
+  }
+}
+
 export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
   const debug = Boolean(opts.debug);
   const parsedTimeout = Number.parseInt(opts.timeoutMs, 10);
@@ -185,10 +208,19 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
       const output = Number(usage.output_tokens ?? 0);
       const cached = Number(usage.cache_read_input_tokens ?? 0);
       const cost = Number(parsed.total_cost_usd ?? 0);
+      const subtype = typeof parsed.subtype === "string" ? parsed.subtype : "";
+      const isError = parsed.is_error === true;
       const resultText = typeof parsed.result === "string" ? parsed.result : "";
       if (resultText) {
         console.log(pc.green("result:"));
         console.log(resultText);
+      }
+      const errors = Array.isArray(parsed.errors) ? parsed.errors.map(asErrorText).filter(Boolean) : [];
+      if (subtype.startsWith("error") || isError || errors.length > 0) {
+        console.log(pc.red(`claude_result: subtype=${subtype || "unknown"} is_error=${isError ? "true" : "false"}`));
+        if (errors.length > 0) {
+          console.log(pc.red(`claude_errors: ${errors.join(" | ")}`));
+        }
       }
       console.log(
         pc.blue(
@@ -255,6 +287,7 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
   activeRunId = runId;
   let finalStatus: string | null = null;
   let finalError: string | null = null;
+  let finalRun: HeartbeatRun | null = null;
 
   const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : null;
   if (!activeRunId) {
@@ -290,6 +323,7 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
     if (currentStatus && TERMINAL_STATUSES.has(currentStatus)) {
       finalStatus = currentRun.status;
       finalError = currentRun.error;
+      finalRun = currentRun;
       break;
     }
 
@@ -336,6 +370,33 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
     console.log(pc.red(label));
     if (finalError) {
       console.log(pc.red(`Error: ${finalError}`));
+    }
+    if (finalRun) {
+      const resultObj = asRecord(finalRun.resultJson);
+      if (resultObj) {
+        const subtype = typeof resultObj.subtype === "string" ? resultObj.subtype : "";
+        const isError = resultObj.is_error === true;
+        const errors = Array.isArray(resultObj.errors) ? resultObj.errors.map(asErrorText).filter(Boolean) : [];
+        const resultText = typeof resultObj.result === "string" ? resultObj.result.trim() : "";
+        if (subtype || isError || errors.length > 0 || resultText) {
+          console.log(pc.red("Claude result details:"));
+          if (subtype) console.log(pc.red(`  subtype: ${subtype}`));
+          if (isError) console.log(pc.red("  is_error: true"));
+          if (errors.length > 0) console.log(pc.red(`  errors: ${errors.join(" | ")}`));
+          if (resultText) console.log(pc.red(`  result: ${resultText}`));
+        }
+      }
+
+      const stderrExcerpt = typeof finalRun.stderrExcerpt === "string" ? finalRun.stderrExcerpt.trim() : "";
+      const stdoutExcerpt = typeof finalRun.stdoutExcerpt === "string" ? finalRun.stdoutExcerpt.trim() : "";
+      if (stderrExcerpt) {
+        console.log(pc.red("stderr excerpt:"));
+        console.log(stderrExcerpt);
+      }
+      if (stdoutExcerpt && (debug || !stderrExcerpt)) {
+        console.log(pc.gray("stdout excerpt:"));
+        console.log(stdoutExcerpt);
+      }
     }
     process.exitCode = 1;
   } else {

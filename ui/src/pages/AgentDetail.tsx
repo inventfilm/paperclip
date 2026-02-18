@@ -110,7 +110,7 @@ type TranscriptEntry =
   | { kind: "assistant"; ts: string; text: string }
   | { kind: "tool_call"; ts: string; name: string; input: unknown }
   | { kind: "init"; ts: string; model: string; sessionId: string }
-  | { kind: "result"; ts: string; text: string; inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number }
+  | { kind: "result"; ts: string; text: string; inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number; subtype: string; isError: boolean; errors: string[] }
   | { kind: "stderr"; ts: string; text: string }
   | { kind: "system"; ts: string; text: string }
   | { kind: "stdout"; ts: string; text: string };
@@ -122,6 +122,23 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asNumber(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function errorText(value: unknown): string {
+  if (typeof value === "string") return value;
+  const rec = asRecord(value);
+  if (!rec) return "";
+  const msg =
+    (typeof rec.message === "string" && rec.message) ||
+    (typeof rec.error === "string" && rec.error) ||
+    (typeof rec.code === "string" && rec.code) ||
+    "";
+  if (msg) return msg;
+  try {
+    return JSON.stringify(rec);
+  } catch {
+    return "";
+  }
 }
 
 function parseClaudeStdoutLine(line: string, ts: string): TranscriptEntry[] {
@@ -171,6 +188,9 @@ function parseClaudeStdoutLine(line: string, ts: string): TranscriptEntry[] {
     const outputTokens = asNumber(usage.output_tokens);
     const cachedTokens = asNumber(usage.cache_read_input_tokens);
     const costUsd = asNumber(parsed.total_cost_usd);
+    const subtype = typeof parsed.subtype === "string" ? parsed.subtype : "";
+    const isError = parsed.is_error === true;
+    const errors = Array.isArray(parsed.errors) ? parsed.errors.map(errorText).filter(Boolean) : [];
     const text = typeof parsed.result === "string" ? parsed.result : "";
     return [{
       kind: "result",
@@ -180,6 +200,9 @@ function parseClaudeStdoutLine(line: string, ts: string): TranscriptEntry[] {
       outputTokens,
       cachedTokens,
       costUsd,
+      subtype,
+      isError,
+      errors,
     }];
   }
 
@@ -701,12 +724,12 @@ function RunsTab({ runs, companyId, agentId, selectedRunId }: { runs: HeartbeatR
   const selectedRun = sorted.find((r) => r.id === effectiveRunId) ?? null;
 
   return (
-    <div className="flex gap-0 border border-border rounded-lg overflow-hidden" style={{ height: "calc(100vh - 220px)" }}>
-      {/* Left: run list */}
+    <div className="flex gap-0">
+      {/* Left: run list — sticky, scrolls independently */}
       <div className={cn(
-        "shrink-0 overflow-y-auto border-r border-border",
+        "shrink-0 border border-border rounded-lg overflow-y-auto sticky top-4 self-start",
         selectedRun ? "w-72" : "w-full",
-      )}>
+      )} style={{ maxHeight: "calc(100vh - 2rem)" }}>
         {sorted.map((run) => {
           const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
           const StatusIcon = statusInfo.icon;
@@ -759,9 +782,9 @@ function RunsTab({ runs, companyId, agentId, selectedRunId }: { runs: HeartbeatR
         })}
       </div>
 
-      {/* Right: run detail */}
+      {/* Right: run detail — natural height, page scrolls */}
       {selectedRun && (
-        <div className="flex-1 min-w-0 overflow-y-auto pr-2">
+        <div className="flex-1 min-w-0 pl-4">
           <RunDetail key={selectedRun.id} run={selectedRun} />
         </div>
       )}
@@ -1165,7 +1188,7 @@ function LogViewer({ run }: { run: HeartbeatRun }) {
           </span>
         )}
       </div>
-      <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs max-h-80 overflow-y-auto space-y-0.5">
+      <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5" style={{ maxHeight: "200vh" }}>
         {transcript.length === 0 && !run.logRef && (
           <div className="text-neutral-500">No persisted transcript for this run.</div>
         )}
@@ -1218,6 +1241,12 @@ function LogViewer({ run }: { run: HeartbeatRun }) {
                     tokens in={formatTokens(entry.inputTokens)} out={formatTokens(entry.outputTokens)} cached={formatTokens(entry.cachedTokens)} cost=${entry.costUsd.toFixed(6)}
                   </span>
                 </div>
+                {(entry.subtype || entry.isError || entry.errors.length > 0) && (
+                  <div className="ml-[74px] text-red-300 whitespace-pre-wrap break-all">
+                    subtype={entry.subtype || "unknown"} is_error={entry.isError ? "true" : "false"}
+                    {entry.errors.length > 0 ? ` errors=${entry.errors.join(" | ")}` : ""}
+                  </div>
+                )}
                 {entry.text && (
                   <div className="ml-[74px] whitespace-pre-wrap break-all text-neutral-100">{entry.text}</div>
                 )}
@@ -1252,10 +1281,46 @@ function LogViewer({ run }: { run: HeartbeatRun }) {
         <div ref={logEndRef} />
       </div>
 
+      {(run.status === "failed" || run.status === "timed_out") && (
+        <div className="rounded-lg border border-red-500/30 bg-red-950/20 p-3 space-y-2">
+          <div className="text-xs font-medium text-red-300">Failure details</div>
+          {run.error && (
+            <div className="text-xs text-red-200">
+              <span className="text-red-300">Error: </span>
+              {run.error}
+            </div>
+          )}
+          {run.stderrExcerpt && run.stderrExcerpt.trim() && (
+            <div>
+              <div className="text-xs text-red-300 mb-1">stderr excerpt</div>
+              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-100">
+                {run.stderrExcerpt}
+              </pre>
+            </div>
+          )}
+          {run.resultJson && (
+            <div>
+              <div className="text-xs text-red-300 mb-1">adapter result JSON</div>
+              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-100">
+                {JSON.stringify(run.resultJson, null, 2)}
+              </pre>
+            </div>
+          )}
+          {run.stdoutExcerpt && run.stdoutExcerpt.trim() && !run.resultJson && (
+            <div>
+              <div className="text-xs text-red-300 mb-1">stdout excerpt</div>
+              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-100">
+                {run.stdoutExcerpt}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+
       {events.length > 0 && (
         <div>
           <div className="mb-2 text-xs font-medium text-muted-foreground">Events ({events.length})</div>
-          <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs max-h-56 overflow-y-auto space-y-0.5">
+          <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5" style={{ maxHeight: "100vh" }}>
             {events.map((evt) => {
               const color = evt.color
                 ?? (evt.level ? levelColors[evt.level] : null)
