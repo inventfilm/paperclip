@@ -38,7 +38,7 @@ program
   .command("configure")
   .description("Update configuration sections")
   .option("-c, --config <path>", "Path to config file")
-  .option("-s, --section <section>", "Section to configure (llm, database, logging, server)")
+  .option("-s, --section <section>", "Section to configure (llm, database, logging, server, secrets)")
   .action(configure);
 
 const heartbeat = program.command("heartbeat").description("Heartbeat utilities");

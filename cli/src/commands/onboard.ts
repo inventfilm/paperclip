@@ -6,6 +6,7 @@ import { ensureAgentJwtSecret, resolveAgentJwtEnvFile } from "../config/env.js";
 import { promptDatabase } from "../prompts/database.js";
 import { promptLlm } from "../prompts/llm.js";
 import { promptLogging } from "../prompts/logging.js";
+import { defaultSecretsConfig } from "../prompts/secrets.js";
 import { promptServer } from "../prompts/server.js";
 
 export async function onboard(opts: { config?: string }): Promise<void> {
@@ -98,6 +99,15 @@ export async function onboard(opts: { config?: string }): Promise<void> {
   p.log.step(pc.bold("Server"));
   const server = await promptServer();
 
+  // Secrets
+  p.log.step(pc.bold("Secrets"));
+  const secrets = defaultSecretsConfig();
+  p.log.message(
+    pc.dim(
+      `Using defaults: provider=${secrets.provider}, strictMode=${secrets.strictMode}, keyFile=${secrets.localEncrypted.keyFilePath}`,
+    ),
+  );
+
   const jwtSecret = ensureAgentJwtSecret();
   const envFilePath = resolveAgentJwtEnvFile();
   if (jwtSecret.created) {
@@ -119,6 +129,7 @@ export async function onboard(opts: { config?: string }): Promise<void> {
     database,
     logging,
     server,
+    secrets,
   };
 
   writeConfig(config, opts.config);
@@ -129,6 +140,7 @@ export async function onboard(opts: { config?: string }): Promise<void> {
       llm ? `LLM: ${llm.provider}` : "LLM: not configured",
       `Logging: ${logging.mode} → ${logging.logDir}`,
       `Server: port ${server.port}`,
+      `Secrets: ${secrets.provider} (strict mode ${secrets.strictMode ? "on" : "off"})`,
       `Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured`,
     ].join("\n"),
     "Configuration saved",

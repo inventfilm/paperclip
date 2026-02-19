@@ -22,6 +22,8 @@ const DEFAULT_AGENT_JWT_TTL_SECONDS = "172800";
 const DEFAULT_AGENT_JWT_ISSUER = "paperclip";
 const DEFAULT_AGENT_JWT_AUDIENCE = "paperclip-api";
 const DEFAULT_HEARTBEAT_SCHEDULER_INTERVAL_MS = "30000";
+const DEFAULT_SECRETS_PROVIDER = "local_encrypted";
+const DEFAULT_SECRETS_KEY_FILE_PATH = "./data/secrets/master.key";
 
 export async function envCommand(opts: { config?: string }): Promise<void> {
   p.intro(pc.bgCyan(pc.black(" paperclip env ")));
@@ -108,6 +110,17 @@ function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: st
 
   const heartbeatInterval = process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS ?? DEFAULT_HEARTBEAT_SCHEDULER_INTERVAL_MS;
   const heartbeatEnabled = process.env.HEARTBEAT_SCHEDULER_ENABLED ?? "true";
+  const secretsProvider =
+    process.env.PAPERCLIP_SECRETS_PROVIDER ??
+    config?.secrets?.provider ??
+    DEFAULT_SECRETS_PROVIDER;
+  const secretsStrictMode =
+    process.env.PAPERCLIP_SECRETS_STRICT_MODE ??
+    String(config?.secrets?.strictMode ?? false);
+  const secretsKeyFilePath =
+    process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE ??
+    config?.secrets?.localEncrypted?.keyFilePath ??
+    DEFAULT_SECRETS_KEY_FILE_PATH;
 
   const rows: EnvVarRow[] = [
     {
@@ -175,6 +188,39 @@ function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: st
       source: process.env.HEARTBEAT_SCHEDULER_ENABLED ? "env" : "default",
       required: false,
       note: "Set to `false` to disable timer scheduling",
+    },
+    {
+      key: "PAPERCLIP_SECRETS_PROVIDER",
+      value: secretsProvider,
+      source: process.env.PAPERCLIP_SECRETS_PROVIDER
+        ? "env"
+        : config?.secrets?.provider
+          ? "config"
+          : "default",
+      required: false,
+      note: "Default provider for new secrets",
+    },
+    {
+      key: "PAPERCLIP_SECRETS_STRICT_MODE",
+      value: secretsStrictMode,
+      source: process.env.PAPERCLIP_SECRETS_STRICT_MODE
+        ? "env"
+        : config?.secrets?.strictMode !== undefined
+          ? "config"
+          : "default",
+      required: false,
+      note: "Require secret refs for sensitive env keys",
+    },
+    {
+      key: "PAPERCLIP_SECRETS_MASTER_KEY_FILE",
+      value: secretsKeyFilePath,
+      source: process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE
+        ? "env"
+        : config?.secrets?.localEncrypted?.keyFilePath
+          ? "config"
+          : "default",
+      required: false,
+      note: "Path to local encrypted secrets key file",
     },
   ];
 

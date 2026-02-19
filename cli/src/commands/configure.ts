@@ -1,19 +1,22 @@
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { readConfig, writeConfig, configExists } from "../config/store.js";
+import { readConfig, writeConfig, configExists, resolveConfigPath } from "../config/store.js";
 import type { PaperclipConfig } from "../config/schema.js";
+import { ensureLocalSecretsKeyFile } from "../config/secrets-key.js";
 import { promptDatabase } from "../prompts/database.js";
 import { promptLlm } from "../prompts/llm.js";
 import { promptLogging } from "../prompts/logging.js";
+import { defaultSecretsConfig, promptSecrets } from "../prompts/secrets.js";
 import { promptServer } from "../prompts/server.js";
 
-type Section = "llm" | "database" | "logging" | "server";
+type Section = "llm" | "database" | "logging" | "server" | "secrets";
 
 const SECTION_LABELS: Record<Section, string> = {
   llm: "LLM Provider",
   database: "Database",
   logging: "Logging",
   server: "Server",
+  secrets: "Secrets",
 };
 
 function defaultConfig(): PaperclipConfig {
@@ -36,6 +39,7 @@ function defaultConfig(): PaperclipConfig {
       port: 3100,
       serveUi: true,
     },
+    secrets: defaultSecretsConfig(),
   };
 }
 
@@ -44,6 +48,7 @@ export async function configure(opts: {
   section?: string;
 }): Promise<void> {
   p.intro(pc.bgCyan(pc.black(" paperclip configure ")));
+  const configPath = resolveConfigPath(opts.config);
 
   if (!configExists(opts.config)) {
     p.log.error("No config file found. Run `paperclip onboard` first.");
@@ -111,6 +116,21 @@ export async function configure(opts: {
         break;
       case "server":
         config.server = await promptServer();
+        break;
+      case "secrets":
+        config.secrets = await promptSecrets(config.secrets);
+        {
+          const keyResult = ensureLocalSecretsKeyFile(config, configPath);
+          if (keyResult.status === "created") {
+            p.log.success(`Created local secrets key file at ${pc.dim(keyResult.path)}`);
+          } else if (keyResult.status === "existing") {
+            p.log.message(pc.dim(`Using existing local secrets key file at ${keyResult.path}`));
+          } else if (keyResult.status === "skipped_provider") {
+            p.log.message(pc.dim("Skipping local key file management for non-local provider"));
+          } else {
+            p.log.message(pc.dim("Skipping local key file management because PAPERCLIP_SECRETS_MASTER_KEY is set"));
+          }
+        }
         break;
     }
 
