@@ -119,7 +119,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   })();
   const skillsDir = await buildSkillsDir();
 
-  const sessionId = runtime.sessionId;
+  const runtimeSessionParams = parseObject(runtime.sessionParams);
+  const runtimeSessionId = asString(runtimeSessionParams.sessionId, runtime.sessionId ?? "");
+  const runtimeSessionCwd = asString(runtimeSessionParams.cwd, "");
+  const canResumeSession =
+    runtimeSessionId.length > 0 &&
+    (runtimeSessionCwd.length === 0 || path.resolve(runtimeSessionCwd) === path.resolve(cwd));
+  const sessionId = canResumeSession ? runtimeSessionId : null;
+  if (runtimeSessionId && !canResumeSession) {
+    await onLog(
+      "stderr",
+      `[paperclip] Claude session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
+    );
+  }
   const template = sessionId ? promptTemplate : bootstrapTemplate;
   const prompt = renderTemplate(template, {
     company: { id: agent.companyId },
@@ -230,6 +242,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const resolvedSessionId =
       parsedStream.sessionId ??
       (asString(parsed.session_id, opts.fallbackSessionId ?? "") || opts.fallbackSessionId);
+    const resolvedSessionParams = resolvedSessionId
+      ? ({ sessionId: resolvedSessionId, cwd } as Record<string, unknown>)
+      : null;
 
     return {
       exitCode: proc.exitCode,
@@ -241,6 +256,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           : describeClaudeFailure(parsed) ?? `Claude exited with code ${proc.exitCode ?? -1}`,
       usage,
       sessionId: resolvedSessionId,
+      sessionParams: resolvedSessionParams,
+      sessionDisplayId: resolvedSessionId,
       provider: "anthropic",
       model: parsedStream.model || asString(parsed.model, model),
       costUsd: parsedStream.costUsd ?? asNumber(parsed.total_cost_usd, 0),
@@ -267,7 +284,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       return toAdapterResult(retry, { fallbackSessionId: null, clearSessionOnMissingSession: true });
     }
 
-    return toAdapterResult(initial, { fallbackSessionId: runtime.sessionId });
+    return toAdapterResult(initial, { fallbackSessionId: runtimeSessionId || runtime.sessionId });
   } finally {
     fs.rm(skillsDir, { recursive: true, force: true }).catch(() => {});
   }

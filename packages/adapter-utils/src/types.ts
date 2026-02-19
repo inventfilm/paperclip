@@ -11,7 +11,13 @@ export interface AdapterAgent {
 }
 
 export interface AdapterRuntime {
+  /**
+   * Legacy single session id view. Prefer `sessionParams` + `sessionDisplayId`.
+   */
   sessionId: string | null;
+  sessionParams: Record<string, unknown> | null;
+  sessionDisplayId: string | null;
+  taskKey: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -30,13 +36,24 @@ export interface AdapterExecutionResult {
   timedOut: boolean;
   errorMessage?: string | null;
   usage?: UsageSummary;
+  /**
+   * Legacy single session id output. Prefer `sessionParams` + `sessionDisplayId`.
+   */
   sessionId?: string | null;
+  sessionParams?: Record<string, unknown> | null;
+  sessionDisplayId?: string | null;
   provider?: string | null;
   model?: string | null;
   costUsd?: number | null;
   resultJson?: Record<string, unknown> | null;
   summary?: string | null;
   clearSession?: boolean;
+}
+
+export interface AdapterSessionCodec {
+  deserialize(raw: unknown): Record<string, unknown> | null;
+  serialize(params: Record<string, unknown> | null): Record<string, unknown> | null;
+  getDisplayId?: (params: Record<string, unknown> | null) => string | null;
 }
 
 export interface AdapterInvocationMeta {
@@ -63,6 +80,7 @@ export interface AdapterExecutionContext {
 export interface ServerAdapterModule {
   type: string;
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
+  sessionCodec?: AdapterSessionCodec;
   supportsLocalAgentJwt?: boolean;
   models?: { id: string; label: string }[];
   agentConfigurationDoc?: string;

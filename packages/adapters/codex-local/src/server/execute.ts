@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip/adapter-utils";
 import {
   asString,
@@ -13,7 +14,7 @@ import {
   renderTemplate,
   runChildProcess,
 } from "@paperclip/adapter-utils/server-utils";
-import { parseCodexJsonl } from "./parse.js";
+import { parseCodexJsonl, isCodexUnknownSessionError } from "./parse.js";
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, runtime, config, context, onLog, onMeta, authToken } = ctx;
@@ -86,7 +87,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     return asStringArray(config.args);
   })();
 
-  const sessionId = runtime.sessionId;
+  const runtimeSessionParams = parseObject(runtime.sessionParams);
+  const runtimeSessionId = asString(runtimeSessionParams.sessionId, runtime.sessionId ?? "");
+  const runtimeSessionCwd = asString(runtimeSessionParams.cwd, "");
+  const canResumeSession =
+    runtimeSessionId.length > 0 &&
+    (runtimeSessionCwd.length === 0 || path.resolve(runtimeSessionCwd) === path.resolve(cwd));
+  const sessionId = canResumeSession ? runtimeSessionId : null;
+  if (runtimeSessionId && !canResumeSession) {
+    await onLog(
+      "stderr",
+      `[paperclip] Codex session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
+    );
+  }
   const template = sessionId ? promptTemplate : bootstrapTemplate;
   const prompt = renderTemplate(template, {
     company: { id: agent.companyId },
@@ -95,63 +108,104 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     context,
   });
 
-  const args = ["exec", "--json"];
-  if (search) args.unshift("--search");
-  if (bypass) args.push("--dangerously-bypass-approvals-and-sandbox");
-  if (model) args.push("--model", model);
-  if (extraArgs.length > 0) args.push(...extraArgs);
-  if (sessionId) args.push("resume", sessionId, prompt);
-  else args.push(prompt);
-
-  if (onMeta) {
-    await onMeta({
-      adapterType: "codex_local",
-      command,
-      cwd,
-      commandArgs: args.map((value, idx) => {
-        if (!sessionId && idx === args.length - 1) return `<prompt ${prompt.length} chars>`;
-        if (sessionId && idx === args.length - 1) return `<prompt ${prompt.length} chars>`;
-        return value;
-      }),
-      env: redactEnvForLogs(env),
-      prompt,
-      context,
-    });
-  }
-
-  const proc = await runChildProcess(runId, command, args, {
-    cwd,
-    env,
-    timeoutSec,
-    graceSec,
-    onLog,
-  });
-
-  if (proc.timedOut) {
-    return {
-      exitCode: proc.exitCode,
-      signal: proc.signal,
-      timedOut: true,
-      errorMessage: `Timed out after ${timeoutSec}s`,
-    };
-  }
-
-  const parsed = parseCodexJsonl(proc.stdout);
-
-  return {
-    exitCode: proc.exitCode,
-    signal: proc.signal,
-    timedOut: false,
-    errorMessage: (proc.exitCode ?? 0) === 0 ? null : `Codex exited with code ${proc.exitCode ?? -1}`,
-    usage: parsed.usage,
-    sessionId: parsed.sessionId ?? runtime.sessionId,
-    provider: "openai",
-    model,
-    costUsd: null,
-    resultJson: {
-      stdout: proc.stdout,
-      stderr: proc.stderr,
-    },
-    summary: parsed.summary,
+  const buildArgs = (resumeSessionId: string | null) => {
+    const args = ["exec", "--json"];
+    if (search) args.unshift("--search");
+    if (bypass) args.push("--dangerously-bypass-approvals-and-sandbox");
+    if (model) args.push("--model", model);
+    if (extraArgs.length > 0) args.push(...extraArgs);
+    if (resumeSessionId) args.push("resume", resumeSessionId, prompt);
+    else args.push(prompt);
+    return args;
   };
+
+  const runAttempt = async (resumeSessionId: string | null) => {
+    const args = buildArgs(resumeSessionId);
+    if (onMeta) {
+      await onMeta({
+        adapterType: "codex_local",
+        command,
+        cwd,
+        commandArgs: args.map((value, idx) => {
+          if (idx === args.length - 1) return `<prompt ${prompt.length} chars>`;
+          return value;
+        }),
+        env: redactEnvForLogs(env),
+        prompt,
+        context,
+      });
+    }
+
+    const proc = await runChildProcess(runId, command, args, {
+      cwd,
+      env,
+      timeoutSec,
+      graceSec,
+      onLog,
+    });
+    return {
+      proc,
+      parsed: parseCodexJsonl(proc.stdout),
+    };
+  };
+
+  const toResult = (
+    attempt: { proc: { exitCode: number | null; signal: string | null; timedOut: boolean; stdout: string; stderr: string }; parsed: ReturnType<typeof parseCodexJsonl> },
+    clearSessionOnMissingSession = false,
+  ): AdapterExecutionResult => {
+    if (attempt.proc.timedOut) {
+      return {
+        exitCode: attempt.proc.exitCode,
+        signal: attempt.proc.signal,
+        timedOut: true,
+        errorMessage: `Timed out after ${timeoutSec}s`,
+        clearSession: clearSessionOnMissingSession,
+      };
+    }
+
+    const resolvedSessionId = attempt.parsed.sessionId ?? runtimeSessionId ?? runtime.sessionId ?? null;
+    const resolvedSessionParams = resolvedSessionId
+      ? ({ sessionId: resolvedSessionId, cwd } as Record<string, unknown>)
+      : null;
+
+    return {
+      exitCode: attempt.proc.exitCode,
+      signal: attempt.proc.signal,
+      timedOut: false,
+      errorMessage:
+        (attempt.proc.exitCode ?? 0) === 0
+          ? null
+          : `Codex exited with code ${attempt.proc.exitCode ?? -1}`,
+      usage: attempt.parsed.usage,
+      sessionId: resolvedSessionId,
+      sessionParams: resolvedSessionParams,
+      sessionDisplayId: resolvedSessionId,
+      provider: "openai",
+      model,
+      costUsd: null,
+      resultJson: {
+        stdout: attempt.proc.stdout,
+        stderr: attempt.proc.stderr,
+      },
+      summary: attempt.parsed.summary,
+      clearSession: Boolean(clearSessionOnMissingSession && !resolvedSessionId),
+    };
+  };
+
+  const initial = await runAttempt(sessionId);
+  if (
+    sessionId &&
+    !initial.proc.timedOut &&
+    (initial.proc.exitCode ?? 0) !== 0 &&
+    isCodexUnknownSessionError(initial.proc.stdout, initial.proc.stderr)
+  ) {
+    await onLog(
+      "stderr",
+      `[paperclip] Codex resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+    );
+    const retry = await runAttempt(null);
+    return toResult(retry, true);
+  }
+
+  return toResult(initial);
 }

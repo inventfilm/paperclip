@@ -8,5 +8,6 @@ export type {
   AdapterExecutionResult,
   AdapterInvocationMeta,
   AdapterExecutionContext,
+  AdapterSessionCodec,
   ServerAdapterModule,
 } from "@paperclip/adapter-utils";

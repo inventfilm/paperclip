@@ -45,3 +45,14 @@ export function parseCodexJsonl(stdout: string) {
     usage,
   };
 }
+
+export function isCodexUnknownSessionError(stdout: string, stderr: string): boolean {
+  const haystack = `${stdout}\n${stderr}`
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+  return /unknown (session|thread)|session .* not found|thread .* not found|conversation .* not found/i.test(
+    haystack,
+  );
+}

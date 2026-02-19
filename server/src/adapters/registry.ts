@@ -1,7 +1,7 @@
 import type { ServerAdapterModule } from "./types.js";
-import { execute as claudeExecute } from "@paperclip/adapter-claude-local/server";
+import { execute as claudeExecute, sessionCodec as claudeSessionCodec } from "@paperclip/adapter-claude-local/server";
 import { agentConfigurationDoc as claudeAgentConfigurationDoc, models as claudeModels } from "@paperclip/adapter-claude-local";
-import { execute as codexExecute } from "@paperclip/adapter-codex-local/server";
+import { execute as codexExecute, sessionCodec as codexSessionCodec } from "@paperclip/adapter-codex-local/server";
 import { agentConfigurationDoc as codexAgentConfigurationDoc, models as codexModels } from "@paperclip/adapter-codex-local";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
@@ -9,6 +9,7 @@ import { httpAdapter } from "./http/index.js";
 const claudeLocalAdapter: ServerAdapterModule = {
   type: "claude_local",
   execute: claudeExecute,
+  sessionCodec: claudeSessionCodec,
   models: claudeModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: claudeAgentConfigurationDoc,
@@ -17,6 +18,7 @@ const claudeLocalAdapter: ServerAdapterModule = {
 const codexLocalAdapter: ServerAdapterModule = {
   type: "codex_local",
   execute: codexExecute,
+  sessionCodec: codexSessionCodec,
   models: codexModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: codexAgentConfigurationDoc,

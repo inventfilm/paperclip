@@ -5,6 +5,7 @@ export type {
   AdapterExecutionResult,
   AdapterInvocationMeta,
   AdapterExecutionContext,
+  AdapterSessionCodec,
   ServerAdapterModule,
   TranscriptEntry,
   StdoutLineParser,
