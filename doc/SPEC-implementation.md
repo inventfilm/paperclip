@@ -275,7 +275,21 @@ Invariant: each event must attach to agent and company; rollups are aggregation,
 - `details` jsonb null
 - `created_at` timestamptz not null default now()
 
-## 7.12 Required Indexes
+## 7.12 `company_secrets` + `company_secret_versions`
+
+- Secret values are not stored inline in `agents.adapter_config.env`.
+- Agent env entries should use secret refs for sensitive values.
+- `company_secrets` tracks identity/provider metadata per company.
+- `company_secret_versions` stores encrypted/reference material per version.
+- Default provider in local deployments: `local_encrypted`.
+
+Operational policy:
+
+- Config read APIs redact sensitive plain values.
+- Activity and approval payloads must not persist raw sensitive values.
+- Config revisions may include redacted placeholders; such revisions are non-restorable for redacted fields.
+
+## 7.13 Required Indexes
 
 - `agents(company_id, status)`
 - `agents(company_id, reports_to)`
@@ -288,6 +302,8 @@ Invariant: each event must attach to agent and company; rollups are aggregation,
 - `heartbeat_runs(company_id, agent_id, started_at desc)`
 - `approvals(company_id, status, type)`
 - `activity_log(company_id, created_at desc)`
+- `company_secrets(company_id, name)` unique
+- `company_secret_versions(secret_id, version)` unique
 
 ## 8. State Machines
 

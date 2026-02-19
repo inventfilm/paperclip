@@ -120,3 +120,39 @@ The database mode is controlled by `DATABASE_URL`:
 | `postgres://...supabase.com...` | Hosted Supabase |
 
 Your Drizzle schema (`packages/db/src/schema/`) stays the same regardless of mode.
+
+## Secret storage
+
+Paperclip stores secret metadata and versions in:
+
+- `company_secrets`
+- `company_secret_versions`
+
+For local/default installs, the active provider is `local_encrypted`:
+
+- Secret material is encrypted at rest with a local master key.
+- Default key file: `./data/secrets/master.key` (auto-created if missing).
+- CLI config location: `.paperclip/config.json` under `secrets.localEncrypted.keyFilePath`.
+
+Optional overrides:
+
+- `PAPERCLIP_SECRETS_MASTER_KEY` (32-byte key as base64, hex, or raw 32-char string)
+- `PAPERCLIP_SECRETS_MASTER_KEY_FILE` (custom key file path)
+
+Strict mode to block new inline sensitive env values:
+
+```sh
+PAPERCLIP_SECRETS_STRICT_MODE=true
+```
+
+You can set strict mode and provider defaults via:
+
+```sh
+pnpm paperclip configure --section secrets
+```
+
+Inline secret migration command:
+
+```sh
+pnpm secrets:migrate-inline-env --apply
+```

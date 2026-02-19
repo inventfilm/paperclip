@@ -56,3 +56,32 @@ pnpm dev
 ## Optional: Use External Postgres
 
 If you set `DATABASE_URL`, the server will use that instead of embedded PostgreSQL.
+
+## Secrets in Dev
+
+Agent env vars now support secret references. By default, secret values are stored with local encryption and only secret refs are persisted in agent config.
+
+- Default local key path: `./data/secrets/master.key`
+- Override key material directly: `PAPERCLIP_SECRETS_MASTER_KEY`
+- Override key file path: `PAPERCLIP_SECRETS_MASTER_KEY_FILE`
+
+Strict mode (recommended outside local trusted machines):
+
+```sh
+PAPERCLIP_SECRETS_STRICT_MODE=true
+```
+
+When strict mode is enabled, sensitive env keys (for example `*_API_KEY`, `*_TOKEN`, `*_SECRET`) must use secret references instead of inline plain values.
+
+CLI configuration support:
+
+- `pnpm paperclip onboard` writes a default `secrets` config section (`local_encrypted`, strict mode off, key file path set) and creates a local key file when needed.
+- `pnpm paperclip configure --section secrets` lets you update provider/strict mode/key path and creates the local key file when needed.
+- `pnpm paperclip doctor` validates secrets adapter configuration and can create a missing local key file with `--repair`.
+
+Migration helper for existing inline env secrets:
+
+```sh
+pnpm secrets:migrate-inline-env         # dry run
+pnpm secrets:migrate-inline-env --apply # apply migration
+```
