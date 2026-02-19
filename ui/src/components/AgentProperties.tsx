@@ -81,9 +81,11 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
       <Separator />
 
       <div className="space-y-1">
-        {runtimeState?.sessionId && (
+        {(runtimeState?.sessionDisplayId ?? runtimeState?.sessionId) && (
           <PropertyRow label="Session">
-            <span className="text-xs font-mono">{runtimeState.sessionId.slice(0, 12)}...</span>
+            <span className="text-xs font-mono">
+              {String(runtimeState.sessionDisplayId ?? runtimeState.sessionId).slice(0, 12)}...
+            </span>
           </PropertyRow>
         )}
         {runtimeState?.lastError && (

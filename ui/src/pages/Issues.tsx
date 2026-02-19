@@ -78,9 +78,9 @@ export function Issues() {
     enabled: !!selectedCompanyId,
   });
 
-  const updateStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      issuesApi.update(id, { status }),
+  const updateIssue = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
+      issuesApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
     },
@@ -157,13 +157,17 @@ export function Issues() {
                 title={issue.title}
                 onClick={() => navigate(`/issues/${issue.id}`)}
                 leading={
-                  <>
-                    <PriorityIcon priority={issue.priority} />
+                  // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <PriorityIcon
+                      priority={issue.priority}
+                      onChange={(p) => updateIssue.mutate({ id: issue.id, data: { priority: p } })}
+                    />
                     <StatusIcon
                       status={issue.status}
-                      onChange={(s) => updateStatus.mutate({ id: issue.id, status: s })}
+                      onChange={(s) => updateIssue.mutate({ id: issue.id, data: { status: s } })}
                     />
-                  </>
+                  </div>
                 }
                 trailing={
                   <div className="flex items-center gap-3">

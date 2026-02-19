@@ -16,6 +16,7 @@ import { Costs } from "./pages/Costs";
 import { Activity } from "./pages/Activity";
 import { Inbox } from "./pages/Inbox";
 import { MyIssues } from "./pages/MyIssues";
+import { CompanySettings } from "./pages/CompanySettings";
 import { DesignGuide } from "./pages/DesignGuide";
 
 export function App() {
@@ -25,6 +26,7 @@ export function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
         <Route path="companies" element={<Companies />} />
+        <Route path="company/settings" element={<CompanySettings />} />
         <Route path="org" element={<Navigate to="/agents" replace />} />
         <Route path="agents" element={<Agents />} />
         <Route path="agents/:agentId" element={<AgentDetail />} />

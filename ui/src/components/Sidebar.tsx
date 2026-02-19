@@ -11,7 +11,6 @@ import {
   SquarePen,
   ListTodo,
   ShieldCheck,
-  Building2,
   BookOpen,
   Paperclip,
 } from "lucide-react";
@@ -73,6 +72,7 @@ export function Sidebar() {
       <ScrollArea className="flex-1">
         <nav className="flex flex-col gap-4 px-3 py-2">
           <div className="flex flex-col gap-0.5">
+            <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} />
             <SidebarNavItem
               to="/inbox"
               label="Inbox"
@@ -89,7 +89,6 @@ export function Sidebar() {
           </SidebarSection>
 
           <SidebarSection label="Company">
-            <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} />
             <SidebarNavItem to="/agents" label="Agents" icon={Bot} />
             <SidebarNavItem
               to="/approvals"
@@ -99,7 +98,6 @@ export function Sidebar() {
             />
             <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
             <SidebarNavItem to="/activity" label="Activity" icon={History} />
-            <SidebarNavItem to="/companies" label="Companies" icon={Building2} />
           </SidebarSection>
         </nav>
       </ScrollArea>

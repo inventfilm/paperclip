@@ -1,4 +1,4 @@
-import { ChevronsUpDown, Plus } from "lucide-react";
+import { ChevronsUpDown, Plus, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useCompany } from "../context/CompanyContext";
 import {
@@ -63,6 +63,10 @@ export function CompanySwitcher() {
           <DropdownMenuItem disabled>No companies</DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => navigate("/company/settings")}>
+          <Settings className="h-4 w-4 mr-2" />
+          Company Settings
+        </DropdownMenuItem>
         <DropdownMenuItem onClick={() => navigate("/companies")}>
           <Plus className="h-4 w-4 mr-2" />
           Manage Companies

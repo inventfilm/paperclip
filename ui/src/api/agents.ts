@@ -2,6 +2,7 @@ import type {
   Agent,
   AgentKeyCreated,
   AgentRuntimeState,
+  AgentTaskSession,
   HeartbeatRun,
   Approval,
   AgentConfigRevision,
@@ -61,7 +62,9 @@ export const agentsApi = {
   createKey: (id: string, name: string) => api.post<AgentKeyCreated>(`/agents/${id}/keys`, { name }),
   revokeKey: (agentId: string, keyId: string) => api.delete<{ ok: true }>(`/agents/${agentId}/keys/${keyId}`),
   runtimeState: (id: string) => api.get<AgentRuntimeState>(`/agents/${id}/runtime-state`),
-  resetSession: (id: string) => api.post<void>(`/agents/${id}/runtime-state/reset-session`, {}),
+  taskSessions: (id: string) => api.get<AgentTaskSession[]>(`/agents/${id}/task-sessions`),
+  resetSession: (id: string, taskKey?: string | null) =>
+    api.post<void>(`/agents/${id}/runtime-state/reset-session`, { taskKey: taskKey ?? null }),
   adapterModels: (type: string) => api.get<AdapterModel[]>(`/adapters/${type}/models`),
   invoke: (id: string) => api.post<HeartbeatRun>(`/agents/${id}/heartbeat/invoke`, {}),
   wakeup: (

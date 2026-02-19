@@ -11,12 +11,12 @@ import { queryKeys } from "../lib/queryKeys";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { EmptyState } from "../components/EmptyState";
+import { ApprovalCard } from "../components/ApprovalCard";
 import { timeAgo } from "../lib/timeAgo";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
   Inbox as InboxIcon,
-  Shield,
   AlertTriangle,
   Clock,
   ExternalLink,
@@ -143,44 +143,17 @@ export function Inbox() {
               See all approvals <ExternalLink className="inline h-3 w-3 ml-0.5" />
             </button>
           </div>
-          <div className="border border-border divide-y divide-border">
+          <div className="grid gap-3">
             {actionableApprovals.map((approval) => (
-              <div key={approval.id} className="p-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-yellow-500 shrink-0" />
-                  <span className="text-sm font-medium">
-                    {approval.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                  </span>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    {timeAgo(approval.createdAt)}
-                  </span>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-green-700 text-green-500 hover:bg-green-900/20"
-                    onClick={() => approveMutation.mutate(approval.id)}
-                  >
-                    Approve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => rejectMutation.mutate(approval.id)}
-                  >
-                    Reject
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-muted-foreground ml-auto"
-                    onClick={() => navigate(`/approvals/${approval.id}`)}
-                  >
-                    View details
-                  </Button>
-                </div>
-              </div>
+              <ApprovalCard
+                key={approval.id}
+                approval={approval}
+                requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
+                onApprove={() => approveMutation.mutate(approval.id)}
+                onReject={() => rejectMutation.mutate(approval.id)}
+                onOpen={() => navigate(`/approvals/${approval.id}`)}
+                isPending={approveMutation.isPending || rejectMutation.isPending}
+              />
             ))}
           </div>
         </div>

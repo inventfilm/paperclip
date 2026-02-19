@@ -48,7 +48,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState } from "@paperclip/shared";
+import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState, AgentTaskSession } from "@paperclip/shared";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-400" },
@@ -182,6 +182,12 @@ export function AgentDetail() {
     enabled: !!agentId,
   });
 
+  const { data: taskSessions } = useQuery({
+    queryKey: queryKeys.agents.taskSessions(agentId!),
+    queryFn: () => agentsApi.taskSessions(agentId!),
+    enabled: !!agentId,
+  });
+
   const { data: heartbeats } = useQuery({
     queryKey: queryKeys.heartbeats(selectedCompanyId!, agentId),
     queryFn: () => heartbeatsApi.list(selectedCompanyId!, agentId),
@@ -205,26 +211,38 @@ export function AgentDetail() {
   const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agentId && a.status !== "terminated");
 
   const agentAction = useMutation({
-    mutationFn: async (action: "invoke" | "pause" | "resume" | "terminate" | "resetSession") => {
+    mutationFn: async (action: "invoke" | "pause" | "resume" | "terminate") => {
       if (!agentId) return Promise.reject(new Error("No agent ID"));
       switch (action) {
         case "invoke": return agentsApi.invoke(agentId);
         case "pause": return agentsApi.pause(agentId);
         case "resume": return agentsApi.resume(agentId);
         case "terminate": return agentsApi.terminate(agentId);
-        case "resetSession": return agentsApi.resetSession(agentId);
       }
     },
     onSuccess: () => {
       setActionError(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId!) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agentId!) });
       if (selectedCompanyId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) });
       }
     },
     onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Action failed");
+    },
+  });
+
+  const resetTaskSession = useMutation({
+    mutationFn: (taskKey: string | null) => agentsApi.resetSession(agentId!, taskKey),
+    onSuccess: () => {
+      setActionError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agentId!) });
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Failed to reset session");
     },
   });
 
@@ -356,12 +374,12 @@ export function AgentDetail() {
               <button
                 className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
                 onClick={() => {
-                  agentAction.mutate("resetSession");
+                  resetTaskSession.mutate(null);
                   setMoreOpen(false);
                 }}
               >
                 <RotateCcw className="h-3 w-3" />
-                Reset Session
+                Reset Sessions
               </button>
               <button
                 className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
@@ -458,10 +476,13 @@ export function AgentDetail() {
                   }
                 </SummaryRow>
                 <SummaryRow label="Session">
-                  {runtimeState?.sessionId
-                    ? <span className="font-mono text-xs">{runtimeState.sessionId.slice(0, 16)}...</span>
+                  {(runtimeState?.sessionDisplayId ?? runtimeState?.sessionId)
+                    ? <span className="font-mono text-xs">{String(runtimeState?.sessionDisplayId ?? runtimeState?.sessionId).slice(0, 16)}...</span>
                     : <span className="text-muted-foreground">No session</span>
                   }
+                </SummaryRow>
+                <SummaryRow label="Task sessions">
+                  <span>{taskSessions?.length ?? 0}</span>
                 </SummaryRow>
                 {runtimeState && (
                   <SummaryRow label="Total spend">
@@ -541,6 +562,13 @@ export function AgentDetail() {
               </div>
             </div>
           </div>
+
+          <TaskSessionsCard
+            sessions={taskSessions ?? []}
+            onResetTask={(taskKey) => resetTaskSession.mutate(taskKey)}
+            onResetAll={() => resetTaskSession.mutate(null)}
+            resetting={resetTaskSession.isPending}
+          />
         </TabsContent>
 
         {/* CONFIGURATION TAB */}
@@ -599,6 +627,66 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
     <div className="flex items-center justify-between">
       <span className="text-muted-foreground text-xs">{label}</span>
       <div className="flex items-center gap-1">{children}</div>
+    </div>
+  );
+}
+
+function TaskSessionsCard({
+  sessions,
+  onResetTask,
+  onResetAll,
+  resetting,
+}: {
+  sessions: AgentTaskSession[];
+  onResetTask: (taskKey: string) => void;
+  onResetAll: () => void;
+  resetting: boolean;
+}) {
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium">Task Sessions</h3>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 px-2.5 text-xs"
+          onClick={onResetAll}
+          disabled={resetting || sessions.length === 0}
+        >
+          Reset all
+        </Button>
+      </div>
+      {sessions.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No task-scoped sessions.</p>
+      ) : (
+        <div className="space-y-2">
+          {sessions.slice(0, 20).map((session) => (
+            <div
+              key={session.id}
+              className="flex items-center justify-between border border-border/70 rounded-md px-3 py-2 gap-3"
+            >
+              <div className="min-w-0">
+                <div className="font-mono text-xs truncate">{session.taskKey}</div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {session.sessionDisplayId
+                    ? `session: ${session.sessionDisplayId}`
+                    : "session: <none>"}
+                  {session.lastError ? ` | error: ${session.lastError}` : ""}
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5 text-xs shrink-0"
+                onClick={() => onResetTask(session.taskKey)}
+                disabled={resetting}
+              >
+                Reset
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
