@@ -423,7 +423,7 @@ This separation keeps adapter config runtime-agnostic while allowing the heartbe
 
 ## 9.1 New table: `agent_runtime_state`
 
-One row per agent for resumable adapter state.
+One row per agent for aggregate runtime counters and legacy compatibility.
 
 - `agent_id` uuid pk fk `agents.id`
 - `company_id` uuid fk not null
@@ -440,6 +440,24 @@ One row per agent for resumable adapter state.
 - `updated_at` timestamptz not null
 
 Invariant: exactly one runtime state row per agent.
+
+## 9.1.1 New table: `agent_task_sessions`
+
+One row per `(company_id, agent_id, adapter_type, task_key)` for resumable session state.
+
+- `id` uuid pk
+- `company_id` uuid fk not null
+- `agent_id` uuid fk not null
+- `adapter_type` text not null
+- `task_key` text not null
+- `session_params_json` jsonb null (adapter-defined shape)
+- `session_display_id` text null (for UI/debug)
+- `last_run_id` uuid fk `heartbeat_runs.id` null
+- `last_error` text null
+- `created_at` timestamptz not null
+- `updated_at` timestamptz not null
+
+Invariant: unique `(company_id, agent_id, adapter_type, task_key)`.
 
 ## 9.2 New table: `agent_wakeup_requests`
 
@@ -662,13 +680,15 @@ On server startup:
    - backward-compatible alias to wakeup API
 3. `GET /agents/:agentId/runtime-state`
    - board-only debug view
-4. `POST /agents/:agentId/runtime-state/reset-session`
-   - clears stored session ID
-5. `GET /heartbeat-runs/:runId/events?afterSeq=:n`
+4. `GET /agents/:agentId/task-sessions`
+   - board-only list of task-scoped adapter sessions
+5. `POST /agents/:agentId/runtime-state/reset-session`
+   - clears all task sessions for the agent, or one when `taskKey` is provided
+6. `GET /heartbeat-runs/:runId/events?afterSeq=:n`
    - fetch persisted lightweight timeline
-6. `GET /heartbeat-runs/:runId/log`
+7. `GET /heartbeat-runs/:runId/log`
    - reads full log stream via `RunLogStore` (or redirects/presigned URL for object store)
-7. `GET /api/companies/:companyId/events/ws`
+8. `GET /api/companies/:companyId/events/ws`
    - websocket stream
 
 ## 13.2 Mutation logging
@@ -726,7 +746,7 @@ All wakeup/run state mutations must create `activity_log` entries:
 ## 15. Acceptance Criteria
 
 1. Agent with `claude-local` or `codex-local` can run, exit, and persist run result.
-2. Session ID is persisted and used for next run resume automatically.
+2. Session parameters are persisted per task scope and reused automatically for same-task resumes.
 3. Token usage is persisted per run and accumulated per agent runtime state.
 4. Timer, assignment, on-demand, and automation wakeups all enqueue through one coordinator.
 5. Pause/terminate interrupts running local process and prevents new wakeups.
@@ -737,7 +757,6 @@ All wakeup/run state mutations must create `activity_log` entries:
 ## 16. Open Questions
 
 1. Should timer default be `null` (off until enabled) or `300` seconds by default?
-2. For invalid resume session errors, should default behavior be fail-fast or auto-reset-and-retry-once?
-3. What should the default retention policy be for full log objects vs Postgres metadata?
-4. Should agent API credentials be allowed in prompt templates by default, or require explicit opt-in toggle?
-5. Should websocket be the only realtime channel, or should we also expose SSE for simpler clients?
+2. What should the default retention policy be for full log objects vs Postgres metadata?
+3. Should agent API credentials be allowed in prompt templates by default, or require explicit opt-in toggle?
+4. Should websocket be the only realtime channel, or should we also expose SSE for simpler clients?

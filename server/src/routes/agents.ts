@@ -6,6 +6,7 @@ import {
   createAgentKeySchema,
   createAgentHireSchema,
   createAgentSchema,
+  resetAgentSessionSchema,
   updateAgentPermissionsSchema,
   wakeAgentSchema,
   updateAgentSchema,
@@ -357,7 +358,7 @@ export function agentRoutes(db: Db) {
     res.json(state);
   });
 
-  router.post("/agents/:id/runtime-state/reset-session", async (req, res) => {
+  router.get("/agents/:id/task-sessions", async (req, res) => {
     assertBoard(req);
     const id = req.params.id as string;
     const agent = await svc.getById(id);
@@ -367,7 +368,30 @@ export function agentRoutes(db: Db) {
     }
     assertCompanyAccess(req, agent.companyId);
 
-    const state = await heartbeat.resetRuntimeSession(id);
+    const sessions = await heartbeat.listTaskSessions(id);
+    res.json(
+      sessions.map((session) => ({
+        ...session,
+        sessionParamsJson: redactEventPayload(session.sessionParamsJson ?? null),
+      })),
+    );
+  });
+
+  router.post("/agents/:id/runtime-state/reset-session", validate(resetAgentSessionSchema), async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+
+    const taskKey =
+      typeof req.body.taskKey === "string" && req.body.taskKey.trim().length > 0
+        ? req.body.taskKey.trim()
+        : null;
+    const state = await heartbeat.resetRuntimeSession(id, { taskKey });
 
     await logActivity(db, {
       companyId: agent.companyId,
@@ -376,6 +400,7 @@ export function agentRoutes(db: Db) {
       action: "agent.runtime_session_reset",
       entityType: "agent",
       entityId: id,
+      details: { taskKey: taskKey ?? null },
     });
 
     res.json(state);

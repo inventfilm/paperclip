@@ -5,6 +5,7 @@ import {
   agents,
   agentApiKeys,
   agentRuntimeState,
+  agentTaskSessions,
   agentWakeupRequests,
   issues,
   issueComments,
@@ -56,6 +57,7 @@ export function companyService(db: Db) {
       db.transaction(async (tx) => {
         // Delete from child tables in dependency order
         await tx.delete(heartbeatRunEvents).where(eq(heartbeatRunEvents.companyId, id));
+        await tx.delete(agentTaskSessions).where(eq(agentTaskSessions.companyId, id));
         await tx.delete(heartbeatRuns).where(eq(heartbeatRuns.companyId, id));
         await tx.delete(agentWakeupRequests).where(eq(agentWakeupRequests.companyId, id));
         await tx.delete(agentApiKeys).where(eq(agentApiKeys.companyId, id));
