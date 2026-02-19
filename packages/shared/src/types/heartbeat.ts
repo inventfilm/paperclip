@@ -56,6 +56,8 @@ export interface AgentRuntimeState {
   companyId: string;
   adapterType: string;
   sessionId: string | null;
+  sessionDisplayId?: string | null;
+  sessionParamsJson?: Record<string, unknown> | null;
   stateJson: Record<string, unknown>;
   lastRunId: string | null;
   lastRunStatus: string | null;
@@ -63,6 +65,20 @@ export interface AgentRuntimeState {
   totalOutputTokens: number;
   totalCachedInputTokens: number;
   totalCostCents: number;
+  lastError: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface AgentTaskSession {
+  id: string;
+  companyId: string;
+  agentId: string;
+  adapterType: string;
+  taskKey: string;
+  sessionParamsJson: Record<string, unknown> | null;
+  sessionDisplayId: string | null;
+  lastRunId: string | null;
   lastError: string | null;
   createdAt: Date;
   updatedAt: Date;

@@ -11,6 +11,7 @@ export {
   updateAgentSchema,
   createAgentKeySchema,
   wakeAgentSchema,
+  resetAgentSessionSchema,
   agentPermissionsSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
@@ -18,6 +19,7 @@ export {
   type UpdateAgent,
   type CreateAgentKey,
   type WakeAgent,
+  type ResetAgentSession,
   type UpdateAgentPermissions,
 } from "./agent.js";
 

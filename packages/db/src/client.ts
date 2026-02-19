@@ -243,23 +243,6 @@ async function loadAppliedMigrations(
     return rows.map((row) => row.name).filter((name): name is string => Boolean(name));
   }
 
-  if (columnNames.has("hash") && columnNames.has("created_at")) {
-    const journalEntries = await listJournalMigrationEntries();
-    if (journalEntries.length > 0) {
-      const lastDbRows = await sql.unsafe<{ created_at: string | number | null }[]>(
-        `SELECT created_at FROM ${qualifiedTable} ORDER BY created_at DESC LIMIT 1`,
-      );
-      const lastCreatedAt = Number(lastDbRows[0]?.created_at ?? -1);
-      if (Number.isFinite(lastCreatedAt) && lastCreatedAt >= 0) {
-        return journalEntries
-          .filter((entry) => availableMigrations.includes(entry.fileName))
-          .filter((entry) => entry.folderMillis <= lastCreatedAt)
-          .map((entry) => entry.fileName);
-      }
-      return [];
-    }
-  }
-
   if (columnNames.has("hash")) {
     const rows = await sql.unsafe<{ hash: string }[]>(`SELECT hash FROM ${qualifiedTable} ORDER BY id`);
     const hashesToMigrationFiles = await mapHashesToMigrationFiles(availableMigrations);
@@ -267,7 +250,31 @@ async function loadAppliedMigrations(
       .map((row) => hashesToMigrationFiles.get(row.hash))
       .filter((name): name is string => Boolean(name));
 
-    if (appliedFromHashes.length > 0) return appliedFromHashes;
+    if (appliedFromHashes.length > 0) {
+      // Best-effort: when all hashes resolve, this is authoritative.
+      if (appliedFromHashes.length === rows.length) return appliedFromHashes;
+
+      // Partial hash resolution can happen when files have changed; return what we can trust.
+      return appliedFromHashes;
+    }
+
+    // Fallback only when hashes are unavailable/unresolved.
+    if (columnNames.has("created_at")) {
+      const journalEntries = await listJournalMigrationEntries();
+      if (journalEntries.length > 0) {
+        const lastDbRows = await sql.unsafe<{ created_at: string | number | null }[]>(
+          `SELECT created_at FROM ${qualifiedTable} ORDER BY created_at DESC LIMIT 1`,
+        );
+        const lastCreatedAt = Number(lastDbRows[0]?.created_at ?? -1);
+        if (Number.isFinite(lastCreatedAt) && lastCreatedAt >= 0) {
+          return journalEntries
+            .filter((entry) => availableMigrations.includes(entry.fileName))
+            .filter((entry) => entry.folderMillis <= lastCreatedAt)
+            .map((entry) => entry.fileName)
+            .slice(0, rows.length);
+        }
+      }
+    }
   }
 
   const rows = await sql.unsafe<{ id: number }[]>(`SELECT id FROM ${qualifiedTable} ORDER BY id`);

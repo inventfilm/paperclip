@@ -50,6 +50,13 @@
       "when": 1771545602000,
       "tag": "0006_overjoyed_mister_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1771545603000,
+      "tag": "0007_new_quentin_quire",
+      "breakpoints": true
     }
   ]
 }

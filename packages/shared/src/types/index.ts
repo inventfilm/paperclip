@@ -9,6 +9,7 @@ export type {
   HeartbeatRun,
   HeartbeatRunEvent,
   AgentRuntimeState,
+  AgentTaskSession,
   AgentWakeupRequest,
 } from "./heartbeat.js";
 export type { LiveEvent } from "./live.js";
