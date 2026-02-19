@@ -14,6 +14,7 @@ export const updateCompanySchema = createCompanySchema
   .extend({
     status: z.enum(COMPANY_STATUSES).optional(),
     spentMonthlyCents: z.number().int().nonnegative().optional(),
+    requireBoardApprovalForNewAgents: z.boolean().optional(),
   });
 
 export type UpdateCompany = z.infer<typeof updateCompanySchema>;

@@ -4,6 +4,10 @@ import type {
   AgentStatus,
 } from "../constants.js";
 
+export interface AgentPermissions {
+  canCreateAgents: boolean;
+}
+
 export interface Agent {
   id: string;
   companyId: string;
@@ -18,6 +22,7 @@ export interface Agent {
   runtimeConfig: Record<string, unknown>;
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
+  permissions: AgentPermissions;
   lastHeartbeatAt: Date | null;
   metadata: Record<string, unknown> | null;
   createdAt: Date;

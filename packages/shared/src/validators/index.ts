@@ -10,10 +10,13 @@ export {
   updateAgentSchema,
   createAgentKeySchema,
   wakeAgentSchema,
+  agentPermissionsSchema,
+  updateAgentPermissionsSchema,
   type CreateAgent,
   type UpdateAgent,
   type CreateAgentKey,
   type WakeAgent,
+  type UpdateAgentPermissions,
 } from "./agent.js";
 
 export {
@@ -44,8 +47,14 @@ export {
 export {
   createApprovalSchema,
   resolveApprovalSchema,
+  requestApprovalRevisionSchema,
+  resubmitApprovalSchema,
+  addApprovalCommentSchema,
   type CreateApproval,
   type ResolveApproval,
+  type RequestApprovalRevision,
+  type ResubmitApproval,
+  type AddApprovalComment,
 } from "./approval.js";
 
 export {

@@ -7,6 +7,7 @@ export const AGENT_STATUSES = [
   "idle",
   "running",
   "error",
+  "pending_approval",
   "terminated",
 ] as const;
 export type AgentStatus = (typeof AGENT_STATUSES)[number];
@@ -61,7 +62,13 @@ export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 export const APPROVAL_TYPES = ["hire_agent", "approve_ceo_strategy"] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 
-export const APPROVAL_STATUSES = ["pending", "approved", "rejected", "cancelled"] as const;
+export const APPROVAL_STATUSES = [
+  "pending",
+  "revision_requested",
+  "approved",
+  "rejected",
+  "cancelled",
+] as const;
 export type ApprovalStatus = (typeof APPROVAL_STATUSES)[number];
 
 export const HEARTBEAT_INVOCATION_SOURCES = [

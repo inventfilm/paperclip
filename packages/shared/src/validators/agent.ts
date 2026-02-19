@@ -5,6 +5,10 @@ import {
   AGENT_STATUSES,
 } from "../constants.js";
 
+export const agentPermissionsSchema = z.object({
+  canCreateAgents: z.boolean().optional().default(false),
+});
+
 export const createAgentSchema = z.object({
   name: z.string().min(1),
   role: z.enum(AGENT_ROLES).optional().default("general"),
@@ -15,6 +19,7 @@ export const createAgentSchema = z.object({
   adapterConfig: z.record(z.unknown()).optional().default({}),
   runtimeConfig: z.record(z.unknown()).optional().default({}),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
+  permissions: agentPermissionsSchema.optional(),
   metadata: z.record(z.unknown()).optional().nullable(),
 });
 
@@ -44,3 +49,9 @@ export const wakeAgentSchema = z.object({
 });
 
 export type WakeAgent = z.infer<typeof wakeAgentSchema>;
+
+export const updateAgentPermissionsSchema = z.object({
+  canCreateAgents: z.boolean(),
+});
+
+export type UpdateAgentPermissions = z.infer<typeof updateAgentPermissionsSchema>;

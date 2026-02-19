@@ -3,7 +3,7 @@ export type { Agent, AgentKeyCreated } from "./agent.js";
 export type { Project } from "./project.js";
 export type { Issue, IssueComment, IssueAncestor } from "./issue.js";
 export type { Goal } from "./goal.js";
-export type { Approval } from "./approval.js";
+export type { Approval, ApprovalComment } from "./approval.js";
 export type { CostEvent, CostSummary } from "./cost.js";
 export type {
   HeartbeatRun,
