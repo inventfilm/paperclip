@@ -14,21 +14,32 @@ import {
   heartbeatService,
   issueApprovalService,
   logActivity,
+  secretService,
 } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { redactEventPayload } from "../redaction.js";
+
+function redactApprovalPayload<T extends { payload: Record<string, unknown> }>(approval: T): T {
+  return {
+    ...approval,
+    payload: redactEventPayload(approval.payload) ?? {},
+  };
+}
 
 export function approvalRoutes(db: Db) {
   const router = Router();
   const svc = approvalService(db);
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
+  const secretsSvc = secretService(db);
+  const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
 
   router.get("/companies/:companyId/approvals", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const status = req.query.status as string | undefined;
     const result = await svc.list(companyId, status);
-    res.json(result);
+    res.json(result.map((approval) => redactApprovalPayload(approval)));
   });
 
   router.get("/approvals/:id", async (req, res) => {
@@ -39,7 +50,7 @@ export function approvalRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, approval.companyId);
-    res.json(approval);
+    res.json(redactApprovalPayload(approval));
   });
 
   router.post("/companies/:companyId/approvals", validate(createApprovalSchema), async (req, res) => {
@@ -51,10 +62,19 @@ export function approvalRoutes(db: Db) {
       : [];
     const uniqueIssueIds = Array.from(new Set(issueIds));
     const { issueIds: _issueIds, ...approvalInput } = req.body;
+    const normalizedPayload =
+      approvalInput.type === "hire_agent"
+        ? await secretsSvc.normalizeHireApprovalPayloadForPersistence(
+            companyId,
+            approvalInput.payload,
+            { strictMode: strictSecretsMode },
+          )
+        : approvalInput.payload;
 
     const actor = getActorInfo(req);
     const approval = await svc.create(companyId, {
       ...approvalInput,
+      payload: normalizedPayload,
       requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
       requestedByAgentId:
         approvalInput.requestedByAgentId ?? (actor.actorType === "agent" ? actor.actorId : null),
@@ -83,7 +103,7 @@ export function approvalRoutes(db: Db) {
       details: { type: approval.type, issueIds: uniqueIssueIds },
     });
 
-    res.status(201).json(approval);
+    res.status(201).json(redactApprovalPayload(approval));
   });
 
   router.get("/approvals/:id/issues", async (req, res) => {
@@ -183,7 +203,7 @@ export function approvalRoutes(db: Db) {
       }
     }
 
-    res.json(approval);
+    res.json(redactApprovalPayload(approval));
   });
 
   router.post("/approvals/:id/reject", validate(resolveApprovalSchema), async (req, res) => {
@@ -201,7 +221,7 @@ export function approvalRoutes(db: Db) {
       details: { type: approval.type },
     });
 
-    res.json(approval);
+    res.json(redactApprovalPayload(approval));
   });
 
   router.post(
@@ -226,7 +246,7 @@ export function approvalRoutes(db: Db) {
         details: { type: approval.type },
       });
 
-      res.json(approval);
+      res.json(redactApprovalPayload(approval));
     },
   );
 
@@ -244,7 +264,16 @@ export function approvalRoutes(db: Db) {
       return;
     }
 
-    const approval = await svc.resubmit(id, req.body.payload);
+    const normalizedPayload = req.body.payload
+      ? existing.type === "hire_agent"
+        ? await secretsSvc.normalizeHireApprovalPayloadForPersistence(
+            existing.companyId,
+            req.body.payload,
+            { strictMode: strictSecretsMode },
+          )
+        : req.body.payload
+      : undefined;
+    const approval = await svc.resubmit(id, normalizedPayload);
     const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: approval.companyId,
@@ -256,7 +285,7 @@ export function approvalRoutes(db: Db) {
       entityId: approval.id,
       details: { type: approval.type },
     });
-    res.json(approval);
+    res.json(redactApprovalPayload(approval));
   });
 
   router.get("/approvals/:id/comments", async (req, res) => {

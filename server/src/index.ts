@@ -33,6 +33,15 @@ type EmbeddedPostgresCtor = new (opts: {
 }) => EmbeddedPostgresInstance;
 
 const config = loadConfig();
+if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
+  process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
+}
+if (process.env.PAPERCLIP_SECRETS_STRICT_MODE === undefined) {
+  process.env.PAPERCLIP_SECRETS_STRICT_MODE = config.secretsStrictMode ? "true" : "false";
+}
+if (process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE === undefined) {
+  process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = config.secretsMasterKeyFilePath;
+}
 
 type MigrationSummary =
   | "skipped"

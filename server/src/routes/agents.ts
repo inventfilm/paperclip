@@ -19,49 +19,12 @@ import {
   issueApprovalService,
   issueService,
   logActivity,
+  secretService,
 } from "../services/index.js";
 import { forbidden } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { listAdapterModels } from "../adapters/index.js";
-
-const SECRET_PAYLOAD_KEY_RE =
-  /(api[-_]?key|access[-_]?token|auth(?:_?token)?|authorization|bearer|secret|passwd|password|credential|jwt|private[-_]?key|cookie|connectionstring)/i;
-const JWT_VALUE_RE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/;
-const REDACTED_EVENT_VALUE = "***REDACTED***";
-
-function sanitizeValue(value: unknown): unknown {
-  if (value === null || value === undefined) return value;
-  if (Array.isArray(value)) return value.map(sanitizeValue);
-  if (typeof value !== "object") return value;
-  if (value instanceof Date) return value;
-  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) return value;
-  return sanitizeRecord(value as Record<string, unknown>);
-}
-
-function sanitizeRecord(record: Record<string, unknown>): Record<string, unknown> {
-  const redacted: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(record)) {
-    const isSensitiveKey = SECRET_PAYLOAD_KEY_RE.test(key);
-    if (isSensitiveKey) {
-      redacted[key] = REDACTED_EVENT_VALUE;
-      continue;
-    }
-    if (typeof value === "string" && JWT_VALUE_RE.test(value)) {
-      redacted[key] = REDACTED_EVENT_VALUE;
-      continue;
-    }
-    redacted[key] = sanitizeValue(value);
-  }
-  return redacted;
-}
-
-function redactEventPayload(payload: Record<string, unknown> | null): Record<string, unknown> | null {
-  if (!payload) return null;
-  if (Array.isArray(payload) || typeof payload !== "object") {
-    return payload as Record<string, unknown>;
-  }
-  return sanitizeRecord(payload);
-}
+import { redactEventPayload } from "../redaction.js";
 
 export function agentRoutes(db: Db) {
   const router = Router();
@@ -69,6 +32,8 @@ export function agentRoutes(db: Db) {
   const approvalsSvc = approvalService(db);
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
+  const secretsSvc = secretService(db);
+  const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
 
   function canCreateAgents(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
     if (!agent.permissions || typeof agent.permissions !== "object") return false;
@@ -128,6 +93,28 @@ export function agentRoutes(db: Db) {
       values.push(input.sourceIssueId);
     }
     return Array.from(new Set(values));
+  }
+
+  function asRecord(value: unknown): Record<string, unknown> | null {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+  }
+
+  function summarizeAgentUpdateDetails(patch: Record<string, unknown>) {
+    const changedTopLevelKeys = Object.keys(patch).sort();
+    const details: Record<string, unknown> = { changedTopLevelKeys };
+
+    const adapterConfigPatch = asRecord(patch.adapterConfig);
+    if (adapterConfigPatch) {
+      details.changedAdapterConfigKeys = Object.keys(adapterConfigPatch).sort();
+    }
+
+    const runtimeConfigPatch = asRecord(patch.runtimeConfig);
+    if (runtimeConfigPatch) {
+      details.changedRuntimeConfigKeys = Object.keys(runtimeConfigPatch).sort();
+    }
+
+    return details;
   }
 
   function redactForRestrictedAgentView(agent: Awaited<ReturnType<typeof svc.getById>>) {
@@ -411,6 +398,15 @@ export function agentRoutes(db: Db) {
     await assertCanCreateAgentsForCompany(req, companyId);
     const sourceIssueIds = parseSourceIssueIds(req.body);
     const { sourceIssueId: _sourceIssueId, sourceIssueIds: _sourceIssueIds, ...hireInput } = req.body;
+    const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
+      companyId,
+      ((hireInput.adapterConfig ?? {}) as Record<string, unknown>),
+      { strictMode: strictSecretsMode },
+    );
+    const normalizedHireInput = {
+      ...hireInput,
+      adapterConfig: normalizedAdapterConfig,
+    };
 
     const company = await db
       .select()
@@ -425,7 +421,7 @@ export function agentRoutes(db: Db) {
     const requiresApproval = company.requireBoardApprovalForNewAgents;
     const status = requiresApproval ? "pending_approval" : "idle";
     const agent = await svc.create(companyId, {
-      ...hireInput,
+      ...normalizedHireInput,
       status,
       spentMonthlyCents: 0,
       lastHeartbeatAt: null,
@@ -435,19 +431,44 @@ export function agentRoutes(db: Db) {
     const actor = getActorInfo(req);
 
     if (requiresApproval) {
+      const requestedAdapterType = normalizedHireInput.adapterType ?? agent.adapterType;
+      const requestedAdapterConfig =
+        redactEventPayload(
+          (normalizedHireInput.adapterConfig ?? agent.adapterConfig) as Record<string, unknown>,
+        ) ?? {};
+      const requestedRuntimeConfig =
+        redactEventPayload(
+          (normalizedHireInput.runtimeConfig ?? agent.runtimeConfig) as Record<string, unknown>,
+        ) ?? {};
+      const requestedMetadata =
+        redactEventPayload(
+          ((normalizedHireInput.metadata ?? agent.metadata ?? {}) as Record<string, unknown>),
+        ) ?? {};
       approval = await approvalsSvc.create(companyId, {
         type: "hire_agent",
         requestedByAgentId: actor.actorType === "agent" ? actor.actorId : null,
         requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
         status: "pending",
         payload: {
-          ...hireInput,
+          name: normalizedHireInput.name,
+          role: normalizedHireInput.role,
+          title: normalizedHireInput.title ?? null,
+          reportsTo: normalizedHireInput.reportsTo ?? null,
+          capabilities: normalizedHireInput.capabilities ?? null,
+          adapterType: requestedAdapterType,
+          adapterConfig: requestedAdapterConfig,
+          runtimeConfig: requestedRuntimeConfig,
+          budgetMonthlyCents:
+            typeof normalizedHireInput.budgetMonthlyCents === "number"
+              ? normalizedHireInput.budgetMonthlyCents
+              : agent.budgetMonthlyCents,
+          metadata: requestedMetadata,
           agentId: agent.id,
           requestedByAgentId: actor.actorType === "agent" ? actor.actorId : null,
           requestedConfigurationSnapshot: {
-            adapterType: hireInput.adapterType ?? agent.adapterType,
-            adapterConfig: hireInput.adapterConfig ?? agent.adapterConfig,
-            runtimeConfig: hireInput.runtimeConfig ?? agent.runtimeConfig,
+            adapterType: requestedAdapterType,
+            adapterConfig: requestedAdapterConfig,
+            runtimeConfig: requestedRuntimeConfig,
           },
         },
         decisionNote: null,
@@ -507,8 +528,15 @@ export function agentRoutes(db: Db) {
       assertBoard(req);
     }
 
+    const normalizedAdapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
+      companyId,
+      ((req.body.adapterConfig ?? {}) as Record<string, unknown>),
+      { strictMode: strictSecretsMode },
+    );
+
     const agent = await svc.create(companyId, {
       ...req.body,
+      adapterConfig: normalizedAdapterConfig,
       status: "idle",
       spentMonthlyCents: 0,
       lastHeartbeatAt: null,
@@ -587,8 +615,22 @@ export function agentRoutes(db: Db) {
       return;
     }
 
+    const patchData = { ...(req.body as Record<string, unknown>) };
+    if (Object.prototype.hasOwnProperty.call(patchData, "adapterConfig")) {
+      const adapterConfig = asRecord(patchData.adapterConfig);
+      if (!adapterConfig) {
+        res.status(422).json({ error: "adapterConfig must be an object" });
+        return;
+      }
+      patchData.adapterConfig = await secretsSvc.normalizeAdapterConfigForPersistence(
+        existing.companyId,
+        adapterConfig,
+        { strictMode: strictSecretsMode },
+      );
+    }
+
     const actor = getActorInfo(req);
-    const agent = await svc.update(id, req.body, {
+    const agent = await svc.update(id, patchData, {
       recordRevision: {
         createdByAgentId: actor.agentId,
         createdByUserId: actor.actorType === "user" ? actor.actorId : null,
@@ -609,7 +651,7 @@ export function agentRoutes(db: Db) {
       action: "agent.updated",
       entityType: "agent",
       entityId: agent.id,
-      details: req.body,
+      details: summarizeAgentUpdateDetails(patchData),
     });
 
     res.json(agent);

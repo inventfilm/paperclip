@@ -6,6 +6,7 @@ export { issueApprovalService } from "./issue-approvals.js";
 export { goalService } from "./goals.js";
 export { activityService, type ActivityFilters } from "./activity.js";
 export { approvalService } from "./approvals.js";
+export { secretService } from "./secrets.js";
 export { costService } from "./costs.js";
 export { heartbeatService } from "./heartbeat.js";
 export { dashboardService } from "./dashboard.js";

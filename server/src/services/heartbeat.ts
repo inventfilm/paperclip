@@ -17,6 +17,7 @@ import { getServerAdapter, runningProcesses } from "../adapters/index.js";
 import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec } from "../adapters/index.js";
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
+import { secretService } from "./secrets.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 
@@ -153,6 +154,7 @@ function resolveNextSessionState(input: {
 
 export function heartbeatService(db: Db) {
   const runLogStore = getRunLogStore();
+  const secretsSvc = secretService(db);
 
   async function getAgent(agentId: string) {
     return db
@@ -689,6 +691,10 @@ export function heartbeatService(db: Db) {
       };
 
       const config = parseObject(agent.adapterConfig);
+      const resolvedConfig = await secretsSvc.resolveAdapterConfigForRuntime(
+        agent.companyId,
+        config,
+      );
       const onAdapterMeta = async (meta: AdapterInvocationMeta) => {
         await appendRunEvent(currentRun, seq++, {
           eventType: "adapter.invoke",
@@ -718,7 +724,7 @@ export function heartbeatService(db: Db) {
         runId: run.id,
         agent,
         runtime: runtimeForAdapter,
-        config,
+        config: resolvedConfig,
         context,
         onLog,
         onMeta: onAdapterMeta,

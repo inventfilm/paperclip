@@ -13,6 +13,7 @@ import {
 } from "@paperclip/db";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
+import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -60,6 +61,18 @@ function jsonEqual(left: unknown, right: unknown): boolean {
 function buildConfigSnapshot(
   row: Pick<typeof agents.$inferSelect, ConfigRevisionField>,
 ): AgentConfigSnapshot {
+  const adapterConfig =
+    typeof row.adapterConfig === "object" && row.adapterConfig !== null && !Array.isArray(row.adapterConfig)
+      ? sanitizeRecord(row.adapterConfig as Record<string, unknown>)
+      : {};
+  const runtimeConfig =
+    typeof row.runtimeConfig === "object" && row.runtimeConfig !== null && !Array.isArray(row.runtimeConfig)
+      ? sanitizeRecord(row.runtimeConfig as Record<string, unknown>)
+      : {};
+  const metadata =
+    typeof row.metadata === "object" && row.metadata !== null && !Array.isArray(row.metadata)
+      ? sanitizeRecord(row.metadata as Record<string, unknown>)
+      : row.metadata ?? null;
   return {
     name: row.name,
     role: row.role,
@@ -67,11 +80,18 @@ function buildConfigSnapshot(
     reportsTo: row.reportsTo,
     capabilities: row.capabilities,
     adapterType: row.adapterType,
-    adapterConfig: row.adapterConfig ?? {},
-    runtimeConfig: row.runtimeConfig ?? {},
+    adapterConfig,
+    runtimeConfig,
     budgetMonthlyCents: row.budgetMonthlyCents,
-    metadata: row.metadata ?? null,
+    metadata,
   };
+}
+
+function containsRedactedMarker(value: unknown): boolean {
+  if (value === REDACTED_EVENT_VALUE) return true;
+  if (Array.isArray(value)) return value.some((item) => containsRedactedMarker(item));
+  if (typeof value !== "object" || value === null) return false;
+  return Object.values(value as Record<string, unknown>).some((entry) => containsRedactedMarker(entry));
 }
 
 function hasConfigPatchFields(data: Partial<typeof agents.$inferInsert>) {
@@ -374,6 +394,9 @@ export function agentService(db: Db) {
         .where(and(eq(agentConfigRevisions.agentId, id), eq(agentConfigRevisions.id, revisionId)))
         .then((rows) => rows[0] ?? null);
       if (!revision) return null;
+      if (containsRedactedMarker(revision.afterConfig)) {
+        throw unprocessable("Cannot roll back a revision that contains redacted secret values");
+      }
 
       const patch = configPatchFromSnapshot(revision.afterConfig);
       return updateAgent(id, patch, {

@@ -2,6 +2,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import { approvals, issueApprovals, issues } from "@paperclip/db";
 import { notFound, unprocessable } from "../errors.js";
+import { redactEventPayload } from "../redaction.js";
 
 interface LinkActor {
   agentId?: string | null;
@@ -44,7 +45,7 @@ export function issueApprovalService(db: Db) {
       const issue = await getIssue(issueId);
       if (!issue) throw notFound("Issue not found");
 
-      return db
+      const result = await db
         .select({
           id: approvals.id,
           companyId: approvals.companyId,
@@ -63,6 +64,10 @@ export function issueApprovalService(db: Db) {
         .innerJoin(approvals, eq(issueApprovals.approvalId, approvals.id))
         .where(eq(issueApprovals.issueId, issueId))
         .orderBy(desc(issueApprovals.createdAt));
+      return result.map((approval) => ({
+        ...approval,
+        payload: redactEventPayload(approval.payload) ?? {},
+      }));
     },
 
     listIssuesForApproval: async (approvalId: string) => {

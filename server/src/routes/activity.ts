@@ -5,6 +5,7 @@ import { validate } from "../middleware/validate.js";
 import { activityService } from "../services/activity.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { issueService } from "../services/index.js";
+import { sanitizeRecord } from "../redaction.js";
 
 const createActivitySchema = z.object({
   actorType: z.enum(["agent", "user", "system"]).optional().default("system"),
@@ -41,6 +42,7 @@ export function activityRoutes(db: Db) {
     const event = await svc.create({
       companyId,
       ...req.body,
+      details: req.body.details ? sanitizeRecord(req.body.details) : null,
     });
     res.status(201).json(event);
   });

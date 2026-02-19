@@ -71,6 +71,7 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
       }
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
+      conditions.push(isNull(issues.hiddenAt));
 
       const priorityOrder = sql`CASE ${issues.priority} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
       return db.select().from(issues).where(and(...conditions)).orderBy(asc(priorityOrder), desc(issues.updatedAt));
