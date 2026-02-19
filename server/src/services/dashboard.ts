@@ -52,7 +52,10 @@ export function dashboardService(db: Db) {
         error: 0,
       };
       for (const row of agentRows) {
-        agentCounts[row.status] = Number(row.count);
+        const count = Number(row.count);
+        // "idle" agents are operational — count them as active
+        const bucket = row.status === "idle" ? "active" : row.status;
+        agentCounts[bucket] = (agentCounts[bucket] ?? 0) + count;
       }
 
       const taskCounts: Record<string, number> = {

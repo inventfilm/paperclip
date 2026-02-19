@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -36,8 +36,8 @@ const issueTabItems = [
 ] as const;
 
 function parseIssueTab(value: string | null): TabFilter {
-  if (value === "active" || value === "backlog" || value === "done") return value;
-  return "all";
+  if (value === "all" || value === "active" || value === "backlog" || value === "done") return value;
+  return "active";
 }
 
 function filterIssues(issues: Issue[], tab: TabFilter): Issue[] {
@@ -59,8 +59,9 @@ export function Issues() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tab = parseIssueTab(searchParams.get("tab"));
+  const location = useLocation();
+  const pathSegment = location.pathname.split("/").pop() ?? "active";
+  const tab = parseIssueTab(pathSegment);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -102,10 +103,7 @@ export function Issues() {
     .map((s) => ({ status: s, items: grouped[s]! }));
 
   const setTab = (nextTab: TabFilter) => {
-    const next = new URLSearchParams(searchParams);
-    if (nextTab === "all") next.delete("tab");
-    else next.set("tab", nextTab);
-    setSearchParams(next);
+    navigate(`/issues/${nextTab}`);
   };
 
   return (

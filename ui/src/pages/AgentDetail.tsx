@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { useParams, useNavigate, Link, useBeforeUnload, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, Link, useBeforeUnload } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type AgentKey } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
@@ -18,6 +18,7 @@ import type { TranscriptEntry } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
 import { CopyText } from "../components/CopyText";
 import { EntityRow } from "../components/EntityRow";
+import { Identity } from "../components/Identity";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
@@ -48,7 +49,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState, AgentTaskSession } from "@paperclip/shared";
+import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState } from "@paperclip/shared";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-400" },
@@ -152,17 +153,16 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 export function AgentDetail() {
-  const { agentId, runId: urlRunId } = useParams<{ agentId: string; runId?: string }>();
+  const { agentId, tab: urlTab, runId: urlRunId } = useParams<{ agentId: string; tab?: string; runId?: string }>();
   const { selectedCompanyId } = useCompany();
   const { closePanel } = usePanel();
   const { openNewIssue } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [actionError, setActionError] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
-  const activeTab = urlRunId ? "runs" as AgentDetailTab : parseAgentDetailTab(searchParams.get("tab"));
+  const activeTab = urlRunId ? "runs" as AgentDetailTab : parseAgentDetailTab(urlTab ?? null);
   const [configDirty, setConfigDirty] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
   const saveConfigActionRef = useRef<(() => void) | null>(null);
@@ -179,12 +179,6 @@ export function AgentDetail() {
   const { data: runtimeState } = useQuery({
     queryKey: queryKeys.agents.runtimeState(agentId!),
     queryFn: () => agentsApi.runtimeState(agentId!),
-    enabled: !!agentId,
-  });
-
-  const { data: taskSessions } = useQuery({
-    queryKey: queryKeys.agents.taskSessions(agentId!),
-    queryFn: () => agentsApi.taskSessions(agentId!),
     enabled: !!agentId,
   });
 
@@ -284,17 +278,8 @@ export function AgentDetail() {
   const setActiveTab = useCallback((nextTab: string) => {
     if (configDirty && !window.confirm("You have unsaved changes. Discard them?")) return;
     const next = parseAgentDetailTab(nextTab);
-    // If we're on a /runs/:runId URL and switching tabs, navigate back to base agent URL
-    if (urlRunId) {
-      const tabParam = next === "overview" ? "" : `?tab=${next}`;
-      navigate(`/agents/${agentId}${tabParam}`, { replace: true });
-      return;
-    }
-    const params = new URLSearchParams(searchParams);
-    if (next === "overview") params.delete("tab");
-    else params.set("tab", next);
-    setSearchParams(params);
-  }, [searchParams, setSearchParams, urlRunId, agentId, navigate, configDirty]);
+    navigate(`/agents/${agentId}/${next}`, { replace: !!urlRunId });
+  }, [agentId, navigate, configDirty, urlRunId]);
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
@@ -435,8 +420,8 @@ export function AgentDetail() {
         <PageTabBar
           items={[
             { value: "overview", label: "Overview" },
+            { value: "runs", label: "Runs" },
             { value: "configuration", label: "Configuration" },
-            { value: "runs", label: `Runs${heartbeats ? ` (${heartbeats.length})` : ""}` },
             { value: "issues", label: `Issues (${assignedIssues.length})` },
             { value: "costs", label: "Costs" },
             { value: "keys", label: "API Keys" },
@@ -475,20 +460,27 @@ export function AgentDetail() {
                     : <span className="text-muted-foreground">Never</span>
                   }
                 </SummaryRow>
-                <SummaryRow label="Session">
-                  {(runtimeState?.sessionDisplayId ?? runtimeState?.sessionId)
-                    ? <span className="font-mono text-xs">{String(runtimeState?.sessionDisplayId ?? runtimeState?.sessionId).slice(0, 16)}...</span>
-                    : <span className="text-muted-foreground">No session</span>
-                  }
+                <SummaryRow label="Budget">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={cn(
+                          "h-full rounded-full",
+                          (() => {
+                            const pct = agent.budgetMonthlyCents > 0
+                              ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100)
+                              : 0;
+                            return pct > 90 ? "bg-red-400" : pct > 70 ? "bg-yellow-400" : "bg-green-400";
+                          })(),
+                        )}
+                        style={{ width: `${Math.min(100, agent.budgetMonthlyCents > 0 ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100) : 0)}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)}
+                    </span>
+                  </div>
                 </SummaryRow>
-                <SummaryRow label="Task sessions">
-                  <span>{taskSessions?.length ?? 0}</span>
-                </SummaryRow>
-                {runtimeState && (
-                  <SummaryRow label="Total spend">
-                    <span>{formatCents(runtimeState.totalCostCents)}</span>
-                  </SummaryRow>
-                )}
               </div>
             </div>
 
@@ -502,7 +494,7 @@ export function AgentDetail() {
                       to={`/agents/${reportsToAgent.id}`}
                       className="text-blue-400 hover:underline"
                     >
-                      {reportsToAgent.name}
+                      <Identity name={reportsToAgent.name} size="sm" />
                     </Link>
                   ) : (
                     <span className="text-muted-foreground">Nobody (top-level)</span>
@@ -542,33 +534,16 @@ export function AgentDetail() {
                     <p className="text-sm mt-0.5">{agent.capabilities}</p>
                   </div>
                 )}
-                <div className="pt-2 border-t border-border/60">
-                  <span className="text-xs text-muted-foreground">Permissions</span>
-                  <div className="mt-1 flex items-center justify-between text-sm">
-                    <span>Can create new agents</span>
-                    <Button
-                      variant={agent.permissions?.canCreateAgents ? "default" : "outline"}
-                      size="sm"
-                      className="h-7 px-2.5 text-xs"
-                      onClick={() =>
-                        updatePermissions.mutate(!Boolean(agent.permissions?.canCreateAgents))
-                      }
-                      disabled={updatePermissions.isPending}
-                    >
-                      {agent.permissions?.canCreateAgents ? "Enabled" : "Disabled"}
-                    </Button>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
 
-          <TaskSessionsCard
-            sessions={taskSessions ?? []}
-            onResetTask={(taskKey) => resetTaskSession.mutate(taskKey)}
-            onResetAll={() => resetTaskSession.mutate(null)}
-            resetting={resetTaskSession.isPending}
-          />
+          <LatestRunCard runs={heartbeats ?? []} agentId={agentId!} />
+        </TabsContent>
+
+        {/* RUNS TAB */}
+        <TabsContent value="runs" className="mt-4">
+          <RunsTab runs={heartbeats ?? []} companyId={selectedCompanyId!} agentId={agentId!} selectedRunId={urlRunId ?? null} adapterType={agent.adapterType} />
         </TabsContent>
 
         {/* CONFIGURATION TAB */}
@@ -579,12 +554,8 @@ export function AgentDetail() {
             onSaveActionChange={setSaveConfigAction}
             onCancelActionChange={setCancelConfigAction}
             onSavingChange={setConfigSaving}
+            updatePermissions={updatePermissions}
           />
-        </TabsContent>
-
-        {/* RUNS TAB */}
-        <TabsContent value="runs" className="mt-4">
-          <RunsTab runs={heartbeats ?? []} companyId={selectedCompanyId!} agentId={agentId!} selectedRunId={urlRunId ?? null} adapterType={agent.adapterType} />
         </TabsContent>
 
         {/* ISSUES TAB */}
@@ -631,60 +602,72 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
   );
 }
 
-function TaskSessionsCard({
-  sessions,
-  onResetTask,
-  onResetAll,
-  resetting,
-}: {
-  sessions: AgentTaskSession[];
-  onResetTask: (taskKey: string) => void;
-  onResetAll: () => void;
-  resetting: boolean;
-}) {
+function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: string }) {
+  const navigate = useNavigate();
+
+  if (runs.length === 0) return null;
+
+  const sorted = [...runs].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  const liveRun = sorted.find((r) => r.status === "running" || r.status === "queued");
+  const run = liveRun ?? sorted[0];
+  const isLive = run.status === "running" || run.status === "queued";
+  const metrics = runMetrics(run);
+  const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
+  const StatusIcon = statusInfo.icon;
+  const summary = run.resultJson
+    ? String((run.resultJson as Record<string, unknown>).summary ?? (run.resultJson as Record<string, unknown>).result ?? "")
+    : run.error ?? "";
+
   return (
-    <div className="border border-border rounded-lg p-4 space-y-3">
+    <div className={cn(
+      "border rounded-lg p-4 space-y-3",
+      isLive ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.08)]" : "border-border"
+    )}>
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium">Task Sessions</h3>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 px-2.5 text-xs"
-          onClick={onResetAll}
-          disabled={resetting || sessions.length === 0}
+        <div className="flex items-center gap-2">
+          {isLive && (
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+            </span>
+          )}
+          <h3 className="text-sm font-medium">{isLive ? "Live Run" : "Latest Run"}</h3>
+        </div>
+        <button
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => navigate(`/agents/${agentId}/runs/${run.id}`)}
         >
-          Reset all
-        </Button>
+          View details &rarr;
+        </button>
       </div>
-      {sessions.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No task-scoped sessions.</p>
-      ) : (
-        <div className="space-y-2">
-          {sessions.slice(0, 20).map((session) => (
-            <div
-              key={session.id}
-              className="flex items-center justify-between border border-border/70 rounded-md px-3 py-2 gap-3"
-            >
-              <div className="min-w-0">
-                <div className="font-mono text-xs truncate">{session.taskKey}</div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {session.sessionDisplayId
-                    ? `session: ${session.sessionDisplayId}`
-                    : "session: <none>"}
-                  {session.lastError ? ` | error: ${session.lastError}` : ""}
-                </div>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 px-2.5 text-xs shrink-0"
-                onClick={() => onResetTask(session.taskKey)}
-                disabled={resetting}
-              >
-                Reset
-              </Button>
-            </div>
-          ))}
+
+      <div className="flex items-center gap-2">
+        <StatusIcon className={cn("h-3.5 w-3.5", statusInfo.color, run.status === "running" && "animate-spin")} />
+        <StatusBadge status={run.status} />
+        <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
+        <span className={cn(
+          "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+          run.invocationSource === "timer" ? "bg-blue-900/50 text-blue-300"
+            : run.invocationSource === "assignment" ? "bg-violet-900/50 text-violet-300"
+            : run.invocationSource === "on_demand" ? "bg-cyan-900/50 text-cyan-300"
+            : "bg-neutral-800 text-neutral-400"
+        )}>
+          {sourceLabels[run.invocationSource] ?? run.invocationSource}
+        </span>
+        <span className="ml-auto text-xs text-muted-foreground">{relativeTime(run.createdAt)}</span>
+      </div>
+
+      {summary && (
+        <p className="text-xs text-muted-foreground truncate">{summary}</p>
+      )}
+
+      {(metrics.totalTokens > 0 || metrics.cost > 0) && (
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          {metrics.totalTokens > 0 && <span>{formatTokens(metrics.totalTokens)} tokens</span>}
+          {metrics.cost > 0 && <span>${metrics.cost.toFixed(3)}</span>}
         </div>
       )}
     </div>
@@ -699,12 +682,14 @@ function ConfigurationTab({
   onSaveActionChange,
   onCancelActionChange,
   onSavingChange,
+  updatePermissions,
 }: {
   agent: Agent;
   onDirtyChange: (dirty: boolean) => void;
   onSaveActionChange: (save: (() => void) | null) => void;
   onCancelActionChange: (cancel: (() => void) | null) => void;
   onSavingChange: (saving: boolean) => void;
+  updatePermissions: { mutate: (canCreate: boolean) => void; isPending: boolean };
 }) {
   const queryClient = useQueryClient();
 
@@ -752,6 +737,23 @@ function ConfigurationTab({
           onCancelActionChange={onCancelActionChange}
           hideInlineSave
         />
+      </div>
+      <div className="border border-border rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-medium">Permissions</h3>
+        <div className="flex items-center justify-between text-sm">
+          <span>Can create new agents</span>
+          <Button
+            variant={agent.permissions?.canCreateAgents ? "default" : "outline"}
+            size="sm"
+            className="h-7 px-2.5 text-xs"
+            onClick={() =>
+              updatePermissions.mutate(!Boolean(agent.permissions?.canCreateAgents))
+            }
+            disabled={updatePermissions.isPending}
+          >
+            {agent.permissions?.canCreateAgents ? "Enabled" : "Disabled"}
+          </Button>
+        </div>
       </div>
       <div className="border border-border rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between">
@@ -837,7 +839,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
                 "flex flex-col gap-1 w-full px-3 py-2.5 text-left border-b border-border last:border-b-0 transition-colors",
                 isSelected ? "bg-accent/40" : "hover:bg-accent/20",
               )}
-              onClick={() => navigate(isSelected ? `/agents/${agentId}?tab=runs` : `/agents/${agentId}/runs/${run.id}`)}
+              onClick={() => navigate(isSelected ? `/agents/${agentId}/runs` : `/agents/${agentId}/runs/${run.id}`)}
             >
               <div className="flex items-center gap-2">
                 <StatusIcon className={cn("h-3.5 w-3.5 shrink-0", statusInfo.color, run.status === "running" && "animate-spin")} />

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
@@ -10,7 +10,8 @@ import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
 import { formatCents, relativeTime, cn } from "../lib/utils";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageTabBar } from "../components/PageTabBar";
+import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Bot, Plus, List, GitBranch, SlidersHorizontal } from "lucide-react";
 import type { Agent } from "@paperclip/shared";
@@ -58,7 +59,9 @@ export function Agents() {
   const { openNewAgent } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<FilterTab>("all");
+  const location = useLocation();
+  const pathSegment = location.pathname.split("/").pop() ?? "all";
+  const tab: FilterTab = (pathSegment === "all" || pathSegment === "active" || pathSegment === "paused" || pathSegment === "error") ? pathSegment : "all";
   const [view, setView] = useState<"list" | "org">("org");
   const [showTerminated, setShowTerminated] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -95,13 +98,13 @@ export function Agents() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
-          <TabsList variant="line">
-            <TabsTrigger value="all">All</TabsTrigger>
-            <TabsTrigger value="active">Active</TabsTrigger>
-            <TabsTrigger value="paused">Paused</TabsTrigger>
-            <TabsTrigger value="error">Error</TabsTrigger>
-          </TabsList>
+        <Tabs value={tab} onValueChange={(v) => navigate(`/agents/${v}`)}>
+          <PageTabBar items={[
+            { value: "all", label: "All" },
+            { value: "active", label: "Active" },
+            { value: "paused", label: "Paused" },
+            { value: "error", label: "Error" },
+          ]} />
         </Tabs>
         <div className="flex items-center gap-2">
           {/* Filters */}
@@ -214,14 +217,12 @@ export function Agents() {
                 }
                 trailing={
                   <div className="flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground font-mono">
+                    <span className="text-xs text-muted-foreground font-mono w-14 text-right">
                       {adapterLabels[agent.adapterType] ?? agent.adapterType}
                     </span>
-                    {agent.lastHeartbeatAt && (
-                      <span className="text-xs text-muted-foreground">
-                        {relativeTime(agent.lastHeartbeatAt)}
-                      </span>
-                    )}
+                    <span className="text-xs text-muted-foreground w-16 text-right">
+                      {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
+                    </span>
                     <div className="flex items-center gap-1.5">
                       <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
@@ -235,11 +236,13 @@ export function Agents() {
                           style={{ width: `${Math.min(100, budgetPct)}%` }}
                         />
                       </div>
-                      <span className="text-xs text-muted-foreground w-20 text-right">
+                      <span className="text-xs text-muted-foreground w-24 text-right">
                         {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)}
                       </span>
                     </div>
-                    <StatusBadge status={agent.status} />
+                    <span className="w-20 flex justify-end">
+                      <StatusBadge status={agent.status} />
+                    </span>
                   </div>
                 }
               />
@@ -328,14 +331,12 @@ function OrgTreeNode({
         <div className="flex items-center gap-3 shrink-0">
           {agent && (
             <>
-              <span className="text-xs text-muted-foreground font-mono">
+              <span className="text-xs text-muted-foreground font-mono w-14 text-right">
                 {adapterLabels[agent.adapterType] ?? agent.adapterType}
               </span>
-              {agent.lastHeartbeatAt && (
-                <span className="text-xs text-muted-foreground">
-                  {relativeTime(agent.lastHeartbeatAt)}
-                </span>
-              )}
+              <span className="text-xs text-muted-foreground w-16 text-right">
+                {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
+              </span>
               <div className="flex items-center gap-1.5">
                 <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                   <div
@@ -349,13 +350,15 @@ function OrgTreeNode({
                     style={{ width: `${Math.min(100, budgetPct)}%` }}
                   />
                 </div>
-                <span className="text-xs text-muted-foreground w-20 text-right">
+                <span className="text-xs text-muted-foreground w-24 text-right">
                   {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)}
                 </span>
               </div>
             </>
           )}
-          <StatusBadge status={node.status} />
+          <span className="w-20 flex justify-end">
+            <StatusBadge status={node.status} />
+          </span>
         </div>
       </button>
       {node.reports && node.reports.length > 0 && (

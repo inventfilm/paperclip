@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { agentsApi } from "../api/agents";
@@ -7,7 +7,8 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageTabBar } from "../components/PageTabBar";
+import { Tabs } from "@/components/ui/tabs";
 import { ShieldCheck } from "lucide-react";
 import { ApprovalCard } from "../components/ApprovalCard";
 
@@ -18,7 +19,9 @@ export function Approvals() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("pending");
+  const location = useLocation();
+  const pathSegment = location.pathname.split("/").pop() ?? "pending";
+  const statusFilter: StatusFilter = pathSegment === "all" ? "all" : "pending";
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -77,21 +80,18 @@ export function Approvals() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Tabs value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-          <TabsList variant="line">
-            <TabsTrigger value="pending">
-              Pending
-              {pendingCount > 0 && (
-                <span className={cn(
-                  "ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-                  "bg-yellow-500/20 text-yellow-500"
-                )}>
-                  {pendingCount}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="all">All</TabsTrigger>
-          </TabsList>
+        <Tabs value={statusFilter} onValueChange={(v) => navigate(`/approvals/${v}`)}>
+          <PageTabBar items={[
+            { value: "pending", label: <>Pending{pendingCount > 0 && (
+              <span className={cn(
+                "ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                "bg-yellow-500/20 text-yellow-500"
+              )}>
+                {pendingCount}
+              </span>
+            )}</> },
+            { value: "all", label: "All" },
+          ]} />
         </Tabs>
       </div>
 

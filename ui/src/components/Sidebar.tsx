@@ -9,7 +9,6 @@ import {
   History,
   Search,
   SquarePen,
-  ListTodo,
   ShieldCheck,
   BookOpen,
   Paperclip,
@@ -79,7 +78,6 @@ export function Sidebar() {
               icon={Inbox}
               badge={sidebarBadges?.inbox}
             />
-            <SidebarNavItem to="/my-issues" label="My Issues" icon={ListTodo} />
           </div>
 
           <SidebarSection label="Work">
