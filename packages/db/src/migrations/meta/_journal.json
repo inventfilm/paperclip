@@ -22,6 +22,20 @@
       "when": 1771349403162,
       "tag": "0002_big_zaladane",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1771456737635,
+      "tag": "0003_shallow_quentin_quire",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1771545600000,
+      "tag": "0004_issue_identifiers",
+      "breakpoints": true
     }
   ]
 }

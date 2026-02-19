@@ -5,8 +5,11 @@ export interface Company {
   name: string;
   description: string | null;
   status: CompanyStatus;
+  issuePrefix: string;
+  issueCounter: number;
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
+  requireBoardApprovalForNewAgents: boolean;
   createdAt: Date;
   updatedAt: Date;
 }

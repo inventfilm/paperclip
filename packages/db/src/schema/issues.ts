@@ -6,6 +6,7 @@ import {
   timestamp,
   integer,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { projects } from "./projects.js";
@@ -27,6 +28,8 @@ export const issues = pgTable(
     assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id),
     createdByUserId: text("created_by_user_id"),
+    issueNumber: integer("issue_number"),
+    identifier: text("identifier"),
     requestDepth: integer("request_depth").notNull().default(0),
     billingCode: text("billing_code"),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -44,5 +47,6 @@ export const issues = pgTable(
     ),
     parentIdx: index("issues_company_parent_idx").on(table.companyId, table.parentId),
     projectIdx: index("issues_company_project_idx").on(table.companyId, table.projectId),
+    identifierIdx: uniqueIndex("issues_company_identifier_idx").on(table.companyId, table.identifier),
   }),
 );

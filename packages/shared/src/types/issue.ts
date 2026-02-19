@@ -25,6 +25,8 @@ export interface Issue {
   assigneeAgentId: string | null;
   createdByAgentId: string | null;
   createdByUserId: string | null;
+  issueNumber: number | null;
+  identifier: string | null;
   requestDepth: number;
   billingCode: string | null;
   startedAt: Date | null;
