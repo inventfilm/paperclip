@@ -29,13 +29,14 @@ export function issueRoutes(db: Db) {
 
   router.get("/issues/:id", async (req, res) => {
     const id = req.params.id as string;
-    const issue = await svc.getById(id);
+    const isIdentifier = /^[A-Z]+-\d+$/i.test(id);
+    const issue = isIdentifier ? await svc.getByIdentifier(id) : await svc.getById(id);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;
     }
     assertCompanyAccess(req, issue.companyId);
-    const ancestors = await svc.getAncestors(id);
+    const ancestors = await svc.getAncestors(issue.id);
     res.json({ ...issue, ancestors });
   });
 
@@ -55,6 +56,7 @@ export function issueRoutes(db: Db) {
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "issue.created",
       entityType: "issue",
       entityId: issue.id,
@@ -100,6 +102,7 @@ export function issueRoutes(db: Db) {
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "issue.updated",
       entityType: "issue",
       entityId: issue.id,
@@ -118,6 +121,7 @@ export function issueRoutes(db: Db) {
         actorType: actor.actorType,
         actorId: actor.actorId,
         agentId: actor.agentId,
+        runId: actor.runId,
         action: "issue.comment_added",
         entityType: "issue",
         entityId: issue.id,
@@ -142,16 +146,20 @@ export function issueRoutes(db: Db) {
 
     const assigneeChanged =
       req.body.assigneeAgentId !== undefined && req.body.assigneeAgentId !== existing.assigneeAgentId;
-    if (assigneeChanged && issue.assigneeAgentId) {
+    const reopened =
+      (existing.status === "done" || existing.status === "cancelled") &&
+      issue.status !== "done" && issue.status !== "cancelled";
+
+    if ((assigneeChanged || reopened) && issue.assigneeAgentId) {
       void heartbeat
         .wakeup(issue.assigneeAgentId, {
-          source: "assignment",
+          source: reopened ? "automation" : "assignment",
           triggerDetail: "system",
-          reason: "issue_assigned",
+          reason: reopened ? "issue_reopened" : "issue_assigned",
           payload: { issueId: issue.id, mutation: "update" },
           requestedByActorType: actor.actorType,
           requestedByActorId: actor.actorId,
-          contextSnapshot: { issueId: issue.id, source: "issue.update" },
+          contextSnapshot: { issueId: issue.id, source: reopened ? "issue.reopen" : "issue.update" },
         })
         .catch((err) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue update"));
     }
@@ -180,6 +188,7 @@ export function issueRoutes(db: Db) {
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "issue.deleted",
       entityType: "issue",
       entityId: issue.id,
@@ -210,6 +219,7 @@ export function issueRoutes(db: Db) {
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "issue.checked_out",
       entityType: "issue",
       entityId: issue.id,
@@ -252,6 +262,7 @@ export function issueRoutes(db: Db) {
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "issue.released",
       entityType: "issue",
       entityId: released.id,
@@ -282,19 +293,54 @@ export function issueRoutes(db: Db) {
     assertCompanyAccess(req, issue.companyId);
 
     const actor = getActorInfo(req);
+    const reopenRequested = req.body.reopen === true;
+    const isClosed = issue.status === "done" || issue.status === "cancelled";
+    let reopened = false;
+    let reopenFromStatus: string | null = null;
+    let currentIssue = issue;
+
+    if (reopenRequested && isClosed) {
+      const reopenedIssue = await svc.update(id, { status: "todo" });
+      if (!reopenedIssue) {
+        res.status(404).json({ error: "Issue not found" });
+        return;
+      }
+      reopened = true;
+      reopenFromStatus = issue.status;
+      currentIssue = reopenedIssue;
+
+      await logActivity(db, {
+        companyId: currentIssue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.updated",
+        entityType: "issue",
+        entityId: currentIssue.id,
+        details: {
+          status: "todo",
+          reopened: true,
+          reopenedFrom: reopenFromStatus,
+          source: "comment",
+        },
+      });
+    }
+
     const comment = await svc.addComment(id, req.body.body, {
       agentId: actor.agentId ?? undefined,
       userId: actor.actorType === "user" ? actor.actorId : undefined,
     });
 
     await logActivity(db, {
-      companyId: issue.companyId,
+      companyId: currentIssue.companyId,
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "issue.comment_added",
       entityType: "issue",
-      entityId: issue.id,
+      entityId: currentIssue.id,
       details: { commentId: comment.id },
     });
 
@@ -312,6 +358,32 @@ export function issueRoutes(db: Db) {
         }).catch((err) => logger.warn({ err, agentId: mentionedId }, "failed to wake mentioned agent"));
       }
     }).catch((err) => logger.warn({ err, issueId: id }, "failed to resolve @-mentions"));
+
+    if (reopened && currentIssue.assigneeAgentId) {
+      void heartbeat
+        .wakeup(currentIssue.assigneeAgentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "issue_reopened_via_comment",
+          payload: {
+            issueId: currentIssue.id,
+            commentId: comment.id,
+            reopenedFrom: reopenFromStatus,
+            mutation: "comment",
+          },
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: {
+            issueId: currentIssue.id,
+            taskId: currentIssue.id,
+            commentId: comment.id,
+            source: "issue.comment.reopen",
+            wakeReason: "issue_reopened_via_comment",
+            reopenedFrom: reopenFromStatus,
+          },
+        })
+        .catch((err) => logger.warn({ err, issueId: currentIssue.id }, "failed to wake assignee on issue reopen comment"));
+    }
 
     res.status(201).json(comment);
   });

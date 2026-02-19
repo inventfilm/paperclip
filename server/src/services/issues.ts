@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
-import { agents, issues, issueComments } from "@paperclip/db";
+import { agents, companies, issues, issueComments } from "@paperclip/db";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
 const ISSUE_TRANSITIONS: Record<string, string[]> = {
@@ -9,8 +9,8 @@ const ISSUE_TRANSITIONS: Record<string, string[]> = {
   in_progress: ["in_review", "blocked", "done", "cancelled"],
   in_review: ["in_progress", "done", "cancelled"],
   blocked: ["todo", "in_progress", "cancelled"],
-  done: [],
-  cancelled: [],
+  done: ["todo"],
+  cancelled: ["todo"],
 };
 
 function assertTransition(from: string, to: string) {
@@ -69,23 +69,38 @@ export function issueService(db: Db) {
         .where(eq(issues.id, id))
         .then((rows) => rows[0] ?? null),
 
-    create: (companyId: string, data: Omit<typeof issues.$inferInsert, "companyId">) => {
-      const values = { ...data, companyId } as typeof issues.$inferInsert;
-      if (values.status === "in_progress" && !values.startedAt) {
-        values.startedAt = new Date();
-      }
-      if (values.status === "done") {
-        values.completedAt = new Date();
-      }
-      if (values.status === "cancelled") {
-        values.cancelledAt = new Date();
-      }
+    getByIdentifier: (identifier: string) =>
+      db
+        .select()
+        .from(issues)
+        .where(eq(issues.identifier, identifier.toUpperCase()))
+        .then((rows) => rows[0] ?? null),
 
-      return db
-        .insert(issues)
-        .values(values)
-        .returning()
-        .then((rows) => rows[0]);
+    create: async (companyId: string, data: Omit<typeof issues.$inferInsert, "companyId">) => {
+      return db.transaction(async (tx) => {
+        const [company] = await tx
+          .update(companies)
+          .set({ issueCounter: sql`${companies.issueCounter} + 1` })
+          .where(eq(companies.id, companyId))
+          .returning({ issueCounter: companies.issueCounter, issuePrefix: companies.issuePrefix });
+
+        const issueNumber = company.issueCounter;
+        const identifier = `${company.issuePrefix}-${issueNumber}`;
+
+        const values = { ...data, companyId, issueNumber, identifier } as typeof issues.$inferInsert;
+        if (values.status === "in_progress" && !values.startedAt) {
+          values.startedAt = new Date();
+        }
+        if (values.status === "done") {
+          values.completedAt = new Date();
+        }
+        if (values.status === "cancelled") {
+          values.cancelledAt = new Date();
+        }
+
+        const [issue] = await tx.insert(issues).values(values).returning();
+        return issue;
+      });
     },
 
     update: async (id: string, data: Partial<typeof issues.$inferInsert>) => {
@@ -110,6 +125,12 @@ export function issueService(db: Db) {
       }
 
       applyStatusSideEffects(data.status, patch);
+      if (data.status && data.status !== "done") {
+        patch.completedAt = null;
+      }
+      if (data.status && data.status !== "cancelled") {
+        patch.cancelledAt = null;
+      }
 
       return db
         .update(issues)

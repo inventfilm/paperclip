@@ -34,6 +34,10 @@ interface WakeupOptions {
   contextSnapshot?: Record<string, unknown>;
 }
 
+function readNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
 export function heartbeatService(db: Db) {
   const runLogStore = getRunLogStore();
 
@@ -214,6 +218,56 @@ export function heartbeatService(db: Db) {
         },
       });
     }
+  }
+
+  async function reapOrphanedRuns(opts?: { staleThresholdMs?: number }) {
+    const staleThresholdMs = opts?.staleThresholdMs ?? 0;
+    const now = new Date();
+
+    // Find all runs in "queued" or "running" state
+    const activeRuns = await db
+      .select()
+      .from(heartbeatRuns)
+      .where(inArray(heartbeatRuns.status, ["queued", "running"]));
+
+    const reaped: string[] = [];
+
+    for (const run of activeRuns) {
+      if (runningProcesses.has(run.id)) continue;
+
+      // Apply staleness threshold to avoid false positives
+      if (staleThresholdMs > 0) {
+        const refTime = run.updatedAt ? new Date(run.updatedAt).getTime() : 0;
+        if (now.getTime() - refTime < staleThresholdMs) continue;
+      }
+
+      await setRunStatus(run.id, "failed", {
+        error: "Process lost -- server may have restarted",
+        errorCode: "process_lost",
+        finishedAt: now,
+      });
+      await setWakeupStatus(run.wakeupRequestId, "failed", {
+        finishedAt: now,
+        error: "Process lost -- server may have restarted",
+      });
+      const updatedRun = await getRun(run.id);
+      if (updatedRun) {
+        await appendRunEvent(updatedRun, 1, {
+          eventType: "lifecycle",
+          stream: "system",
+          level: "error",
+          message: "Process lost -- server may have restarted",
+        });
+      }
+      await finalizeAgentStatus(run.agentId, "failed");
+      runningProcesses.delete(run.id);
+      reaped.push(run.id);
+    }
+
+    if (reaped.length > 0) {
+      logger.warn({ reapedCount: reaped.length, runIds: reaped }, "reaped orphaned heartbeat runs");
+    }
+    return { reaped: reaped.length, runIds: reaped };
   }
 
   async function updateRuntimeState(
@@ -543,7 +597,26 @@ export function heartbeatService(db: Db) {
   async function enqueueWakeup(agentId: string, opts: WakeupOptions = {}) {
     const source = opts.source ?? "on_demand";
     const triggerDetail = opts.triggerDetail ?? null;
-    const contextSnapshot = opts.contextSnapshot ?? {};
+    const contextSnapshot: Record<string, unknown> = { ...(opts.contextSnapshot ?? {}) };
+    const reason = opts.reason ?? null;
+    const payload = opts.payload ?? null;
+    const issueIdFromPayload = readNonEmptyString(payload?.["issueId"]);
+
+    if (!readNonEmptyString(contextSnapshot["wakeReason"]) && reason) {
+      contextSnapshot.wakeReason = reason;
+    }
+    if (!readNonEmptyString(contextSnapshot["issueId"]) && issueIdFromPayload) {
+      contextSnapshot.issueId = issueIdFromPayload;
+    }
+    if (!readNonEmptyString(contextSnapshot["taskId"]) && issueIdFromPayload) {
+      contextSnapshot.taskId = issueIdFromPayload;
+    }
+    if (!readNonEmptyString(contextSnapshot["wakeSource"])) {
+      contextSnapshot.wakeSource = source;
+    }
+    if (!readNonEmptyString(contextSnapshot["wakeTriggerDetail"]) && triggerDetail) {
+      contextSnapshot.wakeTriggerDetail = triggerDetail;
+    }
 
     const agent = await getAgent(agentId);
     if (!agent) throw notFound("Agent not found");
@@ -560,7 +633,7 @@ export function heartbeatService(db: Db) {
         source,
         triggerDetail,
         reason,
-        payload: opts.payload ?? null,
+        payload,
         status: "skipped",
         requestedByActorType: opts.requestedByActorType ?? null,
         requestedByActorId: opts.requestedByActorId ?? null,
@@ -591,8 +664,8 @@ export function heartbeatService(db: Db) {
         agentId,
         source,
         triggerDetail,
-        reason: opts.reason ?? null,
-        payload: opts.payload ?? null,
+        reason,
+        payload,
         status: "coalesced",
         coalescedCount: 1,
         requestedByActorType: opts.requestedByActorType ?? null,
@@ -611,8 +684,8 @@ export function heartbeatService(db: Db) {
         agentId,
         source,
         triggerDetail,
-        reason: opts.reason ?? null,
-        payload: opts.payload ?? null,
+        reason,
+        payload,
         status: "queued",
         requestedByActorType: opts.requestedByActorType ?? null,
         requestedByActorId: opts.requestedByActorId ?? null,
@@ -757,6 +830,8 @@ export function heartbeatService(db: Db) {
 
     wakeup: enqueueWakeup,
 
+    reapOrphanedRuns,
+
     tickTimers: async (now = new Date()) => {
       const allAgents = await db.select().from(agents);
       let checked = 0;
@@ -859,6 +934,21 @@ export function heartbeatService(db: Db) {
       }
 
       return runs.length;
+    },
+
+    getActiveRunForAgent: async (agentId: string) => {
+      const [run] = await db
+        .select()
+        .from(heartbeatRuns)
+        .where(
+          and(
+            eq(heartbeatRuns.agentId, agentId),
+            eq(heartbeatRuns.status, "running"),
+          ),
+        )
+        .orderBy(desc(heartbeatRuns.startedAt))
+        .limit(1);
+      return run ?? null;
     },
   };
 }

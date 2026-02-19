@@ -13,8 +13,11 @@ export function actorMiddleware(db: Db): RequestHandler {
   return async (req, _res, next) => {
     req.actor = { type: "board", userId: "board" };
 
+    const runIdHeader = req.header("x-paperclip-run-id");
+
     const authHeader = req.header("authorization");
     if (!authHeader?.toLowerCase().startsWith("bearer ")) {
+      if (runIdHeader) req.actor.runId = runIdHeader;
       next();
       return;
     }
@@ -60,6 +63,7 @@ export function actorMiddleware(db: Db): RequestHandler {
         agentId: claims.sub,
         companyId: claims.company_id,
         keyId: undefined,
+        runId: runIdHeader || undefined,
       };
       next();
       return;
@@ -75,6 +79,7 @@ export function actorMiddleware(db: Db): RequestHandler {
       agentId: key.agentId,
       companyId: key.companyId,
       keyId: key.id,
+      runId: runIdHeader || undefined,
     };
 
     next();

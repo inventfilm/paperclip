@@ -4,6 +4,7 @@ import type { Db } from "@paperclip/db";
 import { validate } from "../middleware/validate.js";
 import { activityService } from "../services/activity.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
+import { issueService } from "../services/index.js";
 
 const createActivitySchema = z.object({
   actorType: z.enum(["agent", "user", "system"]).optional().default("system"),
@@ -18,6 +19,7 @@ const createActivitySchema = z.object({
 export function activityRoutes(db: Db) {
   const router = Router();
   const svc = activityService(db);
+  const issueSvc = issueService(db);
 
   router.get("/companies/:companyId/activity", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -41,6 +43,36 @@ export function activityRoutes(db: Db) {
       ...req.body,
     });
     res.status(201).json(event);
+  });
+
+  router.get("/issues/:id/activity", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await issueSvc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    const result = await svc.forIssue(id);
+    res.json(result);
+  });
+
+  router.get("/issues/:id/runs", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await issueSvc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    const result = await svc.runsForIssue(id);
+    res.json(result);
+  });
+
+  router.get("/heartbeat-runs/:runId/issues", async (req, res) => {
+    const runId = req.params.runId as string;
+    const result = await svc.issuesForRun(runId);
+    res.json(result);
   });
 
   return router;

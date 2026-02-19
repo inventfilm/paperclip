@@ -10,6 +10,7 @@ export interface LogActivityInput {
   entityType: string;
   entityId: string;
   agentId?: string | null;
+  runId?: string | null;
   details?: Record<string, unknown> | null;
 }
 
@@ -22,6 +23,7 @@ export async function logActivity(db: Db, input: LogActivityInput) {
     entityType: input.entityType,
     entityId: input.entityId,
     agentId: input.agentId ?? null,
+    runId: input.runId ?? null,
     details: input.details ?? null,
   });
 
@@ -35,6 +37,7 @@ export async function logActivity(db: Db, input: LogActivityInput) {
       entityType: input.entityType,
       entityId: input.entityId,
       agentId: input.agentId ?? null,
+      runId: input.runId ?? null,
       details: input.details ?? null,
     },
   });

@@ -9,6 +9,7 @@ declare global {
         agentId?: string;
         companyId?: string;
         keyId?: string;
+        runId?: string;
       };
     }
   }

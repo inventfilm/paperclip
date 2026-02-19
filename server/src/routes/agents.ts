@@ -1,5 +1,7 @@
 import { Router } from "express";
 import type { Db } from "@paperclip/db";
+import { agents as agentsTable, heartbeatRuns } from "@paperclip/db";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   createAgentKeySchema,
   createAgentSchema,
@@ -7,7 +9,7 @@ import {
   updateAgentSchema,
 } from "@paperclip/shared";
 import { validate } from "../middleware/validate.js";
-import { agentService, heartbeatService, logActivity } from "../services/index.js";
+import { agentService, heartbeatService, issueService, logActivity } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { listAdapterModels } from "../adapters/index.js";
 
@@ -160,6 +162,7 @@ export function agentRoutes(db: Db) {
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "agent.created",
       entityType: "agent",
       entityId: agent.id,
@@ -195,6 +198,7 @@ export function agentRoutes(db: Db) {
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "agent.updated",
       entityType: "agent",
       entityId: agent.id,
@@ -349,6 +353,7 @@ export function agentRoutes(db: Db) {
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "heartbeat.invoked",
       entityType: "heartbeat_run",
       entityId: run.id,
@@ -397,6 +402,7 @@ export function agentRoutes(db: Db) {
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
+      runId: actor.runId,
       action: "heartbeat.invoked",
       entityType: "heartbeat_run",
       entityId: run.id,
@@ -470,6 +476,78 @@ export function agentRoutes(db: Db) {
     });
 
     res.json(result);
+  });
+
+  router.get("/issues/:id/live-runs", async (req, res) => {
+    const id = req.params.id as string;
+    const issueSvc = issueService(db);
+    const issue = await issueSvc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+
+    const liveRuns = await db
+      .select({
+        id: heartbeatRuns.id,
+        status: heartbeatRuns.status,
+        invocationSource: heartbeatRuns.invocationSource,
+        triggerDetail: heartbeatRuns.triggerDetail,
+        startedAt: heartbeatRuns.startedAt,
+        finishedAt: heartbeatRuns.finishedAt,
+        createdAt: heartbeatRuns.createdAt,
+        agentId: heartbeatRuns.agentId,
+        agentName: agentsTable.name,
+        adapterType: agentsTable.adapterType,
+      })
+      .from(heartbeatRuns)
+      .innerJoin(agentsTable, eq(heartbeatRuns.agentId, agentsTable.id))
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, issue.companyId),
+          inArray(heartbeatRuns.status, ["queued", "running"]),
+          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${id}`,
+        ),
+      )
+      .orderBy(desc(heartbeatRuns.createdAt));
+
+    res.json(liveRuns);
+  });
+
+  router.get("/issues/:id/active-run", async (req, res) => {
+    const id = req.params.id as string;
+    const issueSvc = issueService(db);
+    const issue = await issueSvc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+
+    if (!issue.assigneeAgentId || issue.status !== "in_progress") {
+      res.json(null);
+      return;
+    }
+
+    const agent = await svc.getById(issue.assigneeAgentId);
+    if (!agent) {
+      res.json(null);
+      return;
+    }
+
+    const run = await heartbeat.getActiveRunForAgent(issue.assigneeAgentId);
+    if (!run) {
+      res.json(null);
+      return;
+    }
+
+    res.json({
+      ...run,
+      agentId: agent.id,
+      agentName: agent.name,
+      adapterType: agent.adapterType,
+    });
   });
 
   return router;

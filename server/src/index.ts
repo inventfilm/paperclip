@@ -1,10 +1,13 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
+import { createInterface } from "node:readline/promises";
+import { stdin, stdout } from "node:process";
 import {
   createDb,
   ensurePostgresDatabase,
-  migratePostgresIfEmpty,
+  inspectMigrations,
+  applyPendingMigrations,
 } from "@paperclip/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
@@ -30,27 +33,80 @@ type EmbeddedPostgresCtor = new (opts: {
 
 const config = loadConfig();
 
+type MigrationSummary =
+  | "skipped"
+  | "already applied"
+  | "applied (empty database)"
+  | "applied (pending migrations)"
+  | "pending migrations skipped";
+
+function formatPendingMigrationSummary(migrations: string[]): string {
+  if (migrations.length === 0) return "none";
+  return migrations.length > 3
+    ? `${migrations.slice(0, 3).join(", ")} (+${migrations.length - 3} more)`
+    : migrations.join(", ");
+}
+
+async function promptApplyMigrations(migrations: string[]): Promise<boolean> {
+  if (!stdin.isTTY || !stdout.isTTY) return true;
+  if (process.env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true") return true;
+
+  const prompt = createInterface({ input: stdin, output: stdout });
+  try {
+    const answer = (await prompt.question(
+      `Apply pending migrations (${formatPendingMigrationSummary(migrations)}) now? (y/N): `,
+    )).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally {
+    prompt.close();
+  }
+}
+
+async function ensureMigrations(connectionString: string, label: string): Promise<MigrationSummary> {
+  const state = await inspectMigrations(connectionString);
+  if (state.status === "upToDate") return "already applied";
+  if (state.status === "needsMigrations" && state.reason === "no-migration-journal-non-empty-db") {
+    logger.warn(
+      { tableCount: state.tableCount },
+      `${label} has existing tables but no migration journal. Run migrations manually to sync schema.`,
+    );
+    const apply = await promptApplyMigrations(state.pendingMigrations);
+    if (!apply) {
+      logger.warn(
+        { pendingMigrations: state.pendingMigrations },
+        `${label} has pending migrations; continuing without applying. Run pnpm db:migrate to apply before startup.`,
+      );
+      return "pending migrations skipped";
+    }
+
+    logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
+    await applyPendingMigrations(connectionString);
+    return "applied (pending migrations)";
+  }
+
+  const apply = await promptApplyMigrations(state.pendingMigrations);
+  if (!apply) {
+    logger.warn(
+      { pendingMigrations: state.pendingMigrations },
+      `${label} has pending migrations; continuing without applying. Run pnpm db:migrate to apply before startup.`,
+    );
+    return "pending migrations skipped";
+  }
+
+  logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
+  await applyPendingMigrations(connectionString);
+  return "applied (pending migrations)";
+}
+
 let db;
 let embeddedPostgres: EmbeddedPostgresInstance | null = null;
 let embeddedPostgresStartedByThisProcess = false;
-let migrationSummary = "skipped";
+let migrationSummary: MigrationSummary = "skipped";
 let startupDbInfo:
   | { mode: "external-postgres"; connectionString: string }
   | { mode: "embedded-postgres"; dataDir: string; port: number };
 if (config.databaseUrl) {
-  const migration = await migratePostgresIfEmpty(config.databaseUrl);
-  if (migration.migrated) {
-    logger.info("Empty PostgreSQL database detected; applied migrations");
-    migrationSummary = "applied (empty database)";
-  } else if (migration.reason === "not-empty-no-migration-journal") {
-    logger.warn(
-      { tableCount: migration.tableCount },
-      "PostgreSQL has existing tables but no migration journal; skipped auto-migrate",
-    );
-    migrationSummary = "skipped (existing schema, no migration journal)";
-  } else {
-    migrationSummary = "already applied";
-  }
+  migrationSummary = await ensureMigrations(config.databaseUrl, "PostgreSQL");
 
   db = createDb(config.databaseUrl);
   logger.info("Using external PostgreSQL via DATABASE_URL/config");
@@ -131,19 +187,7 @@ if (config.databaseUrl) {
   }
 
   const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
-  const migration = await migratePostgresIfEmpty(embeddedConnectionString);
-  if (migration.migrated) {
-    logger.info("Empty embedded PostgreSQL database detected; applied migrations");
-    migrationSummary = "applied (empty database)";
-  } else if (migration.reason === "not-empty-no-migration-journal") {
-    logger.warn(
-      { tableCount: migration.tableCount },
-      "Embedded PostgreSQL has existing tables but no migration journal; skipped auto-migrate",
-    );
-    migrationSummary = "skipped (existing schema, no migration journal)";
-  } else {
-    migrationSummary = "already applied";
-  }
+  migrationSummary = await ensureMigrations(embeddedConnectionString, "Embedded PostgreSQL");
 
   db = createDb(embeddedConnectionString);
   logger.info("Embedded PostgreSQL ready");
@@ -163,6 +207,12 @@ setupLiveEventsWebSocketServer(server, db as any);
 
 if (config.heartbeatSchedulerEnabled) {
   const heartbeat = heartbeatService(db as any);
+
+  // Reap orphaned runs at startup (no threshold -- runningProcesses is empty)
+  void heartbeat.reapOrphanedRuns().catch((err) => {
+    logger.error({ err }, "startup reap of orphaned heartbeat runs failed");
+  });
+
   setInterval(() => {
     void heartbeat
       .tickTimers(new Date())
@@ -173,6 +223,13 @@ if (config.heartbeatSchedulerEnabled) {
       })
       .catch((err) => {
         logger.error({ err }, "heartbeat timer tick failed");
+      });
+
+    // Periodically reap orphaned runs (5-min staleness threshold)
+    void heartbeat
+      .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
+      .catch((err) => {
+        logger.error({ err }, "periodic reap of orphaned heartbeat runs failed");
       });
   }, config.heartbeatSchedulerIntervalMs);
 }
