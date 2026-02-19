@@ -1,4 +1,7 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@paperclip/adapter-utils";
 import {
   asString,
@@ -16,6 +19,75 @@ import {
 } from "@paperclip/adapter-utils/server-utils";
 import { parseCodexJsonl, isCodexUnknownSessionError } from "./parse.js";
 
+const PAPERCLIP_SKILLS_DIR = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../../../skills",
+);
+const CODEX_ROLLOUT_NOISE_RE =
+  /^\d{4}-\d{2}-\d{2}T[^\s]+\s+ERROR\s+codex_core::rollout::list:\s+state db missing rollout path for thread\s+[a-z0-9-]+$/i;
+
+function stripCodexRolloutNoise(text: string): string {
+  const parts = text.split(/\r?\n/);
+  const kept: string[] = [];
+  for (const part of parts) {
+    const trimmed = part.trim();
+    if (!trimmed) {
+      kept.push(part);
+      continue;
+    }
+    if (CODEX_ROLLOUT_NOISE_RE.test(trimmed)) continue;
+    kept.push(part);
+  }
+  return kept.join("\n");
+}
+
+function firstNonEmptyLine(text: string): string {
+  return (
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? ""
+  );
+}
+
+function codexHomeDir(): string {
+  const fromEnv = process.env.CODEX_HOME;
+  if (typeof fromEnv === "string" && fromEnv.trim().length > 0) return fromEnv.trim();
+  return path.join(os.homedir(), ".codex");
+}
+
+async function ensureCodexSkillsInjected(onLog: AdapterExecutionContext["onLog"]) {
+  const sourceExists = await fs
+    .stat(PAPERCLIP_SKILLS_DIR)
+    .then((stats) => stats.isDirectory())
+    .catch(() => false);
+  if (!sourceExists) return;
+
+  const skillsHome = path.join(codexHomeDir(), "skills");
+  await fs.mkdir(skillsHome, { recursive: true });
+  const entries = await fs.readdir(PAPERCLIP_SKILLS_DIR, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const source = path.join(PAPERCLIP_SKILLS_DIR, entry.name);
+    const target = path.join(skillsHome, entry.name);
+    const existing = await fs.lstat(target).catch(() => null);
+    if (existing) continue;
+
+    try {
+      await fs.symlink(source, target);
+      await onLog(
+        "stderr",
+        `[paperclip] Injected Codex skill "${entry.name}" into ${skillsHome}\n`,
+      );
+    } catch (err) {
+      await onLog(
+        "stderr",
+        `[paperclip] Failed to inject Codex skill "${entry.name}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    }
+  }
+}
+
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, runtime, config, context, onLog, onMeta, authToken } = ctx;
 
@@ -31,6 +103,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const cwd = asString(config.cwd, process.cwd());
   await ensureAbsoluteDirectory(cwd);
+  await ensureCodexSkillsInjected(onLog);
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
     typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
@@ -102,6 +175,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   const template = sessionId ? promptTemplate : bootstrapTemplate;
   const prompt = renderTemplate(template, {
+    agentId: agent.id,
+    companyId: agent.companyId,
+    runId,
     company: { id: agent.companyId },
     agent,
     run: { id: runId, source: "on_demand" },
@@ -114,8 +190,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (bypass) args.push("--dangerously-bypass-approvals-and-sandbox");
     if (model) args.push("--model", model);
     if (extraArgs.length > 0) args.push(...extraArgs);
-    if (resumeSessionId) args.push("resume", resumeSessionId, prompt);
-    else args.push(prompt);
+    if (resumeSessionId) args.push("resume", resumeSessionId, "-");
+    else args.push("-");
     return args;
   };
 
@@ -127,7 +203,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         command,
         cwd,
         commandArgs: args.map((value, idx) => {
-          if (idx === args.length - 1) return `<prompt ${prompt.length} chars>`;
+          if (idx === args.length - 1 && value !== "-") return `<prompt ${prompt.length} chars>`;
           return value;
         }),
         env: redactEnvForLogs(env),
@@ -139,18 +215,32 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env,
+      stdin: prompt,
       timeoutSec,
       graceSec,
-      onLog,
+      onLog: async (stream, chunk) => {
+        if (stream !== "stderr") {
+          await onLog(stream, chunk);
+          return;
+        }
+        const cleaned = stripCodexRolloutNoise(chunk);
+        if (!cleaned.trim()) return;
+        await onLog(stream, cleaned);
+      },
     });
+    const cleanedStderr = stripCodexRolloutNoise(proc.stderr);
     return {
-      proc,
+      proc: {
+        ...proc,
+        stderr: cleanedStderr,
+      },
+      rawStderr: proc.stderr,
       parsed: parseCodexJsonl(proc.stdout),
     };
   };
 
   const toResult = (
-    attempt: { proc: { exitCode: number | null; signal: string | null; timedOut: boolean; stdout: string; stderr: string }; parsed: ReturnType<typeof parseCodexJsonl> },
+    attempt: { proc: { exitCode: number | null; signal: string | null; timedOut: boolean; stdout: string; stderr: string }; rawStderr: string; parsed: ReturnType<typeof parseCodexJsonl> },
     clearSessionOnMissingSession = false,
   ): AdapterExecutionResult => {
     if (attempt.proc.timedOut) {
@@ -167,6 +257,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const resolvedSessionParams = resolvedSessionId
       ? ({ sessionId: resolvedSessionId, cwd } as Record<string, unknown>)
       : null;
+    const parsedError = typeof attempt.parsed.errorMessage === "string" ? attempt.parsed.errorMessage.trim() : "";
+    const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
+    const fallbackErrorMessage =
+      parsedError ||
+      stderrLine ||
+      `Codex exited with code ${attempt.proc.exitCode ?? -1}`;
 
     return {
       exitCode: attempt.proc.exitCode,
@@ -175,7 +271,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       errorMessage:
         (attempt.proc.exitCode ?? 0) === 0
           ? null
-          : `Codex exited with code ${attempt.proc.exitCode ?? -1}`,
+          : fallbackErrorMessage,
       usage: attempt.parsed.usage,
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,
@@ -197,7 +293,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     sessionId &&
     !initial.proc.timedOut &&
     (initial.proc.exitCode ?? 0) !== 0 &&
-    isCodexUnknownSessionError(initial.proc.stdout, initial.proc.stderr)
+    isCodexUnknownSessionError(initial.proc.stdout, initial.rawStderr)
   ) {
     await onLog(
       "stderr",

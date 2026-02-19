@@ -134,6 +134,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   const template = sessionId ? promptTemplate : bootstrapTemplate;
   const prompt = renderTemplate(template, {
+    agentId: agent.id,
+    companyId: agent.companyId,
+    runId,
     company: { id: agent.companyId },
     agent,
     run: { id: runId, source: "on_demand" },

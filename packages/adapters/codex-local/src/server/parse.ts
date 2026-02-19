@@ -3,6 +3,7 @@ import { asString, asNumber, parseObject, parseJson } from "@paperclip/adapter-u
 export function parseCodexJsonl(stdout: string) {
   let sessionId: string | null = null;
   const messages: string[] = [];
+  let errorMessage: string | null = null;
   const usage = {
     inputTokens: 0,
     cachedInputTokens: 0,
@@ -22,6 +23,12 @@ export function parseCodexJsonl(stdout: string) {
       continue;
     }
 
+    if (type === "error") {
+      const msg = asString(event.message, "").trim();
+      if (msg) errorMessage = msg;
+      continue;
+    }
+
     if (type === "item.completed") {
       const item = parseObject(event.item);
       if (asString(item.type, "") === "agent_message") {
@@ -36,6 +43,13 @@ export function parseCodexJsonl(stdout: string) {
       usage.inputTokens = asNumber(usageObj.input_tokens, usage.inputTokens);
       usage.cachedInputTokens = asNumber(usageObj.cached_input_tokens, usage.cachedInputTokens);
       usage.outputTokens = asNumber(usageObj.output_tokens, usage.outputTokens);
+      continue;
+    }
+
+    if (type === "turn.failed") {
+      const err = parseObject(event.error);
+      const msg = asString(err.message, "").trim();
+      if (msg) errorMessage = msg;
     }
   }
 
@@ -43,6 +57,7 @@ export function parseCodexJsonl(stdout: string) {
     sessionId,
     summary: messages.join("\n\n").trim(),
     usage,
+    errorMessage,
   };
 }
 
@@ -52,7 +67,7 @@ export function isCodexUnknownSessionError(stdout: string, stderr: string): bool
     .map((line) => line.trim())
     .filter(Boolean)
     .join("\n");
-  return /unknown (session|thread)|session .* not found|thread .* not found|conversation .* not found/i.test(
+  return /unknown (session|thread)|session .* not found|thread .* not found|conversation .* not found|missing rollout path for thread|state db missing rollout path/i.test(
     haystack,
   );
 }
