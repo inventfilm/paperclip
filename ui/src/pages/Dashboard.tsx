@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
@@ -16,7 +16,7 @@ import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
 import { Identity } from "../components/Identity";
 import { timeAgo } from "../lib/timeAgo";
-import { formatCents } from "../lib/utils";
+import { cn, formatCents } from "../lib/utils";
 import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, Clock } from "lucide-react";
 import type { Agent, Issue } from "@paperclip/shared";
 
@@ -51,6 +51,30 @@ const ACTION_VERBS: Record<string, string> = {
   "company.updated": "updated company",
 };
 
+function humanizeValue(value: unknown): string {
+  if (typeof value !== "string") return String(value ?? "none");
+  return value.replace(/_/g, " ");
+}
+
+function formatVerb(action: string, details?: Record<string, unknown> | null): string {
+  if (action === "issue.updated" && details) {
+    const previous = (details._previous ?? {}) as Record<string, unknown>;
+    if (details.status !== undefined) {
+      const from = previous.status;
+      return from
+        ? `changed status from ${humanizeValue(from)} to ${humanizeValue(details.status)} on`
+        : `changed status to ${humanizeValue(details.status)} on`;
+    }
+    if (details.priority !== undefined) {
+      const from = previous.priority;
+      return from
+        ? `changed priority from ${humanizeValue(from)} to ${humanizeValue(details.priority)} on`
+        : `changed priority to ${humanizeValue(details.priority)} on`;
+    }
+  }
+  return ACTION_VERBS[action] ?? action.replace(/[._]/g, " ");
+}
+
 function entityLink(entityType: string, entityId: string): string | null {
   switch (entityType) {
     case "issue": return `/issues/${entityId}`;
@@ -77,6 +101,10 @@ export function Dashboard() {
   const { openOnboarding } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
+  const [animatedActivityIds, setAnimatedActivityIds] = useState<Set<string>>(new Set());
+  const seenActivityIdsRef = useRef<Set<string>>(new Set());
+  const hydratedActivityRef = useRef(false);
+  const activityAnimationTimersRef = useRef<number[]>([]);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -113,6 +141,62 @@ export function Dashboard() {
   });
 
   const staleIssues = issues ? getStaleIssues(issues) : [];
+  const recentActivity = useMemo(() => (activity ?? []).slice(0, 10), [activity]);
+
+  useEffect(() => {
+    for (const timer of activityAnimationTimersRef.current) {
+      window.clearTimeout(timer);
+    }
+    activityAnimationTimersRef.current = [];
+    seenActivityIdsRef.current = new Set();
+    hydratedActivityRef.current = false;
+    setAnimatedActivityIds(new Set());
+  }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (recentActivity.length === 0) return;
+
+    const seen = seenActivityIdsRef.current;
+    const currentIds = recentActivity.map((event) => event.id);
+
+    if (!hydratedActivityRef.current) {
+      for (const id of currentIds) seen.add(id);
+      hydratedActivityRef.current = true;
+      return;
+    }
+
+    const newIds = currentIds.filter((id) => !seen.has(id));
+    if (newIds.length === 0) {
+      for (const id of currentIds) seen.add(id);
+      return;
+    }
+
+    setAnimatedActivityIds((prev) => {
+      const next = new Set(prev);
+      for (const id of newIds) next.add(id);
+      return next;
+    });
+
+    for (const id of newIds) seen.add(id);
+
+    const timer = window.setTimeout(() => {
+      setAnimatedActivityIds((prev) => {
+        const next = new Set(prev);
+        for (const id of newIds) next.delete(id);
+        return next;
+      });
+      activityAnimationTimersRef.current = activityAnimationTimersRef.current.filter((t) => t !== timer);
+    }, 980);
+    activityAnimationTimersRef.current.push(timer);
+  }, [recentActivity]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of activityAnimationTimersRef.current) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, []);
 
   const agentMap = useMemo(() => {
     const map = new Map<string, Agent>();
@@ -165,47 +249,74 @@ export function Dashboard() {
               icon={Bot}
               value={data.agents.running}
               label="Agents Running"
-              description={`${data.agents.paused} paused, ${data.agents.error} errors`}
+              onClick={() => navigate("/agents")}
+              description={
+                <span>
+                  <span className="cursor-pointer" onClick={() => navigate("/agents")}>{data.agents.paused} paused</span>
+                  {", "}
+                  <span className="cursor-pointer" onClick={() => navigate("/agents")}>{data.agents.error} errors</span>
+                </span>
+              }
             />
             <MetricCard
               icon={CircleDot}
               value={data.tasks.inProgress}
               label="Tasks In Progress"
-              description={`${data.tasks.open} open, ${data.tasks.blocked} blocked`}
+              onClick={() => navigate("/issues")}
+              description={
+                <span>
+                  <span className="cursor-pointer" onClick={() => navigate("/issues")}>{data.tasks.open} open</span>
+                  {", "}
+                  <span className="cursor-pointer" onClick={() => navigate("/issues")}>{data.tasks.blocked} blocked</span>
+                </span>
+              }
             />
             <MetricCard
               icon={DollarSign}
               value={formatCents(data.costs.monthSpendCents)}
               label="Month Spend"
-              description={`${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`}
+              onClick={() => navigate("/costs")}
+              description={
+                <span className="cursor-pointer" onClick={() => navigate("/costs")}>
+                  {data.costs.monthUtilizationPercent}% of {formatCents(data.costs.monthBudgetCents)} budget
+                </span>
+              }
             />
             <MetricCard
               icon={ShieldCheck}
               value={data.pendingApprovals}
               label="Pending Approvals"
-              description={`${data.staleTasks} stale tasks`}
+              onClick={() => navigate("/approvals")}
+              description={
+                <span className="cursor-pointer" onClick={() => navigate("/issues")}>
+                  {data.staleTasks} stale tasks
+                </span>
+              }
             />
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
             {/* Recent Activity */}
-            {activity && activity.length > 0 && (
+            {recentActivity.length > 0 && (
               <div>
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
                   Recent Activity
                 </h3>
                 <div className="border border-border divide-y divide-border">
-                  {activity.slice(0, 10).map((event) => {
-                    const verb = ACTION_VERBS[event.action] ?? event.action.replace(/[._]/g, " ");
+                  {recentActivity.map((event) => {
+                    const verb = formatVerb(event.action, event.details);
                     const name = entityNameMap.get(`${event.entityType}:${event.entityId}`);
                     const link = entityLink(event.entityType, event.entityId);
                     const actor = event.actorType === "agent" ? agentMap.get(event.actorId) : null;
+                    const isAnimated = animatedActivityIds.has(event.id);
                     return (
                       <div
                         key={event.id}
-                        className={`px-4 py-2 flex items-center justify-between gap-2 text-sm ${
-                          link ? "cursor-pointer hover:bg-accent/50 transition-colors" : ""
-                        }`}
+                        className={cn(
+                          "px-4 py-2 flex items-center justify-between gap-2 text-sm",
+                          link && "cursor-pointer hover:bg-accent/50 transition-colors",
+                          isAnimated && "activity-row-enter",
+                        )}
                         onClick={link ? () => navigate(link) : undefined}
                       >
                         <div className="flex items-center gap-1.5 min-w-0">

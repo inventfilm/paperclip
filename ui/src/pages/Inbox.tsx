@@ -58,8 +58,8 @@ export function Inbox() {
   }, [setBreadcrumbs]);
 
   const { data: approvals, isLoading, error } = useQuery({
-    queryKey: queryKeys.approvals.list(selectedCompanyId!, "pending"),
-    queryFn: () => approvalsApi.list(selectedCompanyId!, "pending"),
+    queryKey: queryKeys.approvals.list(selectedCompanyId!),
+    queryFn: () => approvalsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -85,8 +85,9 @@ export function Inbox() {
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => approvalsApi.approve(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!, "pending") });
+    onSuccess: (_approval, id) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
+      navigate(`/approvals/${id}?resolved=approved`);
     },
     onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Failed to approve");
@@ -96,7 +97,7 @@ export function Inbox() {
   const rejectMutation = useMutation({
     mutationFn: (id: string) => approvalsApi.reject(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!, "pending") });
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
     },
     onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Failed to reject");
@@ -107,13 +108,16 @@ export function Inbox() {
     return <EmptyState icon={InboxIcon} message="Select a company to view inbox." />;
   }
 
-  const hasApprovals = approvals && approvals.length > 0;
+  const actionableApprovals = (approvals ?? []).filter(
+    (approval) => approval.status === "pending" || approval.status === "revision_requested",
+  );
+  const hasActionableApprovals = actionableApprovals.length > 0;
   const hasAlerts =
     dashboard &&
     (dashboard.agents.error > 0 ||
       dashboard.costs.monthUtilizationPercent >= 80);
   const hasStale = staleIssues.length > 0;
-  const hasContent = hasApprovals || hasAlerts || hasStale;
+  const hasContent = hasActionableApprovals || hasAlerts || hasStale;
 
   return (
     <div className="space-y-6">
@@ -126,7 +130,7 @@ export function Inbox() {
       )}
 
       {/* Pending Approvals */}
-      {hasApprovals && (
+      {hasActionableApprovals && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
@@ -140,7 +144,7 @@ export function Inbox() {
             </button>
           </div>
           <div className="border border-border divide-y divide-border">
-            {approvals!.map((approval) => (
+            {actionableApprovals.map((approval) => (
               <div key={approval.id} className="p-4 space-y-2">
                 <div className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-yellow-500 shrink-0" />
@@ -185,7 +189,7 @@ export function Inbox() {
       {/* Alerts */}
       {hasAlerts && (
         <>
-          {hasApprovals && <Separator />}
+          {hasActionableApprovals && <Separator />}
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
               Alerts
@@ -226,7 +230,7 @@ export function Inbox() {
       {/* Stale Work */}
       {hasStale && (
         <>
-          {(hasApprovals || hasAlerts) && <Separator />}
+          {(hasActionableApprovals || hasAlerts) && <Separator />}
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
               Stale Work

@@ -69,6 +69,8 @@ function OrgTreeNode({
               ? "bg-green-400"
               : node.status === "paused"
                 ? "bg-yellow-400"
+                : node.status === "pending_approval"
+                  ? "bg-amber-400"
                 : node.status === "error"
                   ? "bg-red-400"
                   : "bg-neutral-400"

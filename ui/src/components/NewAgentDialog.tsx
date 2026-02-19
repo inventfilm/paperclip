@@ -76,12 +76,13 @@ export function NewAgentDialog() {
 
   const createAgent = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
-      agentsApi.create(selectedCompanyId!, data),
-    onSuccess: (agent) => {
+      agentsApi.hire(selectedCompanyId!, data),
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
       reset();
       closeNewAgent();
-      navigate(`/agents/${agent.id}`);
+      navigate(`/agents/${result.agent.id}`);
     },
   });
 

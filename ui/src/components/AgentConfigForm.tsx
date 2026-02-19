@@ -10,7 +10,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { FolderOpen, Heart, ChevronDown } from "lucide-react";
+import { FolderOpen, Heart, ChevronDown, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import {
   Field,
@@ -122,28 +122,6 @@ function formatArgList(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function parseEnvVars(text: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const line of text.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq <= 0) continue;
-    const key = trimmed.slice(0, eq).trim();
-    const value = trimmed.slice(eq + 1);
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
-    env[key] = value;
-  }
-  return env;
-}
-
-function formatEnvVars(value: unknown): string {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return "";
-  return Object.entries(value as Record<string, unknown>)
-    .filter(([, v]) => typeof v === "string")
-    .map(([k, v]) => `${k}=${String(v)}`)
-    .join("\n");
-}
 
 function extractPickedDirectoryPath(handle: unknown): string | null {
   if (typeof handle !== "object" || handle === null) return null;
@@ -540,19 +518,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       minRows={3}
                     />
                   ) : (
-                    <DraftTextarea
-                      value={eff("adapterConfig", "env", formatEnvVars(config.env))}
-                      onCommit={(v) => {
-                        const parsed = parseEnvVars(v);
-                        mark(
-                          "adapterConfig",
-                          "env",
-                          Object.keys(parsed).length > 0 ? parsed : undefined,
-                        );
-                      }}
-                      immediate
-                      placeholder={"ANTHROPIC_API_KEY=...\nPAPERCLIP_API_URL=http://localhost:3100"}
-                      minRows={3}
+                    <EnvVarEditor
+                      value={(eff("adapterConfig", "env", config.env ?? {}) as Record<string, string>)}
+                      onChange={(env) => mark("adapterConfig", "env", env)}
                     />
                   )}
                 </Field>
@@ -724,6 +692,98 @@ function AdapterTypeDropdown({
         ))}
       </PopoverContent>
     </Popover>
+  );
+}
+
+function EnvVarEditor({
+  value,
+  onChange,
+}: {
+  value: Record<string, string>;
+  onChange: (env: Record<string, string> | undefined) => void;
+}) {
+  type Row = { key: string; value: string };
+
+  function toRows(rec: Record<string, string> | null | undefined): Row[] {
+    if (!rec || typeof rec !== "object") return [{ key: "", value: "" }];
+    const entries = Object.entries(rec).map(([k, v]) => ({ key: k, value: String(v) }));
+    return [...entries, { key: "", value: "" }];
+  }
+
+  const [rows, setRows] = useState<Row[]>(() => toRows(value));
+  const valueRef = useRef(value);
+
+  // Sync when value identity changes (overlay reset after save)
+  useEffect(() => {
+    if (value !== valueRef.current) {
+      valueRef.current = value;
+      setRows(toRows(value));
+    }
+  }, [value]);
+
+  function emit(nextRows: Row[]) {
+    const rec: Record<string, string> = {};
+    for (const row of nextRows) {
+      const k = row.key.trim();
+      if (k) rec[k] = row.value;
+    }
+    onChange(Object.keys(rec).length > 0 ? rec : undefined);
+  }
+
+  function updateRow(i: number, field: "key" | "value", v: string) {
+    const next = rows.map((r, idx) => (idx === i ? { ...r, [field]: v } : r));
+    if (next[next.length - 1].key || next[next.length - 1].value) {
+      next.push({ key: "", value: "" });
+    }
+    setRows(next);
+    emit(next);
+  }
+
+  function removeRow(i: number) {
+    const next = rows.filter((_, idx) => idx !== i);
+    if (next.length === 0 || next[next.length - 1].key || next[next.length - 1].value) {
+      next.push({ key: "", value: "" });
+    }
+    setRows(next);
+    emit(next);
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {rows.map((row, i) => {
+        const isTrailing = i === rows.length - 1 && !row.key && !row.value;
+        return (
+          <div key={i} className="flex items-center gap-1.5">
+            <input
+              className={cn(inputClass, "flex-[2]")}
+              placeholder="KEY"
+              value={row.key}
+              onChange={(e) => updateRow(i, "key", e.target.value)}
+            />
+            <input
+              className={cn(inputClass, "flex-[3]")}
+              placeholder="value"
+              value={row.value}
+              onChange={(e) => updateRow(i, "value", e.target.value)}
+            />
+            {!isTrailing ? (
+              <button
+                type="button"
+                className="shrink-0 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                onClick={() => removeRow(i)}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <div className="w-[26px] shrink-0" />
+            )}
+          </div>
+        );
+      })}
+      <p className="text-[11px] text-muted-foreground/60">
+        PAPERCLIP_* variables are injected automatically at runtime.
+      </p>
+    </div>
   );
 }
 

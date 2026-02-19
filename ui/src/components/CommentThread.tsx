@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import Markdown from "react-markdown";
 import type { IssueComment, Agent } from "@paperclip/shared";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -72,7 +73,9 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
                 {formatDate(comment.createdAt)}
               </span>
             </div>
-            <p className="text-sm whitespace-pre-wrap">{comment.body}</p>
+            <div className="text-sm prose prose-sm prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-headings:my-2 prose-headings:text-sm">
+              <Markdown>{comment.body}</Markdown>
+            </div>
             {comment.runId && comment.runAgentId && (
               <div className="mt-2 pt-2 border-t border-border/60">
                 <Link

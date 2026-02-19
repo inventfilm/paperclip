@@ -115,6 +115,7 @@ export function NewIssueDialog() {
       issuesApi.create(selectedCompanyId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+      if (draftTimer.current) clearTimeout(draftTimer.current);
       clearDraft();
       reset();
       closeNewIssue();

@@ -202,7 +202,7 @@ export function AgentDetail() {
 
   const assignedIssues = (allIssues ?? []).filter((i) => i.assigneeAgentId === agentId);
   const reportsToAgent = (allAgents ?? []).find((a) => a.id === agent?.reportsTo);
-  const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agentId);
+  const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agentId && a.status !== "terminated");
 
   const agentAction = useMutation({
     mutationFn: async (action: "invoke" | "pause" | "resume" | "terminate" | "resetSession") => {
@@ -225,6 +225,21 @@ export function AgentDetail() {
     },
     onError: (err) => {
       setActionError(err instanceof Error ? err.message : "Action failed");
+    },
+  });
+
+  const updatePermissions = useMutation({
+    mutationFn: (canCreateAgents: boolean) =>
+      agentsApi.updatePermissions(agentId!, { canCreateAgents }),
+    onSuccess: () => {
+      setActionError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId!) });
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) });
+      }
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Failed to update permissions");
     },
   });
 
@@ -266,6 +281,7 @@ export function AgentDetail() {
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!agent) return null;
+  const isPendingApproval = agent.status === "pending_approval";
 
   return (
     <div className="space-y-6">
@@ -291,7 +307,7 @@ export function AgentDetail() {
             variant="outline"
             size="sm"
             onClick={() => agentAction.mutate("invoke")}
-            disabled={agentAction.isPending}
+            disabled={agentAction.isPending || isPendingApproval}
           >
             <Play className="h-3.5 w-3.5 mr-1" />
             Invoke
@@ -301,7 +317,7 @@ export function AgentDetail() {
               variant="outline"
               size="sm"
               onClick={() => agentAction.mutate("resume")}
-              disabled={agentAction.isPending}
+              disabled={agentAction.isPending || isPendingApproval}
             >
               <Play className="h-3.5 w-3.5 mr-1" />
               Resume
@@ -311,7 +327,7 @@ export function AgentDetail() {
               variant="outline"
               size="sm"
               onClick={() => agentAction.mutate("pause")}
-              disabled={agentAction.isPending}
+              disabled={agentAction.isPending || isPendingApproval}
             >
               <Pause className="h-3.5 w-3.5 mr-1" />
               Pause
@@ -363,6 +379,11 @@ export function AgentDetail() {
       </div>
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+      {isPendingApproval && (
+        <p className="text-sm text-amber-500">
+          This agent is pending board approval and cannot be invoked yet.
+        </p>
+      )}
 
       {/* Floating Save/Cancel — sticky so it's always reachable when scrolled */}
       <div
@@ -478,7 +499,13 @@ export function AgentDetail() {
                         >
                           <span className="relative flex h-2 w-2">
                             <span className={`absolute inline-flex h-full w-full rounded-full ${
-                              r.status === "active" ? "bg-green-400" : r.status === "error" ? "bg-red-400" : "bg-neutral-400"
+                              r.status === "active"
+                                ? "bg-green-400"
+                                : r.status === "pending_approval"
+                                  ? "bg-amber-400"
+                                  : r.status === "error"
+                                    ? "bg-red-400"
+                                    : "bg-neutral-400"
                             }`} />
                           </span>
                           {r.name}
@@ -494,6 +521,23 @@ export function AgentDetail() {
                     <p className="text-sm mt-0.5">{agent.capabilities}</p>
                   </div>
                 )}
+                <div className="pt-2 border-t border-border/60">
+                  <span className="text-xs text-muted-foreground">Permissions</span>
+                  <div className="mt-1 flex items-center justify-between text-sm">
+                    <span>Can create new agents</span>
+                    <Button
+                      variant={agent.permissions?.canCreateAgents ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() =>
+                        updatePermissions.mutate(!Boolean(agent.permissions?.canCreateAgents))
+                      }
+                      disabled={updatePermissions.isPending}
+                    >
+                      {agent.permissions?.canCreateAgents ? "Enabled" : "Disabled"}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -585,6 +629,20 @@ function ConfigurationTab({
     mutationFn: (data: Record<string, unknown>) => agentsApi.update(agent.id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.configRevisions(agent.id) });
+    },
+  });
+
+  const { data: configRevisions } = useQuery({
+    queryKey: queryKeys.agents.configRevisions(agent.id),
+    queryFn: () => agentsApi.listConfigRevisions(agent.id),
+  });
+
+  const rollbackConfig = useMutation({
+    mutationFn: (revisionId: string) => agentsApi.rollbackConfigRevision(agent.id, revisionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.configRevisions(agent.id) });
     },
   });
 
@@ -593,18 +651,58 @@ function ConfigurationTab({
   }, [onSavingChange, updateAgent.isPending]);
 
   return (
-    <div className="max-w-2xl border border-border rounded-lg overflow-hidden">
-      <AgentConfigForm
-        mode="edit"
-        agent={agent}
-        onSave={(patch) => updateAgent.mutate(patch)}
-        isSaving={updateAgent.isPending}
-        adapterModels={adapterModels}
-        onDirtyChange={onDirtyChange}
-        onSaveActionChange={onSaveActionChange}
-        onCancelActionChange={onCancelActionChange}
-        hideInlineSave
-      />
+    <div className="max-w-2xl space-y-4">
+      <div className="border border-border rounded-lg overflow-hidden">
+        <AgentConfigForm
+          mode="edit"
+          agent={agent}
+          onSave={(patch) => updateAgent.mutate(patch)}
+          isSaving={updateAgent.isPending}
+          adapterModels={adapterModels}
+          onDirtyChange={onDirtyChange}
+          onSaveActionChange={onSaveActionChange}
+          onCancelActionChange={onCancelActionChange}
+          hideInlineSave
+        />
+      </div>
+      <div className="border border-border rounded-lg p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Configuration Revisions</h3>
+          <span className="text-xs text-muted-foreground">{configRevisions?.length ?? 0}</span>
+        </div>
+        {(configRevisions ?? []).length === 0 ? (
+          <p className="text-sm text-muted-foreground">No configuration revisions yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {(configRevisions ?? []).slice(0, 10).map((revision) => (
+              <div key={revision.id} className="border border-border/70 rounded-md p-3 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-mono">{revision.id.slice(0, 8)}</span>
+                    <span className="mx-1">·</span>
+                    <span>{formatDate(revision.createdAt)}</span>
+                    <span className="mx-1">·</span>
+                    <span>{revision.source}</span>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2.5 text-xs"
+                    onClick={() => rollbackConfig.mutate(revision.id)}
+                    disabled={rollbackConfig.isPending}
+                  >
+                    Restore
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Changed:{" "}
+                  {revision.changedKeys.length > 0 ? revision.changedKeys.join(", ") : "no tracked changes"}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

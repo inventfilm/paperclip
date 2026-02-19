@@ -11,6 +11,7 @@ import { IssueDetail } from "./pages/IssueDetail";
 import { Goals } from "./pages/Goals";
 import { GoalDetail } from "./pages/GoalDetail";
 import { Approvals } from "./pages/Approvals";
+import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { Costs } from "./pages/Costs";
 import { Activity } from "./pages/Activity";
 import { Inbox } from "./pages/Inbox";
@@ -35,6 +36,7 @@ export function App() {
         <Route path="goals" element={<Goals />} />
         <Route path="goals/:goalId" element={<GoalDetail />} />
         <Route path="approvals" element={<Approvals />} />
+        <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
         <Route path="costs" element={<Costs />} />
         <Route path="activity" element={<Activity />} />
         <Route path="inbox" element={<Inbox />} />

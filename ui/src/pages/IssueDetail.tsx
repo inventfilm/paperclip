@@ -41,7 +41,40 @@ const ACTION_LABELS: Record<string, string> = {
   "approval.rejected": "rejected",
 };
 
-function formatAction(action: string): string {
+function humanizeValue(value: unknown): string {
+  if (typeof value !== "string") return String(value ?? "none");
+  return value.replace(/_/g, " ");
+}
+
+function formatAction(action: string, details?: Record<string, unknown> | null): string {
+  if (action === "issue.updated" && details) {
+    const previous = (details._previous ?? {}) as Record<string, unknown>;
+    const parts: string[] = [];
+
+    if (details.status !== undefined) {
+      const from = previous.status;
+      parts.push(
+        from
+          ? `changed the status from ${humanizeValue(from)} to ${humanizeValue(details.status)}`
+          : `changed the status to ${humanizeValue(details.status)}`
+      );
+    }
+    if (details.priority !== undefined) {
+      const from = previous.priority;
+      parts.push(
+        from
+          ? `changed the priority from ${humanizeValue(from)} to ${humanizeValue(details.priority)}`
+          : `changed the priority to ${humanizeValue(details.priority)}`
+      );
+    }
+    if (details.assigneeAgentId !== undefined) {
+      parts.push(details.assigneeAgentId ? "assigned the issue" : "unassigned the issue");
+    }
+    if (details.title !== undefined) parts.push("updated the title");
+    if (details.description !== undefined) parts.push("updated the description");
+
+    if (parts.length > 0) return parts.join(", ");
+  }
   return ACTION_LABELS[action] ?? action.replace(/[._]/g, " ");
 }
 
@@ -87,6 +120,12 @@ export function IssueDetail() {
     refetchInterval: 5000,
   });
 
+  const { data: linkedApprovals } = useQuery({
+    queryKey: queryKeys.issues.approvals(issueId!),
+    queryFn: () => issuesApi.listApprovals(issueId!),
+    enabled: !!issueId,
+  });
+
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
@@ -125,6 +164,7 @@ export function IssueDetail() {
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(issueId!) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.approvals(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(issueId!) });
     if (selectedCompanyId) {
@@ -234,6 +274,33 @@ export function IssueDetail() {
         }}
       />
 
+      {linkedApprovals && linkedApprovals.length > 0 && (
+        <>
+          <Separator />
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-muted-foreground">Linked Approvals</h3>
+            <div className="border border-border rounded-lg divide-y divide-border">
+              {linkedApprovals.map((approval) => (
+                <Link
+                  key={approval.id}
+                  to={`/approvals/${approval.id}`}
+                  className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={approval.status} />
+                    <span className="font-medium">
+                      {approval.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    </span>
+                    <span className="font-mono text-muted-foreground">{approval.id.slice(0, 8)}</span>
+                  </div>
+                  <span className="text-muted-foreground">{relativeTime(approval.createdAt)}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Linked Runs */}
       {linkedRuns && linkedRuns.length > 0 && (
         <>
@@ -248,6 +315,7 @@ export function IssueDetail() {
                   className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors"
                 >
                   <div className="flex items-center gap-2">
+                    <Identity name={agentMap.get(run.agentId)?.name ?? run.agentId.slice(0, 8)} size="sm" />
                     <StatusBadge status={run.status} />
                     <span className="font-mono text-muted-foreground">{run.runId.slice(0, 8)}</span>
                   </div>
@@ -269,7 +337,7 @@ export function IssueDetail() {
               {activity.slice(0, 20).map((evt) => (
                 <div key={evt.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                   <ActorIdentity evt={evt} agentMap={agentMap} />
-                  <span>{formatAction(evt.action)}</span>
+                  <span>{formatAction(evt.action, evt.details)}</span>
                   <span className="ml-auto shrink-0">{relativeTime(evt.createdAt)}</span>
                 </div>
               ))}

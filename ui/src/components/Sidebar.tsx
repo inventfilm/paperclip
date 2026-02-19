@@ -15,15 +15,25 @@ import {
   BookOpen,
   Paperclip,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { useDialog } from "../context/DialogContext";
+import { useCompany } from "../context/CompanyContext";
+import { sidebarBadgesApi } from "../api/sidebarBadges";
+import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function Sidebar() {
   const { openNewIssue } = useDialog();
+  const { selectedCompanyId } = useCompany();
+  const { data: sidebarBadges } = useQuery({
+    queryKey: queryKeys.sidebarBadges(selectedCompanyId!),
+    queryFn: () => sidebarBadgesApi.get(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   function openSearch() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
@@ -63,7 +73,12 @@ export function Sidebar() {
       <ScrollArea className="flex-1">
         <nav className="flex flex-col gap-4 px-3 py-2">
           <div className="flex flex-col gap-0.5">
-            <SidebarNavItem to="/inbox" label="Inbox" icon={Inbox} />
+            <SidebarNavItem
+              to="/inbox"
+              label="Inbox"
+              icon={Inbox}
+              badge={sidebarBadges?.inbox}
+            />
             <SidebarNavItem to="/my-issues" label="My Issues" icon={ListTodo} />
           </div>
 
@@ -76,7 +91,12 @@ export function Sidebar() {
           <SidebarSection label="Company">
             <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} />
             <SidebarNavItem to="/agents" label="Agents" icon={Bot} />
-            <SidebarNavItem to="/approvals" label="Approvals" icon={ShieldCheck} />
+            <SidebarNavItem
+              to="/approvals"
+              label="Approvals"
+              icon={ShieldCheck}
+              badge={sidebarBadges?.approvals}
+            />
             <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
             <SidebarNavItem to="/activity" label="Activity" icon={History} />
             <SidebarNavItem to="/companies" label="Companies" icon={Building2} />

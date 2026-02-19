@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { costsApi } from "../api/costs";
 import { useCompany } from "../context/CompanyContext";
@@ -6,24 +6,79 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { formatCents } from "../lib/utils";
+import { Identity } from "../components/Identity";
+import { StatusBadge } from "../components/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { DollarSign } from "lucide-react";
+
+type DatePreset = "mtd" | "7d" | "30d" | "ytd" | "all" | "custom";
+
+const PRESET_LABELS: Record<DatePreset, string> = {
+  mtd: "Month to Date",
+  "7d": "Last 7 Days",
+  "30d": "Last 30 Days",
+  ytd: "Year to Date",
+  all: "All Time",
+  custom: "Custom",
+};
+
+function computeRange(preset: DatePreset): { from: string; to: string } {
+  const now = new Date();
+  const to = now.toISOString();
+  switch (preset) {
+    case "mtd": {
+      const d = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: d.toISOString(), to };
+    }
+    case "7d": {
+      const d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      return { from: d.toISOString(), to };
+    }
+    case "30d": {
+      const d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return { from: d.toISOString(), to };
+    }
+    case "ytd": {
+      const d = new Date(now.getFullYear(), 0, 1);
+      return { from: d.toISOString(), to };
+    }
+    case "all":
+      return { from: "", to: "" };
+    case "custom":
+      return { from: "", to: "" };
+  }
+}
 
 export function Costs() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
 
+  const [preset, setPreset] = useState<DatePreset>("mtd");
+  const [customFrom, setCustomFrom] = useState("");
+  const [customTo, setCustomTo] = useState("");
+
   useEffect(() => {
     setBreadcrumbs([{ label: "Costs" }]);
   }, [setBreadcrumbs]);
 
+  const { from, to } = useMemo(() => {
+    if (preset === "custom") {
+      return {
+        from: customFrom ? new Date(customFrom).toISOString() : "",
+        to: customTo ? new Date(customTo + "T23:59:59.999Z").toISOString() : "",
+      };
+    }
+    return computeRange(preset);
+  }, [preset, customFrom, customTo]);
+
   const { data, isLoading, error } = useQuery({
-    queryKey: queryKeys.costs(selectedCompanyId!),
+    queryKey: queryKeys.costs(selectedCompanyId!, from || undefined, to || undefined),
     queryFn: async () => {
       const [summary, byAgent, byProject] = await Promise.all([
-        costsApi.summary(selectedCompanyId!),
-        costsApi.byAgent(selectedCompanyId!),
-        costsApi.byProject(selectedCompanyId!),
+        costsApi.summary(selectedCompanyId!, from || undefined, to || undefined),
+        costsApi.byAgent(selectedCompanyId!, from || undefined, to || undefined),
+        costsApi.byProject(selectedCompanyId!, from || undefined, to || undefined),
       ]);
       return { summary, byAgent, byProject };
     },
@@ -34,42 +89,77 @@ export function Costs() {
     return <EmptyState icon={DollarSign} message="Select a company to view costs." />;
   }
 
+  const presetKeys: DatePreset[] = ["mtd", "7d", "30d", "ytd", "all", "custom"];
+
   return (
     <div className="space-y-6">
+      {/* Date range selector */}
+      <div className="flex flex-wrap items-center gap-2">
+        {presetKeys.map((p) => (
+          <Button
+            key={p}
+            variant={preset === p ? "secondary" : "ghost"}
+            size="sm"
+            onClick={() => setPreset(p)}
+          >
+            {PRESET_LABELS[p]}
+          </Button>
+        ))}
+        {preset === "custom" && (
+          <div className="flex items-center gap-2 ml-2">
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+            />
+            <span className="text-sm text-muted-foreground">to</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+            />
+          </div>
+        )}
+      </div>
+
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
       {data && (
         <>
+          {/* Summary card */}
           <Card>
             <CardContent className="p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">Month to Date</p>
+                <p className="text-sm text-muted-foreground">{PRESET_LABELS[preset]}</p>
                 <p className="text-sm text-muted-foreground">
-                  {data.summary.monthUtilizationPercent}% utilized
+                  {data.summary.utilizationPercent}% utilized
                 </p>
               </div>
               <p className="text-2xl font-bold">
-                {formatCents(data.summary.monthSpendCents)}{" "}
+                {formatCents(data.summary.spendCents)}{" "}
                 <span className="text-base font-normal text-muted-foreground">
-                  / {formatCents(data.summary.monthBudgetCents)}
+                  / {formatCents(data.summary.budgetCents)}
                 </span>
               </p>
               <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
-                    data.summary.monthUtilizationPercent > 90
+                    data.summary.utilizationPercent > 90
                       ? "bg-red-400"
-                      : data.summary.monthUtilizationPercent > 70
+                      : data.summary.utilizationPercent > 70
                         ? "bg-yellow-400"
                         : "bg-green-400"
                   }`}
-                  style={{ width: `${Math.min(100, data.summary.monthUtilizationPercent)}%` }}
+                  style={{ width: `${Math.min(100, data.summary.utilizationPercent)}%` }}
                 />
               </div>
             </CardContent>
           </Card>
 
+          {/* By Agent / By Project */}
           <div className="grid md:grid-cols-2 gap-4">
             <Card>
               <CardContent className="p-4">
@@ -78,15 +168,23 @@ export function Costs() {
                   <p className="text-sm text-muted-foreground">No cost events yet.</p>
                 ) : (
                   <div className="space-y-2">
-                    {data.byAgent.map((row, idx) => (
+                    {data.byAgent.map((row) => (
                       <div
-                        key={`${row.agentId ?? "na"}-${idx}`}
+                        key={row.agentId}
                         className="flex items-center justify-between text-sm"
                       >
-                        <span className="font-mono text-xs truncate">
-                          {row.agentId ?? "Unattributed"}
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Identity
+                            name={row.agentName ?? row.agentId}
+                            size="sm"
+                          />
+                          {row.agentStatus === "terminated" && (
+                            <StatusBadge status="terminated" />
+                          )}
+                        </div>
+                        <span className="font-medium shrink-0 ml-2">
+                          {formatCents(row.costCents)}
                         </span>
-                        <span className="font-medium">{formatCents(row.costCents)}</span>
                       </div>
                     ))}
                   </div>

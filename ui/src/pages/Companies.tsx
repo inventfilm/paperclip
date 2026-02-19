@@ -68,6 +68,14 @@ export function Companies() {
     },
   });
 
+  const companySettingsMutation = useMutation({
+    mutationFn: ({ id, requireApproval }: { id: string; requireApproval: boolean }) =>
+      companiesApi.update(id, { requireBoardApprovalForNewAgents: requireApproval }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+    },
+  });
+
   useEffect(() => {
     setBreadcrumbs([{ label: "Companies" }]);
   }, [setBreadcrumbs]);
@@ -259,6 +267,40 @@ export function Companies() {
                   <span>Created {relativeTime(company.createdAt)}</span>
                 </div>
               </div>
+
+              {selected && (
+                <div
+                  className="mt-4 border-t border-border pt-4"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+                    Advanced Settings
+                  </div>
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+                    <div>
+                      <div className="text-sm font-medium">Require board approval for new hires</div>
+                      <div className="text-xs text-muted-foreground">
+                        New agent hires stay pending until approved by board.
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={
+                        company.requireBoardApprovalForNewAgents ? "default" : "outline"
+                      }
+                      onClick={() =>
+                        companySettingsMutation.mutate({
+                          id: company.id,
+                          requireApproval: !company.requireBoardApprovalForNewAgents,
+                        })
+                      }
+                      disabled={companySettingsMutation.isPending}
+                    >
+                      {company.requireBoardApprovalForNewAgents ? "On" : "Off"}
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Delete confirmation */}
               {isConfirmingDelete && (

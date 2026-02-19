@@ -12,7 +12,7 @@ import { EmptyState } from "../components/EmptyState";
 import { formatCents, relativeTime, cn } from "../lib/utils";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Bot, Plus, List, GitBranch } from "lucide-react";
+import { Bot, Plus, List, GitBranch, SlidersHorizontal } from "lucide-react";
 import type { Agent } from "@paperclip/shared";
 
 const adapterLabels: Record<string, string> = {
@@ -30,23 +30,23 @@ const roleLabels: Record<string, string> = {
 
 type FilterTab = "all" | "active" | "paused" | "error";
 
-function matchesFilter(status: string, tab: FilterTab): boolean {
+function matchesFilter(status: string, tab: FilterTab, showTerminated: boolean): boolean {
+  if (status === "terminated") return showTerminated;
   if (tab === "all") return true;
   if (tab === "active") return status === "active" || status === "running" || status === "idle";
   if (tab === "paused") return status === "paused";
-  if (tab === "error") return status === "error" || status === "terminated";
+  if (tab === "error") return status === "error";
   return true;
 }
 
-function filterAgents(agents: Agent[], tab: FilterTab): Agent[] {
-  return agents.filter((a) => matchesFilter(a.status, tab));
+function filterAgents(agents: Agent[], tab: FilterTab, showTerminated: boolean): Agent[] {
+  return agents.filter((a) => matchesFilter(a.status, tab, showTerminated));
 }
 
-function filterOrgTree(nodes: OrgNode[], tab: FilterTab): OrgNode[] {
-  if (tab === "all") return nodes;
+function filterOrgTree(nodes: OrgNode[], tab: FilterTab, showTerminated: boolean): OrgNode[] {
   return nodes.reduce<OrgNode[]>((acc, node) => {
-    const filteredReports = filterOrgTree(node.reports, tab);
-    if (matchesFilter(node.status, tab) || filteredReports.length > 0) {
+    const filteredReports = filterOrgTree(node.reports, tab, showTerminated);
+    if (matchesFilter(node.status, tab, showTerminated) || filteredReports.length > 0) {
       acc.push({ ...node, reports: filteredReports });
     }
     return acc;
@@ -60,6 +60,8 @@ export function Agents() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<FilterTab>("all");
   const [view, setView] = useState<"list" | "org">("org");
+  const [showTerminated, setShowTerminated] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const { data: agents, isLoading, error } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -87,21 +89,51 @@ export function Agents() {
     return <EmptyState icon={Bot} message="Select a company to view agents." />;
   }
 
-  const filtered = filterAgents(agents ?? [], tab);
-  const filteredOrg = filterOrgTree(orgTree ?? [], tab);
+  const filtered = filterAgents(agents ?? [], tab, showTerminated);
+  const filteredOrg = filterOrgTree(orgTree ?? [], tab, showTerminated);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <Tabs value={tab} onValueChange={(v) => setTab(v as FilterTab)}>
           <TabsList variant="line">
-            <TabsTrigger value="all">All{agents ? ` (${agents.length})` : ""}</TabsTrigger>
+            <TabsTrigger value="all">All</TabsTrigger>
             <TabsTrigger value="active">Active</TabsTrigger>
             <TabsTrigger value="paused">Paused</TabsTrigger>
             <TabsTrigger value="error">Error</TabsTrigger>
           </TabsList>
         </Tabs>
         <div className="flex items-center gap-2">
+          {/* Filters */}
+          <div className="relative">
+            <button
+              className={cn(
+                "flex items-center gap-1.5 px-2 py-1.5 text-xs transition-colors border border-border",
+                filtersOpen || showTerminated ? "text-foreground bg-accent" : "text-muted-foreground hover:bg-accent/50"
+              )}
+              onClick={() => setFiltersOpen(!filtersOpen)}
+            >
+              <SlidersHorizontal className="h-3 w-3" />
+              Filters
+              {showTerminated && <span className="ml-0.5 px-1 bg-foreground/10 rounded text-[10px]">1</span>}
+            </button>
+            {filtersOpen && (
+              <div className="absolute right-0 top-full mt-1 z-50 w-48 border border-border bg-popover shadow-md p-1">
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs text-left hover:bg-accent/50 transition-colors"
+                  onClick={() => setShowTerminated(!showTerminated)}
+                >
+                  <span className={cn(
+                    "flex items-center justify-center h-3.5 w-3.5 border border-border rounded-sm",
+                    showTerminated && "bg-foreground"
+                  )}>
+                    {showTerminated && <span className="text-background text-[10px] leading-none">&#10003;</span>}
+                  </span>
+                  Show terminated
+                </button>
+              </div>
+            )}
+          </div>
           {/* View toggle */}
           <div className="flex items-center border border-border">
             <button
@@ -129,6 +161,10 @@ export function Agents() {
           </Button>
         </div>
       </div>
+
+      {filtered.length > 0 && (
+        <p className="text-xs text-muted-foreground">{filtered.length} agent{filtered.length !== 1 ? "s" : ""}</p>
+      )}
 
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
@@ -165,8 +201,10 @@ export function Agents() {
                           ? "bg-cyan-400 animate-pulse"
                           : agent.status === "active"
                             ? "bg-green-400"
-                            : agent.status === "paused"
+                        : agent.status === "paused"
                               ? "bg-yellow-400"
+                              : agent.status === "pending_approval"
+                                ? "bg-amber-400"
                               : agent.status === "error"
                                 ? "bg-red-400"
                                 : "bg-neutral-400"
@@ -260,6 +298,8 @@ function OrgTreeNode({
         ? "bg-green-400"
         : node.status === "paused"
           ? "bg-yellow-400"
+          : node.status === "pending_approval"
+            ? "bg-amber-400"
           : node.status === "error"
             ? "bg-red-400"
             : "bg-neutral-400";

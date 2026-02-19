@@ -11,7 +11,12 @@ export const companiesApi = {
     api.post<Company>("/companies", data),
   update: (
     companyId: string,
-    data: Partial<Pick<Company, "name" | "description" | "status" | "budgetMonthlyCents">>,
+    data: Partial<
+      Pick<
+        Company,
+        "name" | "description" | "status" | "budgetMonthlyCents" | "requireBoardApprovalForNewAgents"
+      >
+    >,
   ) => api.patch<Company>(`/companies/${companyId}`, data),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
