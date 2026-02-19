@@ -13,6 +13,7 @@
     "test:run": "vitest run",
     "db:generate": "pnpm --filter @paperclip/db generate",
     "db:migrate": "pnpm --filter @paperclip/db migrate",
+    "db:backup": "./scripts/backup-db.sh",
     "paperclip": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts"
   },
   "devDependencies": {
