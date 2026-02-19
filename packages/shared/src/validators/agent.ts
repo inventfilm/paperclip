@@ -25,9 +25,18 @@ export const createAgentSchema = z.object({
 
 export type CreateAgent = z.infer<typeof createAgentSchema>;
 
+export const createAgentHireSchema = createAgentSchema.extend({
+  sourceIssueId: z.string().uuid().optional().nullable(),
+  sourceIssueIds: z.array(z.string().uuid()).optional(),
+});
+
+export type CreateAgentHire = z.infer<typeof createAgentHireSchema>;
+
 export const updateAgentSchema = createAgentSchema
+  .omit({ permissions: true })
   .partial()
   .extend({
+    permissions: z.never().optional(),
     status: z.enum(AGENT_STATUSES).optional(),
     spentMonthlyCents: z.number().int().nonnegative().optional(),
   });

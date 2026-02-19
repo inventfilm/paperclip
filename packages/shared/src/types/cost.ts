@@ -17,7 +17,16 @@ export interface CostEvent {
 
 export interface CostSummary {
   companyId: string;
-  monthSpendCents: number;
-  monthBudgetCents: number;
-  monthUtilizationPercent: number;
+  spendCents: number;
+  budgetCents: number;
+  utilizationPercent: number;
+}
+
+export interface CostByAgent {
+  agentId: string;
+  agentName: string | null;
+  agentStatus: string | null;
+  costCents: number;
+  inputTokens: number;
+  outputTokens: number;
 }

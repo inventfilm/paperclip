@@ -35,3 +35,17 @@ export interface AgentKeyCreated {
   token: string;
   createdAt: Date;
 }
+
+export interface AgentConfigRevision {
+  id: string;
+  companyId: string;
+  agentId: string;
+  createdByAgentId: string | null;
+  createdByUserId: string | null;
+  source: string;
+  rolledBackFromRevisionId: string | null;
+  changedKeys: string[];
+  beforeConfig: Record<string, unknown>;
+  afterConfig: Record<string, unknown>;
+  createdAt: Date;
+}

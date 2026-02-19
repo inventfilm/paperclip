@@ -7,12 +7,14 @@ export {
 
 export {
   createAgentSchema,
+  createAgentHireSchema,
   updateAgentSchema,
   createAgentKeySchema,
   wakeAgentSchema,
   agentPermissionsSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
+  type CreateAgentHire,
   type UpdateAgent,
   type CreateAgentKey,
   type WakeAgent,
@@ -31,10 +33,12 @@ export {
   updateIssueSchema,
   checkoutIssueSchema,
   addIssueCommentSchema,
+  linkIssueApprovalSchema,
   type CreateIssue,
   type UpdateIssue,
   type CheckoutIssue,
   type AddIssueComment,
+  type LinkIssueApproval,
 } from "./issue.js";
 
 export {

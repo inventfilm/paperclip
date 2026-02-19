@@ -11,4 +11,5 @@ export const API = {
   costs: `${API_PREFIX}/costs`,
   activity: `${API_PREFIX}/activity`,
   dashboard: `${API_PREFIX}/dashboard`,
+  sidebarBadges: `${API_PREFIX}/sidebar-badges`,
 } as const;
