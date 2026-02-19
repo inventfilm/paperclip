@@ -139,6 +139,20 @@ Always use in a responsive grid: `grid md:grid-cols-2 xl:grid-cols-4 gap-4`.
 <FilterBar filters={filters} onRemove={handleRemove} onClear={() => setFilters([])} />
 ```
 
+### Identity
+
+**File:** `Identity.tsx`
+**Props:** `name: string`, `avatarUrl?: string`, `initials?: string`, `size?: "sm" | "default" | "lg"`
+**Usage:** Avatar + name display for users and agents. Derives initials from name automatically. Three sizes matching Avatar sizes.
+
+```tsx
+<Identity name="Agent Alpha" size="sm" />
+<Identity name="CEO Agent" />
+<Identity name="Backend Service" size="lg" avatarUrl="/img/bot.png" />
+```
+
+Use in property rows, comment headers, assignee displays, and anywhere a user/agent reference is shown.
+
 ### InlineEditor
 
 **File:** `InlineEditor.tsx`

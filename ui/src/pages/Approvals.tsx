@@ -10,7 +10,8 @@ import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ShieldCheck, UserPlus, Lightbulb, CheckCircle2, XCircle, Clock } from "lucide-react";
-import type { Approval } from "@paperclip/shared";
+import { Identity } from "../components/Identity";
+import type { Approval, Agent } from "@paperclip/shared";
 
 type StatusFilter = "pending" | "all";
 
@@ -89,13 +90,13 @@ function CeoStrategyPayload({ payload }: { payload: Record<string, unknown> }) {
 
 function ApprovalCard({
   approval,
-  requesterName,
+  requesterAgent,
   onApprove,
   onReject,
   isPending,
 }: {
   approval: Approval;
-  requesterName: string | null;
+  requesterAgent: Agent | null;
   onApprove: () => void;
   onReject: () => void;
   isPending: boolean;
@@ -109,11 +110,11 @@ function ApprovalCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-          <div>
+          <div className="flex items-center gap-2">
             <span className="font-medium text-sm">{label}</span>
-            {requesterName && (
-              <span className="text-xs text-muted-foreground ml-2">
-                requested by {requesterName}
+            {requesterAgent && (
+              <span className="text-xs text-muted-foreground">
+                requested by <Identity name={requesterAgent.name} size="sm" className="inline-flex" />
               </span>
             )}
           </div>
@@ -209,11 +210,6 @@ export function Approvals() {
     },
   });
 
-  const agentName = (id: string | null) => {
-    if (!id || !agents) return null;
-    return agents.find((a) => a.id === id)?.name ?? null;
-  };
-
   const filtered = (data ?? []).filter(
     (a) => statusFilter === "all" || a.status === "pending",
   );
@@ -264,7 +260,7 @@ export function Approvals() {
             <ApprovalCard
               key={approval.id}
               approval={approval}
-              requesterName={agentName(approval.requestedByAgentId)}
+              requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
               onApprove={() => approveMutation.mutate(approval.id)}
               onReject={() => rejectMutation.mutate(approval.id)}
               isPending={approveMutation.isPending || rejectMutation.isPending}

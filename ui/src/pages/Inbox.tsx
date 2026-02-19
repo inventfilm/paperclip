@@ -21,6 +21,7 @@ import {
   Clock,
   ExternalLink,
 } from "lucide-react";
+import { Identity } from "../components/Identity";
 import type { Issue } from "@paperclip/shared";
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -241,14 +242,15 @@ export function Inbox() {
                   <PriorityIcon priority={issue.priority} />
                   <StatusIcon status={issue.status} />
                   <span className="text-xs font-mono text-muted-foreground">
-                    {issue.id.slice(0, 8)}
+                    {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="text-sm truncate flex-1">{issue.title}</span>
-                  {issue.assigneeAgentId && (
-                    <span className="text-xs text-muted-foreground">
-                      {agentName(issue.assigneeAgentId) ?? issue.assigneeAgentId.slice(0, 8)}
-                    </span>
-                  )}
+                  {issue.assigneeAgentId && (() => {
+                    const name = agentName(issue.assigneeAgentId);
+                    return name
+                      ? <Identity name={name} size="sm" />
+                      : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
+                  })()}
                   <span className="text-xs text-muted-foreground shrink-0">
                     updated {timeAgo(issue.updatedAt)}
                   </span>

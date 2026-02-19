@@ -1,6 +1,25 @@
 import type { HeartbeatRun, HeartbeatRunEvent } from "@paperclip/shared";
 import { api } from "./client";
 
+export interface ActiveRunForIssue extends HeartbeatRun {
+  agentId: string;
+  agentName: string;
+  adapterType: string;
+}
+
+export interface LiveRunForIssue {
+  id: string;
+  status: string;
+  invocationSource: string;
+  triggerDetail: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+  agentId: string;
+  agentName: string;
+  adapterType: string;
+}
+
 export const heartbeatsApi = {
   list: (companyId: string, agentId?: string) => {
     const params = agentId ? `?agentId=${agentId}` : "";
@@ -15,4 +34,8 @@ export const heartbeatsApi = {
       `/heartbeat-runs/${runId}/log?offset=${encodeURIComponent(String(offset))}&limitBytes=${encodeURIComponent(String(limitBytes))}`,
     ),
   cancel: (runId: string) => api.post<void>(`/heartbeat-runs/${runId}/cancel`, {}),
+  liveRunsForIssue: (issueId: string) =>
+    api.get<LiveRunForIssue[]>(`/issues/${issueId}/live-runs`),
+  activeRunForIssue: (issueId: string) =>
+    api.get<ActiveRunForIssue | null>(`/issues/${issueId}/active-run`),
 };

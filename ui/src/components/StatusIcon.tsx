@@ -33,14 +33,14 @@ export function StatusIcon({ status, onChange, className }: StatusIconProps) {
   const circle = (
     <span
       className={cn(
-        "inline-flex items-center justify-center h-4 w-4 rounded-full border-2 shrink-0",
+        "relative inline-flex h-4 w-4 rounded-full border-2 shrink-0",
         colorClass,
         onChange && "cursor-pointer",
         className
       )}
     >
       {isDone && (
-        <span className={cn("h-2 w-2 rounded-full bg-current")} />
+        <span className="absolute inset-0 m-auto h-2 w-2 rounded-full bg-current" />
       )}
     </span>
   );

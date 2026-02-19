@@ -1,18 +1,59 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
+import { activityApi } from "../api/activity";
+import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { relativeTime } from "../lib/utils";
 import { InlineEditor } from "../components/InlineEditor";
 import { CommentThread } from "../components/CommentThread";
 import { IssueProperties } from "../components/IssueProperties";
+import { LiveRunWidget } from "../components/LiveRunWidget";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
+import { StatusBadge } from "../components/StatusBadge";
+import { Identity } from "../components/Identity";
 import { Separator } from "@/components/ui/separator";
 import { ChevronRight } from "lucide-react";
+import type { ActivityEvent } from "@paperclip/shared";
+import type { Agent } from "@paperclip/shared";
+
+const ACTION_LABELS: Record<string, string> = {
+  "issue.created": "created the issue",
+  "issue.updated": "updated the issue",
+  "issue.checked_out": "checked out the issue",
+  "issue.released": "released the issue",
+  "issue.comment_added": "added a comment",
+  "issue.deleted": "deleted the issue",
+  "agent.created": "created an agent",
+  "agent.updated": "updated the agent",
+  "agent.paused": "paused the agent",
+  "agent.resumed": "resumed the agent",
+  "agent.terminated": "terminated the agent",
+  "heartbeat.invoked": "invoked a heartbeat",
+  "heartbeat.cancelled": "cancelled a heartbeat",
+  "approval.created": "requested approval",
+  "approval.approved": "approved",
+  "approval.rejected": "rejected",
+};
+
+function formatAction(action: string): string {
+  return ACTION_LABELS[action] ?? action.replace(/[._]/g, " ");
+}
+
+function ActorIdentity({ evt, agentMap }: { evt: ActivityEvent; agentMap: Map<string, Agent> }) {
+  const id = evt.actorId;
+  if (evt.actorType === "agent") {
+    const agent = agentMap.get(id);
+    return <Identity name={agent?.name ?? id.slice(0, 8)} size="sm" />;
+  }
+  if (evt.actorType === "system") return <Identity name="System" size="sm" />;
+  return <Identity name={id || "You"} size="sm" />;
+}
 
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
@@ -33,19 +74,74 @@ export function IssueDetail() {
     enabled: !!issueId,
   });
 
+  const { data: activity } = useQuery({
+    queryKey: queryKeys.issues.activity(issueId!),
+    queryFn: () => activityApi.forIssue(issueId!),
+    enabled: !!issueId,
+  });
+
+  const { data: linkedRuns } = useQuery({
+    queryKey: queryKeys.issues.runs(issueId!),
+    queryFn: () => activityApi.runsForIssue(issueId!),
+    enabled: !!issueId,
+    refetchInterval: 5000,
+  });
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const agentMap = useMemo(() => {
+    const map = new Map<string, Agent>();
+    for (const a of agents ?? []) map.set(a.id, a);
+    return map;
+  }, [agents]);
+
+  const commentsWithRunMeta = useMemo(() => {
+    const runMetaByCommentId = new Map<string, { runId: string; runAgentId: string | null }>();
+    const agentIdByRunId = new Map<string, string>();
+    for (const run of linkedRuns ?? []) {
+      agentIdByRunId.set(run.runId, run.agentId);
+    }
+    for (const evt of activity ?? []) {
+      if (evt.action !== "issue.comment_added" || !evt.runId) continue;
+      const details = evt.details ?? {};
+      const commentId = typeof details["commentId"] === "string" ? details["commentId"] : null;
+      if (!commentId || runMetaByCommentId.has(commentId)) continue;
+      runMetaByCommentId.set(commentId, {
+        runId: evt.runId,
+        runAgentId: evt.agentId ?? agentIdByRunId.get(evt.runId) ?? null,
+      });
+    }
+    return (comments ?? []).map((comment) => {
+      const meta = runMetaByCommentId.get(comment.id);
+      return meta ? { ...comment, ...meta } : comment;
+    });
+  }, [activity, comments, linkedRuns]);
+
+  const invalidateIssue = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(issueId!) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(issueId!) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(issueId!) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(issueId!) });
+    if (selectedCompanyId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
+    }
+  };
+
   const updateIssue = useMutation({
     mutationFn: (data: Record<string, unknown>) => issuesApi.update(issueId!, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) });
-      if (selectedCompanyId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId) });
-      }
-    },
+    onSuccess: invalidateIssue,
   });
 
   const addComment = useMutation({
-    mutationFn: (body: string) => issuesApi.addComment(issueId!, body),
+    mutationFn: ({ body, reopen }: { body: string; reopen?: boolean }) =>
+      issuesApi.addComment(issueId!, body, reopen),
     onSuccess: () => {
+      invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
     },
   });
@@ -105,7 +201,7 @@ export function IssueDetail() {
             priority={issue.priority}
             onChange={(priority) => updateIssue.mutate({ priority })}
           />
-          <span className="text-xs font-mono text-muted-foreground">{issue.id.slice(0, 8)}</span>
+          <span className="text-xs font-mono text-muted-foreground">{issue.identifier ?? issue.id.slice(0, 8)}</span>
         </div>
 
         <InlineEditor
@@ -125,14 +221,62 @@ export function IssueDetail() {
         />
       </div>
 
+      <LiveRunWidget issueId={issueId!} companyId={selectedCompanyId} />
+
       <Separator />
 
       <CommentThread
-        comments={comments ?? []}
-        onAdd={async (body) => {
-          await addComment.mutateAsync(body);
+        comments={commentsWithRunMeta}
+        issueStatus={issue.status}
+        agentMap={agentMap}
+        onAdd={async (body, reopen) => {
+          await addComment.mutateAsync({ body, reopen });
         }}
       />
+
+      {/* Linked Runs */}
+      {linkedRuns && linkedRuns.length > 0 && (
+        <>
+          <Separator />
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-muted-foreground">Linked Runs</h3>
+            <div className="border border-border rounded-lg divide-y divide-border">
+              {linkedRuns.map((run) => (
+                <Link
+                  key={run.runId}
+                  to={`/agents/${run.agentId}/runs/${run.runId}`}
+                  className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={run.status} />
+                    <span className="font-mono text-muted-foreground">{run.runId.slice(0, 8)}</span>
+                  </div>
+                  <span className="text-muted-foreground">{relativeTime(run.createdAt)}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Activity Log */}
+      {activity && activity.length > 0 && (
+        <>
+          <Separator />
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-muted-foreground">Activity</h3>
+            <div className="space-y-1.5">
+              {activity.slice(0, 20).map((evt) => (
+                <div key={evt.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <ActorIdentity evt={evt} agentMap={agentMap} />
+                  <span>{formatAction(evt.action)}</span>
+                  <span className="ml-auto shrink-0">{relativeTime(evt.createdAt)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

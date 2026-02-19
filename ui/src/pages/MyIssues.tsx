@@ -50,7 +50,7 @@ export function MyIssues() {
           {myIssues.map((issue) => (
             <EntityRow
               key={issue.id}
-              identifier={issue.id.slice(0, 8)}
+              identifier={issue.identifier ?? issue.id.slice(0, 8)}
               title={issue.title}
               onClick={() => navigate(`/issues/${issue.id}`)}
               leading={

@@ -91,7 +91,7 @@ export function ProjectDetail() {
               {projectIssues.map((issue) => (
                 <EntityRow
                   key={issue.id}
-                  identifier={issue.id.slice(0, 8)}
+                  identifier={issue.identifier ?? issue.id.slice(0, 8)}
                   title={issue.title}
                   trailing={<StatusBadge status={issue.status} />}
                 />

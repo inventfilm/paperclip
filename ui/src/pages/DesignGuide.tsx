@@ -64,6 +64,7 @@ import { MetricCard } from "@/components/MetricCard";
 import { FilterBar, type FilterValue } from "@/components/FilterBar";
 import { InlineEditor } from "@/components/InlineEditor";
 import { PageSkeleton } from "@/components/PageSkeleton";
+import { Identity } from "@/components/Identity";
 
 /* ------------------------------------------------------------------ */
 /*  Section wrapper                                                    */
@@ -621,6 +622,31 @@ export function DesignGuide() {
             <Avatar><AvatarFallback>A3</AvatarFallback></Avatar>
             <AvatarGroupCount>+5</AvatarGroupCount>
           </AvatarGroup>
+        </SubSection>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  IDENTITY                                                     */}
+      {/* ============================================================ */}
+      <Section title="Identity">
+        <SubSection title="Sizes">
+          <div className="flex items-center gap-6">
+            <Identity name="Agent Alpha" size="sm" />
+            <Identity name="Agent Alpha" />
+            <Identity name="Agent Alpha" size="lg" />
+          </div>
+        </SubSection>
+
+        <SubSection title="Initials derivation">
+          <div className="flex flex-col gap-2">
+            <Identity name="CEO Agent" size="sm" />
+            <Identity name="Alpha" size="sm" />
+            <Identity name="Quality Assurance Lead" size="sm" />
+          </div>
+        </SubSection>
+
+        <SubSection title="Custom initials">
+          <Identity name="Backend Service" initials="BS" size="sm" />
         </SubSection>
       </Section>
 

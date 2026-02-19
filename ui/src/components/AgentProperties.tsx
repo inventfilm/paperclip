@@ -1,5 +1,11 @@
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import type { Agent, AgentRuntimeState } from "@paperclip/shared";
+import { agentsApi } from "../api/agents";
+import { useCompany } from "../context/CompanyContext";
+import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./StatusBadge";
+import { Identity } from "./Identity";
 import { formatCents, formatDate } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
 
@@ -25,6 +31,16 @@ function PropertyRow({ label, children }: { label: string; children: React.React
 }
 
 export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
+  const { selectedCompanyId } = useCompany();
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId && !!agent.reportsTo,
+  });
+
+  const reportsToAgent = agent.reportsTo ? agents?.find((a) => a.id === agent.reportsTo) : null;
+
   return (
     <div className="space-y-4">
       <div className="space-y-1">
@@ -82,7 +98,13 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
         )}
         {agent.reportsTo && (
           <PropertyRow label="Reports To">
-            <span className="text-sm font-mono">{agent.reportsTo.slice(0, 8)}</span>
+            {reportsToAgent ? (
+              <Link to={`/agents/${reportsToAgent.id}`} className="hover:underline">
+                <Identity name={reportsToAgent.name} size="sm" />
+              </Link>
+            ) : (
+              <span className="text-sm font-mono">{agent.reportsTo.slice(0, 8)}</span>
+            )}
           </PropertyRow>
         )}
         <PropertyRow label="Created">

@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link, useBeforeUnload, useSearchParams } from "
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type AgentKey } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
+import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
@@ -248,6 +249,7 @@ export function AgentDetail() {
   );
 
   const setActiveTab = useCallback((nextTab: string) => {
+    if (configDirty && !window.confirm("You have unsaved changes. Discard them?")) return;
     const next = parseAgentDetailTab(nextTab);
     // If we're on a /runs/:runId URL and switching tabs, navigate back to base agent URL
     if (urlRunId) {
@@ -259,7 +261,7 @@ export function AgentDetail() {
     if (next === "overview") params.delete("tab");
     else params.set("tab", next);
     setSearchParams(params);
-  }, [searchParams, setSearchParams, urlRunId, agentId, navigate]);
+  }, [searchParams, setSearchParams, urlRunId, agentId, navigate, configDirty]);
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
@@ -362,43 +364,45 @@ export function AgentDetail() {
 
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <div className="sticky top-0 z-10 -mx-6 px-6 py-2 bg-background/90 backdrop-blur-sm flex items-center justify-between">
-          <PageTabBar
-            items={[
-              { value: "overview", label: "Overview" },
-              { value: "configuration", label: "Configuration" },
-              { value: "runs", label: `Runs${heartbeats ? ` (${heartbeats.length})` : ""}` },
-              { value: "issues", label: `Issues (${assignedIssues.length})` },
-              { value: "costs", label: "Costs" },
-              { value: "keys", label: "API Keys" },
-            ]}
-          />
-          <div
-            className={cn(
-              "flex items-center gap-2 transition-opacity duration-150",
-              activeTab === "configuration" && configDirty
-                ? "opacity-100"
-                : "opacity-0 pointer-events-none"
-            )}
+      {/* Floating Save/Cancel — sticky so it's always reachable when scrolled */}
+      <div
+        className={cn(
+          "sticky top-6 z-10 float-right transition-opacity duration-150",
+          activeTab === "configuration" && configDirty
+            ? "opacity-100"
+            : "opacity-0 pointer-events-none"
+        )}
+      >
+        <div className="flex items-center gap-2 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-1.5 shadow-lg">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => cancelConfigActionRef.current?.()}
+            disabled={configSaving}
           >
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => cancelConfigActionRef.current?.()}
-              disabled={configSaving}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => saveConfigActionRef.current?.()}
-              disabled={configSaving}
-            >
-              {configSaving ? "Saving..." : "Save"}
-            </Button>
-          </div>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => saveConfigActionRef.current?.()}
+            disabled={configSaving}
+          >
+            {configSaving ? "Saving..." : "Save"}
+          </Button>
         </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <PageTabBar
+          items={[
+            { value: "overview", label: "Overview" },
+            { value: "configuration", label: "Configuration" },
+            { value: "runs", label: `Runs${heartbeats ? ` (${heartbeats.length})` : ""}` },
+            { value: "issues", label: `Issues (${assignedIssues.length})` },
+            { value: "costs", label: "Costs" },
+            { value: "keys", label: "API Keys" },
+          ]}
+        />
 
         {/* OVERVIEW TAB */}
         <TabsContent value="overview" className="space-y-6 mt-4">
@@ -520,7 +524,7 @@ export function AgentDetail() {
               {assignedIssues.map((issue) => (
                 <EntityRow
                   key={issue.id}
-                  identifier={issue.id.slice(0, 8)}
+                  identifier={issue.identifier ?? issue.id.slice(0, 8)}
                   title={issue.title}
                   onClick={() => navigate(`/issues/${issue.id}`)}
                   trailing={<StatusBadge status={issue.status} />}
@@ -698,6 +702,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
 
 function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const metrics = runMetrics(run);
   const [sessionOpen, setSessionOpen] = useState(false);
 
@@ -706,6 +711,11 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
     },
+  });
+
+  const { data: touchedIssues } = useQuery({
+    queryKey: queryKeys.runIssues(run.id),
+    queryFn: () => activityApi.issuesForRun(run.id),
   });
 
   const timeFormat: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
@@ -826,6 +836,28 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           </div>
         )}
       </div>
+
+      {/* Issues touched by this run */}
+      {touchedIssues && touchedIssues.length > 0 && (
+        <div className="space-y-2">
+          <span className="text-xs font-medium text-muted-foreground">Issues Touched ({touchedIssues.length})</span>
+          <div className="border border-border rounded-lg divide-y divide-border">
+            {touchedIssues.map((issue) => (
+              <button
+                key={issue.issueId}
+                className="flex items-center justify-between w-full px-3 py-2 text-xs hover:bg-accent/20 transition-colors text-left"
+                onClick={() => navigate(`/issues/${issue.issueId}`)}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <StatusBadge status={issue.status} />
+                  <span className="truncate">{issue.title}</span>
+                </div>
+                <span className="font-mono text-muted-foreground shrink-0 ml-2">{issue.issueId.slice(0, 8)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* stderr excerpt for failed runs */}
       {run.stderrExcerpt && (

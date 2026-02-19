@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { CircleDot, Plus } from "lucide-react";
 import { formatDate } from "../lib/utils";
+import { Identity } from "../components/Identity";
 import type { Issue } from "@paperclip/shared";
 
 const statusOrder = ["in_progress", "todo", "backlog", "in_review", "blocked", "done", "cancelled"];
@@ -152,7 +153,7 @@ export function Issues() {
             {items.map((issue) => (
               <EntityRow
                 key={issue.id}
-                identifier={issue.id.slice(0, 8)}
+                identifier={issue.identifier ?? issue.id.slice(0, 8)}
                 title={issue.title}
                 onClick={() => navigate(`/issues/${issue.id}`)}
                 leading={
@@ -166,11 +167,12 @@ export function Issues() {
                 }
                 trailing={
                   <div className="flex items-center gap-3">
-                    {issue.assigneeAgentId && (
-                      <span className="text-xs text-muted-foreground">
-                        {agentName(issue.assigneeAgentId) ?? issue.assigneeAgentId.slice(0, 8)}
-                      </span>
-                    )}
+                    {issue.assigneeAgentId && (() => {
+                      const name = agentName(issue.assigneeAgentId);
+                      return name
+                        ? <Identity name={name} size="sm" />
+                        : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
+                    })()}
                     <span className="text-xs text-muted-foreground">
                       {formatDate(issue.createdAt)}
                     </span>

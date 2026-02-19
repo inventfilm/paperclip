@@ -15,5 +15,6 @@ export const issuesApi = {
     }),
   release: (id: string) => api.post<Issue>(`/issues/${id}/release`, {}),
   listComments: (id: string) => api.get<IssueComment[]>(`/issues/${id}/comments`),
-  addComment: (id: string, body: string) => api.post<IssueComment>(`/issues/${id}/comments`, { body }),
+  addComment: (id: string, body: string, reopen?: boolean) =>
+    api.post<IssueComment>(`/issues/${id}/comments`, reopen === undefined ? { body } : { body, reopen }),
 };

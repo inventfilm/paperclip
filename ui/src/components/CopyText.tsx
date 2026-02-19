@@ -12,7 +12,7 @@ interface CopyTextProps {
 
 export function CopyText({ text, children, className, copiedLabel = "Copied!" }: CopyTextProps) {
   const [visible, setVisible] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   const handleClick = useCallback(() => {

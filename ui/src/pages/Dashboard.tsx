@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
+import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -13,34 +14,51 @@ import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
 import { StatusIcon } from "../components/StatusIcon";
 import { PriorityIcon } from "../components/PriorityIcon";
+import { Identity } from "../components/Identity";
 import { timeAgo } from "../lib/timeAgo";
 import { formatCents } from "../lib/utils";
 import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, Clock } from "lucide-react";
-import type { Issue } from "@paperclip/shared";
+import type { Agent, Issue } from "@paperclip/shared";
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
-function formatAction(action: string): string {
-  const actionMap: Record<string, string> = {
-    "company.created": "Company created",
-    "agent.created": "Agent created",
-    "agent.updated": "Agent updated",
-    "agent.key_created": "API key created",
-    "issue.created": "Issue created",
-    "issue.updated": "Issue updated",
-    "issue.checked_out": "Issue checked out",
-    "issue.released": "Issue released",
-    "issue.commented": "Comment added",
-    "heartbeat.invoked": "Heartbeat invoked",
-    "heartbeat.completed": "Heartbeat completed",
-    "approval.created": "Approval requested",
-    "approval.approved": "Approval granted",
-    "approval.rejected": "Approval rejected",
-    "project.created": "Project created",
-    "goal.created": "Goal created",
-    "cost.recorded": "Cost recorded",
-  };
-  return actionMap[action] ?? action.replace(/[._]/g, " ");
+const ACTION_VERBS: Record<string, string> = {
+  "issue.created": "created",
+  "issue.updated": "updated",
+  "issue.checked_out": "checked out",
+  "issue.released": "released",
+  "issue.comment_added": "commented on",
+  "issue.commented": "commented on",
+  "issue.deleted": "deleted",
+  "agent.created": "created",
+  "agent.updated": "updated",
+  "agent.paused": "paused",
+  "agent.resumed": "resumed",
+  "agent.terminated": "terminated",
+  "agent.key_created": "created API key for",
+  "heartbeat.invoked": "invoked heartbeat for",
+  "heartbeat.cancelled": "cancelled heartbeat for",
+  "approval.created": "requested approval",
+  "approval.approved": "approved",
+  "approval.rejected": "rejected",
+  "project.created": "created",
+  "project.updated": "updated",
+  "goal.created": "created",
+  "goal.updated": "updated",
+  "cost.reported": "reported cost for",
+  "cost.recorded": "recorded cost for",
+  "company.created": "created company",
+  "company.updated": "updated company",
+};
+
+function entityLink(entityType: string, entityId: string): string | null {
+  switch (entityType) {
+    case "issue": return `/issues/${entityId}`;
+    case "agent": return `/agents/${entityId}`;
+    case "project": return `/projects/${entityId}`;
+    case "goal": return `/goals/${entityId}`;
+    default: return null;
+  }
 }
 
 function getStaleIssues(issues: Issue[]): Issue[] {
@@ -88,7 +106,27 @@ export function Dashboard() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: projects } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!),
+    queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
   const staleIssues = issues ? getStaleIssues(issues) : [];
+
+  const agentMap = useMemo(() => {
+    const map = new Map<string, Agent>();
+    for (const a of agents ?? []) map.set(a.id, a);
+    return map;
+  }, [agents]);
+
+  const entityNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
+    for (const a of agents ?? []) map.set(`agent:${a.id}`, a.name);
+    for (const p of projects ?? []) map.set(`project:${p.id}`, p.name);
+    return map;
+  }, [issues, agents, projects]);
 
   const agentName = (id: string | null) => {
     if (!id || !agents) return null;
@@ -157,21 +195,33 @@ export function Dashboard() {
                   Recent Activity
                 </h3>
                 <div className="border border-border divide-y divide-border">
-                  {activity.slice(0, 10).map((event) => (
-                    <div key={event.id} className="px-4 py-2 flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-medium truncate">
-                          {formatAction(event.action)}
-                        </span>
-                        <span className="text-xs text-muted-foreground font-mono shrink-0">
-                          {event.entityId.slice(0, 8)}
+                  {activity.slice(0, 10).map((event) => {
+                    const verb = ACTION_VERBS[event.action] ?? event.action.replace(/[._]/g, " ");
+                    const name = entityNameMap.get(`${event.entityType}:${event.entityId}`);
+                    const link = entityLink(event.entityType, event.entityId);
+                    const actor = event.actorType === "agent" ? agentMap.get(event.actorId) : null;
+                    return (
+                      <div
+                        key={event.id}
+                        className={`px-4 py-2 flex items-center justify-between gap-2 text-sm ${
+                          link ? "cursor-pointer hover:bg-accent/50 transition-colors" : ""
+                        }`}
+                        onClick={link ? () => navigate(link) : undefined}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <Identity
+                            name={actor?.name ?? (event.actorType === "system" ? "System" : event.actorId || "You")}
+                            size="sm"
+                          />
+                          <span className="text-muted-foreground shrink-0">{verb}</span>
+                          {name && <span className="truncate">{name}</span>}
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {timeAgo(event.createdAt)}
                         </span>
                       </div>
-                      <span className="text-xs text-muted-foreground shrink-0 ml-2">
-                        {timeAgo(event.createdAt)}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -197,11 +247,12 @@ export function Dashboard() {
                       <PriorityIcon priority={issue.priority} />
                       <StatusIcon status={issue.status} />
                       <span className="truncate flex-1">{issue.title}</span>
-                      {issue.assigneeAgentId && (
-                        <span className="text-xs text-muted-foreground shrink-0">
-                          {agentName(issue.assigneeAgentId) ?? issue.assigneeAgentId.slice(0, 8)}
-                        </span>
-                      )}
+                      {issue.assigneeAgentId && (() => {
+                        const name = agentName(issue.assigneeAgentId);
+                        return name
+                          ? <Identity name={name} size="sm" className="shrink-0" />
+                          : <span className="text-xs text-muted-foreground font-mono shrink-0">{issue.assigneeAgentId.slice(0, 8)}</span>;
+                      })()}
                       <span className="text-xs text-muted-foreground shrink-0">
                         {timeAgo(issue.updatedAt)}
                       </span>

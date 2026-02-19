@@ -1,13 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { activityApi } from "../api/activity";
+import { agentsApi } from "../api/agents";
+import { issuesApi } from "../api/issues";
+import { projectsApi } from "../api/projects";
+import { goalsApi } from "../api/goals";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
+import { Identity } from "../components/Identity";
 import { timeAgo } from "../lib/timeAgo";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -15,43 +19,46 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { History, Bot, User, Settings } from "lucide-react";
+import { History } from "lucide-react";
+import type { Agent } from "@paperclip/shared";
 
-function formatAction(action: string, entityType: string, entityId: string): string {
-  const actionMap: Record<string, string> = {
-    "company.created": "Company created",
-    "agent.created": `Agent created`,
-    "agent.updated": `Agent updated`,
-    "agent.paused": `Agent paused`,
-    "agent.resumed": `Agent resumed`,
-    "agent.terminated": `Agent terminated`,
-    "agent.key_created": `API key created for agent`,
-    "issue.created": `Issue created`,
-    "issue.updated": `Issue updated`,
-    "issue.checked_out": `Issue checked out`,
-    "issue.released": `Issue released`,
-    "issue.commented": `Comment added to issue`,
-    "heartbeat.invoked": `Heartbeat invoked`,
-    "heartbeat.completed": `Heartbeat completed`,
-    "heartbeat.failed": `Heartbeat failed`,
-    "approval.created": `Approval requested`,
-    "approval.approved": `Approval granted`,
-    "approval.rejected": `Approval rejected`,
-    "project.created": `Project created`,
-    "project.updated": `Project updated`,
-    "goal.created": `Goal created`,
-    "goal.updated": `Goal updated`,
-    "cost.recorded": `Cost recorded`,
-  };
-  return actionMap[action] ?? `${action.replace(/[._]/g, " ")}`;
-}
-
-function actorIcon(entityType: string) {
-  if (entityType === "agent") return <Bot className="h-4 w-4 text-muted-foreground" />;
-  if (entityType === "company" || entityType === "approval")
-    return <User className="h-4 w-4 text-muted-foreground" />;
-  return <Settings className="h-4 w-4 text-muted-foreground" />;
-}
+// Maps action → verb phrase. When the entity name is available it reads as:
+//   "[Actor] commented on "Fix the bug""
+// When not available, it falls back to just the verb.
+const ACTION_VERBS: Record<string, string> = {
+  "issue.created": "created",
+  "issue.updated": "updated",
+  "issue.checked_out": "checked out",
+  "issue.released": "released",
+  "issue.comment_added": "commented on",
+  "issue.commented": "commented on",
+  "issue.deleted": "deleted",
+  "agent.created": "created",
+  "agent.updated": "updated",
+  "agent.paused": "paused",
+  "agent.resumed": "resumed",
+  "agent.terminated": "terminated",
+  "agent.key_created": "created API key for",
+  "agent.budget_updated": "updated budget for",
+  "agent.runtime_session_reset": "reset session for",
+  "heartbeat.invoked": "invoked heartbeat for",
+  "heartbeat.cancelled": "cancelled heartbeat for",
+  "approval.created": "requested approval",
+  "approval.approved": "approved",
+  "approval.rejected": "rejected",
+  "project.created": "created",
+  "project.updated": "updated",
+  "project.deleted": "deleted",
+  "goal.created": "created",
+  "goal.updated": "updated",
+  "goal.deleted": "deleted",
+  "cost.reported": "reported cost for",
+  "cost.recorded": "recorded cost for",
+  "company.created": "created",
+  "company.updated": "updated",
+  "company.archived": "archived",
+  "company.budget_updated": "updated budget for",
+};
 
 function entityLink(entityType: string, entityId: string): string | null {
   switch (entityType) {
@@ -70,6 +77,15 @@ function entityLink(entityType: string, entityId: string): string | null {
   }
 }
 
+function actorIdentity(actorType: string, actorId: string, agentMap: Map<string, Agent>) {
+  if (actorType === "agent") {
+    const agent = agentMap.get(actorId);
+    return <Identity name={agent?.name ?? actorId.slice(0, 8)} size="sm" />;
+  }
+  if (actorType === "system") return <Identity name="System" size="sm" />;
+  return <Identity name={actorId || "You"} size="sm" />;
+}
+
 export function Activity() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -85,6 +101,46 @@ export function Activity() {
     queryFn: () => activityApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: issues } = useQuery({
+    queryKey: queryKeys.issues.list(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: projects } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!),
+    queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: goals } = useQuery({
+    queryKey: queryKeys.goals.list(selectedCompanyId!),
+    queryFn: () => goalsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const agentMap = useMemo(() => {
+    const map = new Map<string, Agent>();
+    for (const a of agents ?? []) map.set(a.id, a);
+    return map;
+  }, [agents]);
+
+  // Unified map: "entityType:entityId" → display name
+  const entityNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
+    for (const a of agents ?? []) map.set(`agent:${a.id}`, a.name);
+    for (const p of projects ?? []) map.set(`project:${p.id}`, p.name);
+    for (const g of goals ?? []) map.set(`goal:${g.id}`, g.title);
+    return map;
+  }, [issues, agents, projects, goals]);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={History} message="Select a company to view activity." />;
@@ -128,25 +184,22 @@ export function Activity() {
         <div className="border border-border divide-y divide-border">
           {filtered.map((event) => {
             const link = entityLink(event.entityType, event.entityId);
+            const verb = ACTION_VERBS[event.action] ?? event.action.replace(/[._]/g, " ");
+            const name = entityNameMap.get(`${event.entityType}:${event.entityId}`);
             return (
               <div
                 key={event.id}
-                className={`px-4 py-3 flex items-center justify-between gap-4 ${
+                className={`px-4 py-2.5 flex items-center justify-between gap-4 ${
                   link ? "cursor-pointer hover:bg-accent/50 transition-colors" : ""
                 }`}
                 onClick={link ? () => navigate(link) : undefined}
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  {actorIcon(event.entityType)}
-                  <span className="text-sm">
-                    {formatAction(event.action, event.entityType, event.entityId)}
-                  </span>
-                  <Badge variant="secondary" className="shrink-0 text-[10px]">
-                    {event.entityType}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground font-mono truncate">
-                    {event.entityId.slice(0, 8)}
-                  </span>
+                <div className="flex items-center gap-2 min-w-0">
+                  {actorIdentity(event.actorType, event.actorId, agentMap)}
+                  <span className="text-sm text-muted-foreground">{verb}</span>
+                  {name && (
+                    <span className="text-sm truncate">{name}</span>
+                  )}
                 </div>
                 <span className="text-xs text-muted-foreground shrink-0">
                   {timeAgo(event.createdAt)}

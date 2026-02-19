@@ -28,6 +28,7 @@ import {
   SquarePen,
   Plus,
 } from "lucide-react";
+import { Identity } from "./Identity";
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
@@ -151,14 +152,13 @@ export function CommandPalette() {
                 <CommandItem key={issue.id} onSelect={() => go(`/issues/${issue.id}`)}>
                   <CircleDot className="mr-2 h-4 w-4" />
                   <span className="text-muted-foreground mr-2 font-mono text-xs">
-                    {issue.id.slice(0, 8)}
+                    {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="flex-1 truncate">{issue.title}</span>
-                  {issue.assigneeAgentId && (
-                    <span className="text-xs text-muted-foreground ml-2">
-                      {agentName(issue.assigneeAgentId)}
-                    </span>
-                  )}
+                  {issue.assigneeAgentId && (() => {
+                    const name = agentName(issue.assigneeAgentId);
+                    return name ? <Identity name={name} size="sm" className="ml-2" /> : null;
+                  })()}
                 </CommandItem>
               ))}
             </CommandGroup>

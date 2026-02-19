@@ -41,6 +41,10 @@ function invalidateActivityQueries(
     if (entityId) {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(entityId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(entityId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(entityId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(entityId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(entityId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(entityId) });
     }
     return;
   }

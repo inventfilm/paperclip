@@ -7,6 +7,7 @@ import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
+import { Identity } from "./Identity";
 import { formatDate } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
@@ -87,9 +88,9 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
           {assignee ? (
             <Link
               to={`/agents/${assignee.id}`}
-              className="text-sm hover:underline"
+              className="hover:underline"
             >
-              {assignee.name}
+              <Identity name={assignee.name} size="sm" />
             </Link>
           ) : (
             <span className="text-sm text-muted-foreground">Unassigned</span>
