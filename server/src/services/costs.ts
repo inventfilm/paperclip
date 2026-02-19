@@ -1,7 +1,12 @@
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import { agents, companies, costEvents } from "@paperclip/db";
 import { notFound, unprocessable } from "../errors.js";
+
+export interface CostDateRange {
+  from?: Date;
+  to?: Date;
+}
 
 export function costService(db: Db) {
   return {
@@ -61,7 +66,7 @@ export function costService(db: Db) {
       return event;
     },
 
-    summary: async (companyId: string) => {
+    summary: async (companyId: string, range?: CostDateRange) => {
       const company = await db
         .select()
         .from(companies)
@@ -70,43 +75,71 @@ export function costService(db: Db) {
 
       if (!company) throw notFound("Company not found");
 
+      const conditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
+      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
+      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+
+      const [{ total }] = await db
+        .select({
+          total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+        })
+        .from(costEvents)
+        .where(and(...conditions));
+
+      const spendCents = Number(total);
       const utilization =
         company.budgetMonthlyCents > 0
-          ? (company.spentMonthlyCents / company.budgetMonthlyCents) * 100
+          ? (spendCents / company.budgetMonthlyCents) * 100
           : 0;
 
       return {
         companyId,
-        monthSpendCents: company.spentMonthlyCents,
-        monthBudgetCents: company.budgetMonthlyCents,
-        monthUtilizationPercent: Number(utilization.toFixed(2)),
+        spendCents,
+        budgetCents: company.budgetMonthlyCents,
+        utilizationPercent: Number(utilization.toFixed(2)),
       };
     },
 
-    byAgent: async (companyId: string) =>
-      db
+    byAgent: async (companyId: string, range?: CostDateRange) => {
+      const conditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
+      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
+      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+
+      return db
         .select({
           agentId: costEvents.agentId,
-          costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)`,
-          inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)`,
-          outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)`,
+          agentName: agents.name,
+          agentStatus: agents.status,
+          costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+          inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)::int`,
+          outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)::int`,
         })
         .from(costEvents)
-        .where(eq(costEvents.companyId, companyId))
-        .groupBy(costEvents.agentId)
-        .orderBy(desc(sql`coalesce(sum(${costEvents.costCents}), 0)`)),
+        .leftJoin(agents, eq(costEvents.agentId, agents.id))
+        .where(and(...conditions))
+        .groupBy(costEvents.agentId, agents.name, agents.status)
+        .orderBy(desc(sql`coalesce(sum(${costEvents.costCents}), 0)::int`));
+    },
 
-    byProject: async (companyId: string) =>
-      db
+    byProject: async (companyId: string, range?: CostDateRange) => {
+      const conditions: ReturnType<typeof eq>[] = [
+        eq(costEvents.companyId, companyId),
+        isNotNull(costEvents.projectId),
+      ];
+      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
+      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+
+      return db
         .select({
           projectId: costEvents.projectId,
-          costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)`,
-          inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)`,
-          outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)`,
+          costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+          inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)::int`,
+          outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)::int`,
         })
         .from(costEvents)
-        .where(and(eq(costEvents.companyId, companyId), isNotNull(costEvents.projectId)))
+        .where(and(...conditions))
         .groupBy(costEvents.projectId)
-        .orderBy(desc(sql`coalesce(sum(${costEvents.costCents}), 0)`)),
+        .orderBy(desc(sql`coalesce(sum(${costEvents.costCents}), 0)::int`));
+    },
   };
 }

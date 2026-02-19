@@ -1,13 +1,20 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import type { Db } from "@paperclip/db";
 import {
   addIssueCommentSchema,
   checkoutIssueSchema,
   createIssueSchema,
+  linkIssueApprovalSchema,
   updateIssueSchema,
 } from "@paperclip/shared";
 import { validate } from "../middleware/validate.js";
-import { heartbeatService, issueService, logActivity } from "../services/index.js";
+import {
+  agentService,
+  heartbeatService,
+  issueApprovalService,
+  issueService,
+  logActivity,
+} from "../services/index.js";
 import { logger } from "../middleware/logger.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -15,6 +22,25 @@ export function issueRoutes(db: Db) {
   const router = Router();
   const svc = issueService(db);
   const heartbeat = heartbeatService(db);
+  const agentsSvc = agentService(db);
+  const issueApprovalsSvc = issueApprovalService(db);
+
+  async function assertCanManageIssueApprovalLinks(req: Request, res: Response, companyId: string) {
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type === "board") return true;
+    if (!req.actor.agentId) {
+      res.status(403).json({ error: "Agent authentication required" });
+      return false;
+    }
+    const actorAgent = await agentsSvc.getById(req.actor.agentId);
+    if (!actorAgent || actorAgent.companyId !== companyId) {
+      res.status(403).json({ error: "Forbidden" });
+      return false;
+    }
+    if (actorAgent.role === "ceo" || Boolean(actorAgent.permissions?.canCreateAgents)) return true;
+    res.status(403).json({ error: "Missing permission to link approvals" });
+    return false;
+  }
 
   router.get("/companies/:companyId/issues", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -38,6 +64,77 @@ export function issueRoutes(db: Db) {
     assertCompanyAccess(req, issue.companyId);
     const ancestors = await svc.getAncestors(issue.id);
     res.json({ ...issue, ancestors });
+  });
+
+  router.get("/issues/:id/approvals", async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    assertCompanyAccess(req, issue.companyId);
+    const approvals = await issueApprovalsSvc.listApprovalsForIssue(id);
+    res.json(approvals);
+  });
+
+  router.post("/issues/:id/approvals", validate(linkIssueApprovalSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    if (!(await assertCanManageIssueApprovalLinks(req, res, issue.companyId))) return;
+
+    const actor = getActorInfo(req);
+    await issueApprovalsSvc.link(id, req.body.approvalId, {
+      agentId: actor.agentId,
+      userId: actor.actorType === "user" ? actor.actorId : null,
+    });
+
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "issue.approval_linked",
+      entityType: "issue",
+      entityId: issue.id,
+      details: { approvalId: req.body.approvalId },
+    });
+
+    const approvals = await issueApprovalsSvc.listApprovalsForIssue(id);
+    res.status(201).json(approvals);
+  });
+
+  router.delete("/issues/:id/approvals/:approvalId", async (req, res) => {
+    const id = req.params.id as string;
+    const approvalId = req.params.approvalId as string;
+    const issue = await svc.getById(id);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    if (!(await assertCanManageIssueApprovalLinks(req, res, issue.companyId))) return;
+
+    await issueApprovalsSvc.unlink(id, approvalId);
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "issue.approval_unlinked",
+      entityType: "issue",
+      entityId: issue.id,
+      details: { approvalId },
+    });
+
+    res.json({ ok: true });
   });
 
   router.post("/companies/:companyId/issues", validate(createIssueSchema), async (req, res) => {
@@ -96,6 +193,14 @@ export function issueRoutes(db: Db) {
       return;
     }
 
+    // Build activity details with previous values for changed fields
+    const previous: Record<string, unknown> = {};
+    for (const key of Object.keys(updateFields)) {
+      if (key in existing && (existing as Record<string, unknown>)[key] !== (updateFields as Record<string, unknown>)[key]) {
+        previous[key] = (existing as Record<string, unknown>)[key];
+      }
+    }
+
     const actor = getActorInfo(req);
     await logActivity(db, {
       companyId: issue.companyId,
@@ -106,7 +211,7 @@ export function issueRoutes(db: Db) {
       action: "issue.updated",
       entityType: "issue",
       entityId: issue.id,
-      details: updateFields,
+      details: { ...updateFields, _previous: Object.keys(previous).length > 0 ? previous : undefined },
     });
 
     let comment = null;
@@ -383,6 +488,28 @@ export function issueRoutes(db: Db) {
           },
         })
         .catch((err) => logger.warn({ err, issueId: currentIssue.id }, "failed to wake assignee on issue reopen comment"));
+    } else if (currentIssue.assigneeAgentId) {
+      void heartbeat
+        .wakeup(currentIssue.assigneeAgentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "issue_commented",
+          payload: {
+            issueId: currentIssue.id,
+            commentId: comment.id,
+            mutation: "comment",
+          },
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: {
+            issueId: currentIssue.id,
+            taskId: currentIssue.id,
+            commentId: comment.id,
+            source: "issue.comment",
+            wakeReason: "issue_commented",
+          },
+        })
+        .catch((err) => logger.warn({ err, issueId: currentIssue.id }, "failed to wake assignee on issue comment"));
     }
 
     res.status(201).json(comment);

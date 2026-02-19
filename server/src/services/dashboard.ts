@@ -1,6 +1,6 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
-import { agents, approvals, companies, issues } from "@paperclip/db";
+import { agents, approvals, companies, costEvents, issues } from "@paperclip/db";
 import { notFound } from "../errors.js";
 
 export function dashboardService(db: Db) {
@@ -69,9 +69,24 @@ export function dashboardService(db: Db) {
         if (row.status !== "done" && row.status !== "cancelled") taskCounts.open += count;
       }
 
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const [{ monthSpend }] = await db
+        .select({
+          monthSpend: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+        })
+        .from(costEvents)
+        .where(
+          and(
+            eq(costEvents.companyId, companyId),
+            gte(costEvents.occurredAt, monthStart),
+          ),
+        );
+
+      const monthSpendCents = Number(monthSpend);
       const utilization =
         company.budgetMonthlyCents > 0
-          ? (company.spentMonthlyCents / company.budgetMonthlyCents) * 100
+          ? (monthSpendCents / company.budgetMonthlyCents) * 100
           : 0;
 
       return {
@@ -84,7 +99,7 @@ export function dashboardService(db: Db) {
         },
         tasks: taskCounts,
         costs: {
-          monthSpendCents: company.spentMonthlyCents,
+          monthSpendCents,
           monthBudgetCents: company.budgetMonthlyCents,
           monthUtilizationPercent: Number(utilization.toFixed(2)),
         },

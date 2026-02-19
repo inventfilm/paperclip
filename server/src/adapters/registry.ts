@@ -1,8 +1,8 @@
 import type { ServerAdapterModule } from "./types.js";
 import { execute as claudeExecute } from "@paperclip/adapter-claude-local/server";
-import { models as claudeModels } from "@paperclip/adapter-claude-local";
+import { agentConfigurationDoc as claudeAgentConfigurationDoc, models as claudeModels } from "@paperclip/adapter-claude-local";
 import { execute as codexExecute } from "@paperclip/adapter-codex-local/server";
-import { models as codexModels } from "@paperclip/adapter-codex-local";
+import { agentConfigurationDoc as codexAgentConfigurationDoc, models as codexModels } from "@paperclip/adapter-codex-local";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
 
@@ -11,6 +11,7 @@ const claudeLocalAdapter: ServerAdapterModule = {
   execute: claudeExecute,
   models: claudeModels,
   supportsLocalAgentJwt: true,
+  agentConfigurationDoc: claudeAgentConfigurationDoc,
 };
 
 const codexLocalAdapter: ServerAdapterModule = {
@@ -18,6 +19,7 @@ const codexLocalAdapter: ServerAdapterModule = {
   execute: codexExecute,
   models: codexModels,
   supportsLocalAgentJwt: true,
+  agentConfigurationDoc: codexAgentConfigurationDoc,
 };
 
 const adaptersByType = new Map<string, ServerAdapterModule>(
@@ -35,4 +37,8 @@ export function getServerAdapter(type: string): ServerAdapterModule {
 
 export function listAdapterModels(type: string): { id: string; label: string }[] {
   return adaptersByType.get(type)?.models ?? [];
+}
+
+export function listServerAdapters(): ServerAdapterModule[] {
+  return Array.from(adaptersByType.values());
 }

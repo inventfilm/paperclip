@@ -621,7 +621,11 @@ export function heartbeatService(db: Db) {
     const agent = await getAgent(agentId);
     if (!agent) throw notFound("Agent not found");
 
-    if (agent.status === "paused" || agent.status === "terminated") {
+    if (
+      agent.status === "paused" ||
+      agent.status === "terminated" ||
+      agent.status === "pending_approval"
+    ) {
       throw conflict("Agent is not invokable in its current state", { status: agent.status });
     }
 

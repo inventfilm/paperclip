@@ -15,6 +15,8 @@ import { approvalRoutes } from "./routes/approvals.js";
 import { costRoutes } from "./routes/costs.js";
 import { activityRoutes } from "./routes/activity.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
+import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
+import { llmRoutes } from "./routes/llms.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 
@@ -24,6 +26,7 @@ export async function createApp(db: Db, opts: { uiMode: UiMode }) {
   app.use(express.json());
   app.use(httpLogger);
   app.use(actorMiddleware(db));
+  app.use(llmRoutes(db));
 
   // Mount API routes
   const api = Router();
@@ -37,6 +40,7 @@ export async function createApp(db: Db, opts: { uiMode: UiMode }) {
   api.use(costRoutes(db));
   api.use(activityRoutes(db));
   api.use(dashboardRoutes(db));
+  api.use(sidebarBadgeRoutes(db));
   app.use("/api", api);
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));

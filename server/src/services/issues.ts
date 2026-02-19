@@ -3,21 +3,12 @@ import type { Db } from "@paperclip/db";
 import { agents, companies, issues, issueComments } from "@paperclip/db";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
-const ISSUE_TRANSITIONS: Record<string, string[]> = {
-  backlog: ["todo", "cancelled"],
-  todo: ["in_progress", "blocked", "cancelled"],
-  in_progress: ["in_review", "blocked", "done", "cancelled"],
-  in_review: ["in_progress", "done", "cancelled"],
-  blocked: ["todo", "in_progress", "cancelled"],
-  done: ["todo"],
-  cancelled: ["todo"],
-};
+const ALL_ISSUE_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"];
 
 function assertTransition(from: string, to: string) {
   if (from === to) return;
-  const allowed = ISSUE_TRANSITIONS[from] ?? [];
-  if (!allowed.includes(to)) {
-    throw conflict(`Invalid issue status transition: ${from} -> ${to}`);
+  if (!ALL_ISSUE_STATUSES.includes(to)) {
+    throw conflict(`Unknown issue status: ${to}`);
   }
 }
 
@@ -46,6 +37,29 @@ export interface IssueFilters {
 }
 
 export function issueService(db: Db) {
+  async function assertAssignableAgent(companyId: string, agentId: string) {
+    const assignee = await db
+      .select({
+        id: agents.id,
+        companyId: agents.companyId,
+        status: agents.status,
+      })
+      .from(agents)
+      .where(eq(agents.id, agentId))
+      .then((rows) => rows[0] ?? null);
+
+    if (!assignee) throw notFound("Assignee agent not found");
+    if (assignee.companyId !== companyId) {
+      throw unprocessable("Assignee must belong to same company");
+    }
+    if (assignee.status === "pending_approval") {
+      throw conflict("Cannot assign work to pending approval agents");
+    }
+    if (assignee.status === "terminated") {
+      throw conflict("Cannot assign work to terminated agents");
+    }
+  }
+
   return {
     list: async (companyId: string, filters?: IssueFilters) => {
       const conditions = [eq(issues.companyId, companyId)];
@@ -77,6 +91,9 @@ export function issueService(db: Db) {
         .then((rows) => rows[0] ?? null),
 
     create: async (companyId: string, data: Omit<typeof issues.$inferInsert, "companyId">) => {
+      if (data.assigneeAgentId) {
+        await assertAssignableAgent(companyId, data.assigneeAgentId);
+      }
       return db.transaction(async (tx) => {
         const [company] = await tx
           .update(companies)
@@ -123,6 +140,9 @@ export function issueService(db: Db) {
       if (patch.status === "in_progress" && !patch.assigneeAgentId && !existing.assigneeAgentId) {
         throw unprocessable("in_progress issues require an assignee");
       }
+      if (data.assigneeAgentId) {
+        await assertAssignableAgent(existing.companyId, data.assigneeAgentId);
+      }
 
       applyStatusSideEffects(data.status, patch);
       if (data.status && data.status !== "done") {
@@ -148,6 +168,14 @@ export function issueService(db: Db) {
         .then((rows) => rows[0] ?? null),
 
     checkout: async (id: string, agentId: string, expectedStatuses: string[]) => {
+      const issueCompany = await db
+        .select({ companyId: issues.companyId })
+        .from(issues)
+        .where(eq(issues.id, id))
+        .then((rows) => rows[0] ?? null);
+      if (!issueCompany) throw notFound("Issue not found");
+      await assertAssignableAgent(issueCompany.companyId, agentId);
+
       const now = new Date();
       const updated = await db
         .update(issues)

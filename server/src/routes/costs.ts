@@ -40,24 +40,33 @@ export function costRoutes(db: Db) {
     res.status(201).json(event);
   });
 
+  function parseDateRange(query: Record<string, unknown>) {
+    const from = query.from ? new Date(query.from as string) : undefined;
+    const to = query.to ? new Date(query.to as string) : undefined;
+    return (from || to) ? { from, to } : undefined;
+  }
+
   router.get("/companies/:companyId/costs/summary", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const summary = await costs.summary(companyId);
+    const range = parseDateRange(req.query);
+    const summary = await costs.summary(companyId, range);
     res.json(summary);
   });
 
   router.get("/companies/:companyId/costs/by-agent", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const rows = await costs.byAgent(companyId);
+    const range = parseDateRange(req.query);
+    const rows = await costs.byAgent(companyId, range);
     res.json(rows);
   });
 
   router.get("/companies/:companyId/costs/by-project", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const rows = await costs.byProject(companyId);
+    const range = parseDateRange(req.query);
+    const rows = await costs.byProject(companyId, range);
     res.json(rows);
   });
 

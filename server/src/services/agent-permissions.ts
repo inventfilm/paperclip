@@ -1,6 +1,6 @@
-export interface NormalizedAgentPermissions {
+export type NormalizedAgentPermissions = Record<string, unknown> & {
   canCreateAgents: boolean;
-}
+};
 
 export function defaultPermissionsForRole(role: string): NormalizedAgentPermissions {
   return {

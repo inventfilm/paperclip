@@ -8,6 +8,7 @@ import {
   ensurePostgresDatabase,
   inspectMigrations,
   applyPendingMigrations,
+  reconcilePendingMigrationHistory,
 } from "@paperclip/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
@@ -48,6 +49,7 @@ function formatPendingMigrationSummary(migrations: string[]): string {
 }
 
 async function promptApplyMigrations(migrations: string[]): Promise<boolean> {
+  if (process.env.PAPERCLIP_MIGRATION_PROMPT === "never") return false;
   if (!stdin.isTTY || !stdout.isTTY) return true;
   if (process.env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true") return true;
 
@@ -63,7 +65,18 @@ async function promptApplyMigrations(migrations: string[]): Promise<boolean> {
 }
 
 async function ensureMigrations(connectionString: string, label: string): Promise<MigrationSummary> {
-  const state = await inspectMigrations(connectionString);
+  let state = await inspectMigrations(connectionString);
+  if (state.status === "needsMigrations" && state.reason === "pending-migrations") {
+    const repair = await reconcilePendingMigrationHistory(connectionString);
+    if (repair.repairedMigrations.length > 0) {
+      logger.warn(
+        { repairedMigrations: repair.repairedMigrations },
+        `${label} had drifted migration history; repaired migration journal entries from existing schema state.`,
+      );
+      state = await inspectMigrations(connectionString);
+      if (state.status === "upToDate") return "already applied";
+    }
+  }
   if (state.status === "upToDate") return "already applied";
   if (state.status === "needsMigrations" && state.reason === "no-migration-journal-non-empty-db") {
     logger.warn(

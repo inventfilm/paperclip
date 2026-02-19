@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "PAPERCLIP_UI_DEV_MIDDLEWARE=true pnpm --filter @paperclip/server dev",
+    "dev:watch": "PAPERCLIP_UI_DEV_MIDDLEWARE=true PAPERCLIP_MIGRATION_PROMPT=never pnpm --filter @paperclip/server dev:watch",
     "dev:server": "pnpm --filter @paperclip/server dev",
     "dev:ui": "pnpm --filter @paperclip/ui dev",
     "build": "pnpm -r build",
