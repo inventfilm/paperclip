@@ -129,6 +129,7 @@ export interface CreateConfigValues {
   args: string;
   extraArgs: string;
   envVars: string;
+  envBindings: Record<string, unknown>;
   url: string;
   bootstrapPrompt: string;
   maxTurnsPerRun: number;

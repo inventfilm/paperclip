@@ -64,6 +64,19 @@ export {
 } from "./approval.js";
 
 export {
+  envBindingPlainSchema,
+  envBindingSecretRefSchema,
+  envBindingSchema,
+  envConfigSchema,
+  createSecretSchema,
+  rotateSecretSchema,
+  updateSecretSchema,
+  type CreateSecret,
+  type RotateSecret,
+  type UpdateSecret,
+} from "./secret.js";
+
+export {
   createCostEventSchema,
   updateBudgetSchema,
   type CreateCostEvent,

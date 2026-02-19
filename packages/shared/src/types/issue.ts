@@ -32,6 +32,7 @@ export interface Issue {
   startedAt: Date | null;
   completedAt: Date | null;
   cancelledAt: Date | null;
+  hiddenAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

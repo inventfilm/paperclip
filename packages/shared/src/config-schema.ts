@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SECRET_PROVIDERS } from "./constants.js";
 
 export const configMetaSchema = z.object({
   version: z.literal(1),
@@ -28,12 +29,31 @@ export const serverConfigSchema = z.object({
   serveUi: z.boolean().default(true),
 });
 
+export const secretsLocalEncryptedConfigSchema = z.object({
+  keyFilePath: z.string().default("./data/secrets/master.key"),
+});
+
+export const secretsConfigSchema = z.object({
+  provider: z.enum(SECRET_PROVIDERS).default("local_encrypted"),
+  strictMode: z.boolean().default(false),
+  localEncrypted: secretsLocalEncryptedConfigSchema.default({
+    keyFilePath: "./data/secrets/master.key",
+  }),
+});
+
 export const paperclipConfigSchema = z.object({
   $meta: configMetaSchema,
   llm: llmConfigSchema.optional(),
   database: databaseConfigSchema,
   logging: loggingConfigSchema,
   server: serverConfigSchema,
+  secrets: secretsConfigSchema.default({
+    provider: "local_encrypted",
+    strictMode: false,
+    localEncrypted: {
+      keyFilePath: "./data/secrets/master.key",
+    },
+  }),
 });
 
 export type PaperclipConfig = z.infer<typeof paperclipConfigSchema>;
@@ -41,4 +61,6 @@ export type LlmConfig = z.infer<typeof llmConfigSchema>;
 export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
 export type LoggingConfig = z.infer<typeof loggingConfigSchema>;
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
+export type SecretsConfig = z.infer<typeof secretsConfigSchema>;
+export type SecretsLocalEncryptedConfig = z.infer<typeof secretsLocalEncryptedConfigSchema>;
 export type ConfigMeta = z.infer<typeof configMetaSchema>;

@@ -18,6 +18,7 @@ export type CreateIssue = z.infer<typeof createIssueSchema>;
 
 export const updateIssueSchema = createIssueSchema.partial().extend({
   comment: z.string().min(1).optional(),
+  hiddenAt: z.string().datetime().nullable().optional(),
 });
 
 export type UpdateIssue = z.infer<typeof updateIssueSchema>;

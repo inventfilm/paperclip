@@ -1,17 +1,21 @@
-import { migrate as migratePg } from "drizzle-orm/postgres-js/migrator";
-import postgres from "postgres";
-import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
+import { applyPendingMigrations, inspectMigrations } from "./client.js";
 
-const migrationsFolder = new URL("./migrations", import.meta.url).pathname;
 const url = process.env.DATABASE_URL;
 
 if (!url) {
   throw new Error("DATABASE_URL is required for db:migrate");
 }
 
-const sql = postgres(url, { max: 1 });
-const db = drizzlePg(sql);
-await migratePg(db, { migrationsFolder });
-await sql.end();
+const before = await inspectMigrations(url);
+if (before.status === "upToDate") {
+  console.log("No pending migrations");
+} else {
+  console.log(`Applying ${before.pendingMigrations.length} pending migration(s)...`);
+  await applyPendingMigrations(url);
 
-console.log("Migrations complete");
+  const after = await inspectMigrations(url);
+  if (after.status !== "upToDate") {
+    throw new Error(`Migrations incomplete: ${after.pendingMigrations.join(", ")}`);
+  }
+  console.log("Migrations complete");
+}

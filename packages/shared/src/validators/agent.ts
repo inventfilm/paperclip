@@ -4,9 +4,23 @@ import {
   AGENT_ROLES,
   AGENT_STATUSES,
 } from "../constants.js";
+import { envConfigSchema } from "./secret.js";
 
 export const agentPermissionsSchema = z.object({
   canCreateAgents: z.boolean().optional().default(false),
+});
+
+const adapterConfigSchema = z.record(z.unknown()).superRefine((value, ctx) => {
+  const envValue = value.env;
+  if (envValue === undefined) return;
+  const parsed = envConfigSchema.safeParse(envValue);
+  if (!parsed.success) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "adapterConfig.env must be a map of valid env bindings",
+      path: ["env"],
+    });
+  }
 });
 
 export const createAgentSchema = z.object({
@@ -16,7 +30,7 @@ export const createAgentSchema = z.object({
   reportsTo: z.string().uuid().optional().nullable(),
   capabilities: z.string().optional().nullable(),
   adapterType: z.enum(AGENT_ADAPTER_TYPES).optional().default("process"),
-  adapterConfig: z.record(z.unknown()).optional().default({}),
+  adapterConfig: adapterConfigSchema.optional().default({}),
   runtimeConfig: z.record(z.unknown()).optional().default({}),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
   permissions: agentPermissionsSchema.optional(),
