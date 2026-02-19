@@ -43,11 +43,31 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0
       ? context.wakeReason.trim()
       : null;
+  const approvalId =
+    typeof context.approvalId === "string" && context.approvalId.trim().length > 0
+      ? context.approvalId.trim()
+      : null;
+  const approvalStatus =
+    typeof context.approvalStatus === "string" && context.approvalStatus.trim().length > 0
+      ? context.approvalStatus.trim()
+      : null;
+  const linkedIssueIds = Array.isArray(context.issueIds)
+    ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    : [];
   if (wakeTaskId) {
     env.PAPERCLIP_TASK_ID = wakeTaskId;
   }
   if (wakeReason) {
     env.PAPERCLIP_WAKE_REASON = wakeReason;
+  }
+  if (approvalId) {
+    env.PAPERCLIP_APPROVAL_ID = approvalId;
+  }
+  if (approvalStatus) {
+    env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
+  }
+  if (linkedIssueIds.length > 0) {
+    env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   }
   for (const [k, v] of Object.entries(envConfig)) {
     if (typeof v === "string") env[k] = v;

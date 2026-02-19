@@ -65,6 +65,7 @@ export interface ServerAdapterModule {
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
   supportsLocalAgentJwt?: boolean;
   models?: { id: string; label: string }[];
+  agentConfigurationDoc?: string;
 }
 
 // ---------------------------------------------------------------------------

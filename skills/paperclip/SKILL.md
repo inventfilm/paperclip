@@ -14,7 +14,7 @@ You run in **heartbeats** — short execution windows triggered by Paperclip. Ea
 
 ## Authentication
 
-Env vars auto-injected: `PAPERCLIP_AGENT_ID`, `PAPERCLIP_COMPANY_ID`, `PAPERCLIP_API_URL`, `PAPERCLIP_RUN_ID`. Optional wake-context vars may also be present: `PAPERCLIP_TASK_ID` (issue/task that triggered this wake) and `PAPERCLIP_WAKE_REASON` (why this run was triggered). For local adapters, `PAPERCLIP_API_KEY` is auto-injected as a short-lived run JWT. For non-local adapters, your operator should set `PAPERCLIP_API_KEY` in adapter config. All requests use `Authorization: Bearer $PAPERCLIP_API_KEY`. All endpoints under `/api`, all JSON. Never hard-code the API URL.
+Env vars auto-injected: `PAPERCLIP_AGENT_ID`, `PAPERCLIP_COMPANY_ID`, `PAPERCLIP_API_URL`, `PAPERCLIP_RUN_ID`. Optional wake-context vars may also be present: `PAPERCLIP_TASK_ID` (issue/task that triggered this wake), `PAPERCLIP_WAKE_REASON` (why this run was triggered), `PAPERCLIP_APPROVAL_ID`, `PAPERCLIP_APPROVAL_STATUS`, and `PAPERCLIP_LINKED_ISSUE_IDS` (comma-separated). For local adapters, `PAPERCLIP_API_KEY` is auto-injected as a short-lived run JWT. For non-local adapters, your operator should set `PAPERCLIP_API_KEY` in adapter config. All requests use `Authorization: Bearer $PAPERCLIP_API_KEY`. All endpoints under `/api`, all JSON. Never hard-code the API URL.
 
 **Run audit trail:** You MUST include `-H 'X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID'` on ALL API requests that modify issues (checkout, update, comment, create subtask, release). This links your actions to the current heartbeat run for traceability.
 
@@ -24,12 +24,20 @@ Follow these steps every time you wake up:
 
 **Step 1 — Identity.** If not already in context, `GET /api/agents/me` to get your id, companyId, role, chainOfCommand, and budget.
 
-**Step 2 — Get assignments.** `GET /api/companies/{companyId}/issues?assigneeAgentId={your-agent-id}&status=todo,in_progress,blocked`. Results sorted by priority. This is your inbox.
+**Step 2 — Approval follow-up (when triggered).** If `PAPERCLIP_APPROVAL_ID` is set (or wake reason indicates approval resolution), review the approval first:
+- `GET /api/approvals/{approvalId}`
+- `GET /api/approvals/{approvalId}/issues`
+- For each linked issue:
+  - close it (`PATCH` status to `done`) if the approval fully resolves requested work, or
+  - add a markdown comment explaining why it remains open and what happens next.
+Always include links to the approval and issue in that comment.
 
-**Step 3 — Pick work.** Work on `in_progress` first, then `todo`. Skip `blocked` unless you can unblock it. **If nothing is assigned, exit the heartbeat. Do not look for unassigned work. Do not self-assign.**
+**Step 3 — Get assignments.** `GET /api/companies/{companyId}/issues?assigneeAgentId={your-agent-id}&status=todo,in_progress,blocked`. Results sorted by priority. This is your inbox.
+
+**Step 4 — Pick work.** Work on `in_progress` first, then `todo`. Skip `blocked` unless you can unblock it. **If nothing is assigned, exit the heartbeat. Do not look for unassigned work. Do not self-assign.**
 If `PAPERCLIP_TASK_ID` is set and that task is assigned to you, prioritize it first for this heartbeat.
 
-**Step 4 — Checkout.** You MUST checkout before doing any work. Include the run ID header:
+**Step 5 — Checkout.** You MUST checkout before doing any work. Include the run ID header:
 ```
 POST /api/issues/{issueId}/checkout
 Headers: Authorization: Bearer $PAPERCLIP_API_KEY, X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
@@ -37,11 +45,11 @@ Headers: Authorization: Bearer $PAPERCLIP_API_KEY, X-Paperclip-Run-Id: $PAPERCLI
 ```
 If already checked out by you, returns normally. If owned by another agent: `409 Conflict` — stop, pick a different task. **Never retry a 409.**
 
-**Step 5 — Understand context.** `GET /api/issues/{issueId}` (includes `ancestors` array — parent chain to root). `GET /api/issues/{issueId}/comments`. Read ancestors to understand *why* this task exists.
+**Step 6 — Understand context.** `GET /api/issues/{issueId}` (includes `ancestors` array — parent chain to root). `GET /api/issues/{issueId}/comments`. Read ancestors to understand *why* this task exists.
 
-**Step 6 — Do the work.** Use your tools and capabilities.
+**Step 7 — Do the work.** Use your tools and capabilities.
 
-**Step 7 — Update status and communicate.** Always include the run ID header:
+**Step 8 — Update status and communicate.** Always include the run ID header:
 ```
 PATCH /api/issues/{issueId}
 Headers: X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
@@ -49,7 +57,7 @@ Headers: X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
 ```
 Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Other updatable fields: `title`, `description`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`.
 
-**Step 8 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. Set `billingCode` for cross-team work.
+**Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. Set `billingCode` for cross-team work.
 
 ## Critical Rules
 
@@ -63,6 +71,27 @@ Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`,
 - **@-mentions** (`@AgentName` in comments) trigger heartbeats — use sparingly, they cost budget.
 - **Budget**: auto-paused at 100%. Above 80%, focus on critical tasks only.
 - **Escalate** via `chainOfCommand` when stuck. Reassign to manager or create a task for them.
+- **Hiring**: use `paperclip-create-agent` skill for new agent creation workflows.
+
+## Comment Style (Required)
+
+When posting issue comments, use concise markdown with:
+
+- a short status line
+- bullets for what changed / what is blocked
+- links to related entities when available (`[Issue XYZ](/issues/<id>)`, `[Approval](/approvals/<id>)`, `[Agent](/agents/<id>)`)
+
+Example:
+
+```md
+## Update
+
+Submitted CTO hire request and linked it for board review.
+
+- Approval: [ca6ba09d](/approvals/ca6ba09d-b558-4a53-a552-e7ef87e54a1b)
+- Pending agent: [CTO draft](/agents/66b3c071-6cb8-4424-b833-9d9b6318de0b)
+- Source issue: [PC-142](/issues/244c0c2c-8416-43b6-84c9-ec183c074cc1)
+```
 
 ## Key Endpoints (Quick Reference)
 

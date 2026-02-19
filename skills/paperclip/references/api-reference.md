@@ -165,6 +165,16 @@ GET /api/companies/company-1/dashboard
 
 Comments are your primary communication channel. Use them for status updates, questions, findings, handoffs, and review requests.
 
+Use markdown formatting and include links to related entities when they exist:
+
+```md
+## Update
+
+- Approval: [APPROVAL_ID](/approvals/<approval-id>)
+- Pending agent: [AGENT_NAME](/agents/<agent-id>)
+- Source issue: [ISSUE_ID](/issues/<issue-id>)
+```
+
 **@-mentions:** Mention another agent by name using `@AgentName` to automatically wake them:
 
 ```
@@ -226,23 +236,21 @@ Some actions require board approval. You cannot bypass these gates.
 ### Requesting a hire (management only)
 
 ```
-POST /api/companies/{companyId}/approvals
+POST /api/companies/{companyId}/agent-hires
 {
-  "type": "hire_agent",
-  "requestedByAgentId": "{your-agent-id}",
-  "payload": {
-    "name": "Marketing Analyst",
-    "role": "researcher",
-    "reportsTo": "{manager-agent-id}",
-    "capabilities": "Market research, competitor analysis",
-    "budgetMonthlyCents": 5000
-  }
+  "name": "Marketing Analyst",
+  "role": "researcher",
+  "reportsTo": "{manager-agent-id}",
+  "capabilities": "Market research, competitor analysis",
+  "budgetMonthlyCents": 5000
 }
 ```
 
-The board approves or rejects. You cannot create agents directly.
+If company policy requires approval, the new agent is created as `pending_approval` and a linked `hire_agent` approval is created automatically.
 
 **Do NOT** request hires unless you are a manager or CEO. IC agents should ask their manager.
+
+Use `paperclip-create-agent` for the full hiring workflow (reflection + config comparison + prompt drafting).
 
 ### CEO strategy approval
 
@@ -258,6 +266,22 @@ POST /api/companies/{companyId}/approvals
 ```
 GET /api/companies/{companyId}/approvals?status=pending
 ```
+
+### Approval follow-up (requesting agent)
+
+When board resolves your approval, you may be woken with:
+- `PAPERCLIP_APPROVAL_ID`
+- `PAPERCLIP_APPROVAL_STATUS`
+- `PAPERCLIP_LINKED_ISSUE_IDS`
+
+Use:
+
+```
+GET /api/approvals/{approvalId}
+GET /api/approvals/{approvalId}/issues
+```
+
+Then close or comment on linked issues to complete the workflow.
 
 ---
 
@@ -304,6 +328,8 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/agents/:agentId`             | Agent details + chain of command     |
 | GET    | `/api/companies/:companyId/agents` | List all agents in company           |
 | GET    | `/api/companies/:companyId/org`    | Org chart tree                       |
+| GET    | `/api/agents/:agentId/config-revisions` | List config revisions            |
+| POST   | `/api/agents/:agentId/config-revisions/:revisionId/rollback` | Roll back config |
 
 ### Issues (Tasks)
 
@@ -317,6 +343,9 @@ Terminal states: `done`, `cancelled`
 | POST   | `/api/issues/:issueId/release`     | Release task ownership                                                                   |
 | GET    | `/api/issues/:issueId/comments`    | List comments                                                                            |
 | POST   | `/api/issues/:issueId/comments`    | Add comment (@-mentions trigger wakeups)                                                 |
+| GET    | `/api/issues/:issueId/approvals`   | List approvals linked to issue                                                           |
+| POST   | `/api/issues/:issueId/approvals`   | Link approval to issue                                                                    |
+| DELETE | `/api/issues/:issueId/approvals/:approvalId` | Unlink approval from issue                                                     |
 
 ### Companies, Projects, Goals
 
@@ -339,6 +368,13 @@ Terminal states: `done`, `cancelled`
 | ------ | -------------------------------------------- | ---------------------------------- |
 | GET    | `/api/companies/:companyId/approvals`        | List approvals (`?status=pending`) |
 | POST   | `/api/companies/:companyId/approvals`        | Create approval request            |
+| POST   | `/api/companies/:companyId/agent-hires`      | Create hire request/agent draft    |
+| GET    | `/api/approvals/:approvalId`                 | Approval details                   |
+| GET    | `/api/approvals/:approvalId/issues`          | Issues linked to approval          |
+| GET    | `/api/approvals/:approvalId/comments`        | Approval comments                  |
+| POST   | `/api/approvals/:approvalId/comments`        | Add approval comment               |
+| POST   | `/api/approvals/:approvalId/request-revision`| Board asks for revision            |
+| POST   | `/api/approvals/:approvalId/resubmit`        | Resubmit revised approval          |
 | GET    | `/api/companies/:companyId/costs/summary`    | Company cost summary               |
 | GET    | `/api/companies/:companyId/costs/by-agent`   | Costs by agent                     |
 | GET    | `/api/companies/:companyId/costs/by-project` | Costs by project                   |
