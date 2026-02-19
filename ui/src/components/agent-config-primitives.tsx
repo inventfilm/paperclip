@@ -27,7 +27,7 @@ export const help: Record<string, string> = {
   localCommand: "Override the local CLI command (e.g. claude, /usr/local/bin/claude, codex).",
   args: "Command-line arguments, comma-separated.",
   extraArgs: "Extra CLI arguments for local adapters, comma-separated.",
-  envVars: "Environment variables injected into the adapter process. One KEY=VALUE per line.",
+  envVars: "Environment variables injected into the adapter process. Use plain values or secret references.",
   webhookUrl: "The URL that receives POST requests when the agent is invoked.",
   heartbeatInterval: "Run this agent automatically on a timer. Useful for periodic tasks like checking for new work.",
   intervalSec: "Seconds between automatic heartbeat invocations.",

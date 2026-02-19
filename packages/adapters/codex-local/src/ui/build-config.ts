@@ -22,6 +22,34 @@ function parseEnvVars(text: string): Record<string, string> {
   return env;
 }
 
+function parseEnvBindings(bindings: unknown): Record<string, unknown> {
+  if (typeof bindings !== "object" || bindings === null || Array.isArray(bindings)) return {};
+  const env: Record<string, unknown> = {};
+  for (const [key, raw] of Object.entries(bindings)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (typeof raw === "string") {
+      env[key] = { type: "plain", value: raw };
+      continue;
+    }
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
+    const rec = raw as Record<string, unknown>;
+    if (rec.type === "plain" && typeof rec.value === "string") {
+      env[key] = { type: "plain", value: rec.value };
+      continue;
+    }
+    if (rec.type === "secret_ref" && typeof rec.secretId === "string") {
+      env[key] = {
+        type: "secret_ref",
+        secretId: rec.secretId,
+        ...(typeof rec.version === "number" || rec.version === "latest"
+          ? { version: rec.version }
+          : {}),
+      };
+    }
+  }
+  return env;
+}
+
 export function buildCodexLocalConfig(v: CreateConfigValues): Record<string, unknown> {
   const ac: Record<string, unknown> = {};
   if (v.cwd) ac.cwd = v.cwd;
@@ -30,7 +58,13 @@ export function buildCodexLocalConfig(v: CreateConfigValues): Record<string, unk
   if (v.model) ac.model = v.model;
   ac.timeoutSec = 0;
   ac.graceSec = 15;
-  const env = parseEnvVars(v.envVars);
+  const env = parseEnvBindings(v.envBindings);
+  const legacy = parseEnvVars(v.envVars);
+  for (const [key, value] of Object.entries(legacy)) {
+    if (!Object.prototype.hasOwnProperty.call(env, key)) {
+      env[key] = { type: "plain", value };
+    }
+  }
   if (Object.keys(env).length > 0) ac.env = env;
   ac.search = v.search;
   ac.dangerouslyBypassApprovalsAndSandbox = v.dangerouslyBypassSandbox;

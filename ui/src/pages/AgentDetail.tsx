@@ -72,6 +72,14 @@ function shouldRedactSecretValue(key: string, value: unknown): boolean {
 }
 
 function redactEnvValue(key: string, value: unknown): string {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as { type?: unknown }).type === "secret_ref"
+  ) {
+    return "***SECRET_REF***";
+  }
   if (shouldRedactSecretValue(key, value)) return REDACTED_ENV_VALUE;
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
