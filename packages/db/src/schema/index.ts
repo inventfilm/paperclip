@@ -1,11 +1,13 @@
 export { companies } from "./companies.js";
 export { agents } from "./agents.js";
+export { agentConfigRevisions } from "./agent_config_revisions.js";
 export { agentApiKeys } from "./agent_api_keys.js";
 export { agentRuntimeState } from "./agent_runtime_state.js";
 export { agentWakeupRequests } from "./agent_wakeup_requests.js";
 export { projects } from "./projects.js";
 export { goals } from "./goals.js";
 export { issues } from "./issues.js";
+export { issueApprovals } from "./issue_approvals.js";
 export { issueComments } from "./issue_comments.js";
 export { heartbeatRuns } from "./heartbeat_runs.js";
 export { heartbeatRunEvents } from "./heartbeat_run_events.js";
