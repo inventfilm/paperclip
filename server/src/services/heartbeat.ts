@@ -55,6 +55,35 @@ function deriveTaskKey(
   );
 }
 
+function deriveCommentId(
+  contextSnapshot: Record<string, unknown> | null | undefined,
+  payload: Record<string, unknown> | null | undefined,
+) {
+  return (
+    readNonEmptyString(contextSnapshot?.wakeCommentId) ??
+    readNonEmptyString(contextSnapshot?.commentId) ??
+    readNonEmptyString(payload?.commentId) ??
+    null
+  );
+}
+
+function mergeCoalescedContextSnapshot(
+  existingRaw: unknown,
+  incoming: Record<string, unknown>,
+) {
+  const existing = parseObject(existingRaw);
+  const merged: Record<string, unknown> = {
+    ...existing,
+    ...incoming,
+  };
+  const commentId = deriveCommentId(incoming, null);
+  if (commentId) {
+    merged.commentId = commentId;
+    merged.wakeCommentId = commentId;
+  }
+  return merged;
+}
+
 function runTaskKey(run: typeof heartbeatRuns.$inferSelect) {
   return deriveTaskKey(run.contextSnapshot as Record<string, unknown> | null, null);
 }
@@ -914,7 +943,9 @@ export function heartbeatService(db: Db) {
     const reason = opts.reason ?? null;
     const payload = opts.payload ?? null;
     const issueIdFromPayload = readNonEmptyString(payload?.["issueId"]);
+    const commentIdFromPayload = readNonEmptyString(payload?.["commentId"]);
     const taskKey = deriveTaskKey(contextSnapshot, payload);
+    const wakeCommentId = deriveCommentId(contextSnapshot, payload);
 
     if (!readNonEmptyString(contextSnapshot["wakeReason"]) && reason) {
       contextSnapshot.wakeReason = reason;
@@ -927,6 +958,12 @@ export function heartbeatService(db: Db) {
     }
     if (!readNonEmptyString(contextSnapshot["taskKey"]) && taskKey) {
       contextSnapshot.taskKey = taskKey;
+    }
+    if (!readNonEmptyString(contextSnapshot["commentId"]) && commentIdFromPayload) {
+      contextSnapshot.commentId = commentIdFromPayload;
+    }
+    if (!readNonEmptyString(contextSnapshot["wakeCommentId"]) && wakeCommentId) {
+      contextSnapshot.wakeCommentId = wakeCommentId;
     }
     if (!readNonEmptyString(contextSnapshot["wakeSource"])) {
       contextSnapshot.wakeSource = source;
@@ -978,11 +1015,34 @@ export function heartbeatService(db: Db) {
       .where(and(eq(heartbeatRuns.agentId, agentId), inArray(heartbeatRuns.status, ["queued", "running"])))
       .orderBy(desc(heartbeatRuns.createdAt));
 
-    const sameScopeRun = activeRuns.find((candidate) =>
-      isSameTaskScope(runTaskKey(candidate), taskKey),
+    const sameScopeQueuedRun = activeRuns.find(
+      (candidate) => candidate.status === "queued" && isSameTaskScope(runTaskKey(candidate), taskKey),
     );
+    const sameScopeRunningRun = activeRuns.find(
+      (candidate) => candidate.status === "running" && isSameTaskScope(runTaskKey(candidate), taskKey),
+    );
+    const shouldQueueFollowupForCommentWake =
+      Boolean(wakeCommentId) && Boolean(sameScopeRunningRun) && !sameScopeQueuedRun;
 
-    if (sameScopeRun) {
+    const coalescedTargetRun =
+      sameScopeQueuedRun ??
+      (shouldQueueFollowupForCommentWake ? null : sameScopeRunningRun ?? null);
+
+    if (coalescedTargetRun) {
+      const mergedContextSnapshot = mergeCoalescedContextSnapshot(
+        coalescedTargetRun.contextSnapshot,
+        contextSnapshot,
+      );
+      const mergedRun = await db
+        .update(heartbeatRuns)
+        .set({
+          contextSnapshot: mergedContextSnapshot,
+          updatedAt: new Date(),
+        })
+        .where(eq(heartbeatRuns.id, coalescedTargetRun.id))
+        .returning()
+        .then((rows) => rows[0] ?? coalescedTargetRun);
+
       await db.insert(agentWakeupRequests).values({
         companyId: agent.companyId,
         agentId,
@@ -995,10 +1055,10 @@ export function heartbeatService(db: Db) {
         requestedByActorType: opts.requestedByActorType ?? null,
         requestedByActorId: opts.requestedByActorId ?? null,
         idempotencyKey: opts.idempotencyKey ?? null,
-        runId: sameScopeRun.id,
+        runId: mergedRun.id,
         finishedAt: new Date(),
       });
-      return sameScopeRun;
+      return mergedRun;
     }
 
     const wakeupRequest = await db
