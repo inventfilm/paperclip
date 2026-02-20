@@ -270,9 +270,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   };
 
   // Section toggle state — advanced always starts collapsed
-  const [adapterAdvancedOpen, setAdapterAdvancedOpen] = useState(false);
   const [runPolicyAdvancedOpen, setRunPolicyAdvancedOpen] = useState(false);
-  const [heartbeatOpen, setHeartbeatOpen] = useState(!isCreate);
   const [cwdPickerNotice, setCwdPickerNotice] = useState<string | null>(null);
 
   // Popover states
@@ -529,14 +527,15 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           <uiAdapter.ConfigFields {...adapterFieldProps} />
         </div>
 
-        {/* Advanced adapter section — collapsible in both modes */}
-        {isLocal && (
-          <CollapsibleSection
-            title="Advanced Adapter Settings"
-            open={adapterAdvancedOpen}
-            onToggle={() => setAdapterAdvancedOpen(!adapterAdvancedOpen)}
-          >
-            <div className="space-y-3">
+      </div>
+
+      {/* ---- Permissions & Configuration ---- */}
+      {isLocal && (
+        <div className="border-b border-border">
+          <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
+            Permissions & Configuration
+          </div>
+          <div className="px-4 pb-3 space-y-3">
               <Field label="Command" hint={help.localCommand}>
                 <DraftInput
                   value={
@@ -684,21 +683,18 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   </Field>
                 </>
               )}
-            </div>
-          </CollapsibleSection>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Run Policy ---- */}
       {isCreate ? (
-        <CollapsibleSection
-          title="Run Policy"
-          icon={<Heart className="h-3 w-3" />}
-          open={heartbeatOpen}
-          onToggle={() => setHeartbeatOpen(!heartbeatOpen)}
-          bordered
-        >
-          <div className="space-y-3">
+        <div className="border-b border-border">
+          <div className="px-4 py-2 text-xs font-medium text-muted-foreground flex items-center gap-2">
+            <Heart className="h-3 w-3" />
+            Run Policy
+          </div>
+          <div className="px-4 pb-3 space-y-3">
             <ToggleWithNumber
               label="Heartbeat on interval"
               hint={help.heartbeatInterval}
@@ -712,7 +708,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               showNumber={val!.heartbeatEnabled}
             />
           </div>
-        </CollapsibleSection>
+        </div>
       ) : (
         <div className="border-b border-border">
           <div className="px-4 py-2 text-xs font-medium text-muted-foreground flex items-center gap-2">
