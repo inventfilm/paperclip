@@ -320,11 +320,20 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    const attachments = await svc.listAttachments(id);
 
     const issue = await svc.remove(id);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;
+    }
+
+    for (const attachment of attachments) {
+      try {
+        await storage.deleteObject(attachment.companyId, attachment.objectKey);
+      } catch (err) {
+        logger.warn({ err, issueId: id, attachmentId: attachment.id }, "failed to delete attachment object during issue delete");
+      }
     }
 
     const actor = getActorInfo(req);
