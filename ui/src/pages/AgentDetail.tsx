@@ -1251,11 +1251,14 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   }, [initialEvents]);
 
   const updateFollowingState = useCallback(() => {
-    const el = logEndRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const inView = rect.top <= window.innerHeight && rect.bottom >= 0;
-    setIsFollowing((prev) => (prev === inView ? prev : inView));
+    const viewportBottom = window.scrollY + window.innerHeight;
+    const pageHeight = Math.max(
+      document.documentElement.scrollHeight,
+      document.body.scrollHeight,
+    );
+    const distanceFromBottom = pageHeight - viewportBottom;
+    const isNearBottom = distanceFromBottom <= 32;
+    setIsFollowing((prev) => (prev === isNearBottom ? prev : isNearBottom));
   }, []);
 
   useEffect(() => {
