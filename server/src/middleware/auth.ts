@@ -63,7 +63,7 @@ export function actorMiddleware(db: Db): RequestHandler {
         agentId: claims.sub,
         companyId: claims.company_id,
         keyId: undefined,
-        runId: runIdHeader || undefined,
+        runId: runIdHeader || claims.run_id || undefined,
       };
       next();
       return;

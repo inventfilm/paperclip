@@ -1063,19 +1063,21 @@ export function agentRoutes(db: Db) {
     }
     assertCompanyAccess(req, issue.companyId);
 
-    if (!issue.assigneeAgentId || issue.status !== "in_progress") {
-      res.json(null);
-      return;
+    let run = issue.executionRunId ? await heartbeat.getRun(issue.executionRunId) : null;
+    if (run && run.status !== "queued" && run.status !== "running") {
+      run = null;
     }
 
-    const agent = await svc.getById(issue.assigneeAgentId);
-    if (!agent) {
-      res.json(null);
-      return;
+    if (!run && issue.assigneeAgentId && issue.status === "in_progress") {
+      run = await heartbeat.getActiveRunForAgent(issue.assigneeAgentId);
     }
-
-    const run = await heartbeat.getActiveRunForAgent(issue.assigneeAgentId);
     if (!run) {
+      res.json(null);
+      return;
+    }
+
+    const agent = await svc.getById(run.agentId);
+    if (!agent) {
       res.json(null);
       return;
     }

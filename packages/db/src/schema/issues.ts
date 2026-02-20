@@ -12,6 +12,7 @@ import { agents } from "./agents.js";
 import { projects } from "./projects.js";
 import { goals } from "./goals.js";
 import { companies } from "./companies.js";
+import { heartbeatRuns } from "./heartbeat_runs.js";
 
 export const issues = pgTable(
   "issues",
@@ -26,6 +27,10 @@ export const issues = pgTable(
     status: text("status").notNull().default("backlog"),
     priority: text("priority").notNull().default("medium"),
     assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id),
+    checkoutRunId: uuid("checkout_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
+    executionRunId: uuid("execution_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
+    executionAgentNameKey: text("execution_agent_name_key"),
+    executionLockedAt: timestamp("execution_locked_at", { withTimezone: true }),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id),
     createdByUserId: text("created_by_user_id"),
     issueNumber: integer("issue_number"),

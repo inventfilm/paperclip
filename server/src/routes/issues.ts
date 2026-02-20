@@ -78,6 +78,34 @@ export function issueRoutes(db: Db, storage: StorageService) {
     return false;
   }
 
+  function requireAgentRunId(req: Request, res: Response) {
+    if (req.actor.type !== "agent") return null;
+    const runId = req.actor.runId?.trim();
+    if (runId) return runId;
+    res.status(401).json({ error: "Agent run id required" });
+    return null;
+  }
+
+  async function assertAgentRunCheckoutOwnership(
+    req: Request,
+    res: Response,
+    issue: { id: string; status: string; assigneeAgentId: string | null },
+  ) {
+    if (req.actor.type !== "agent") return true;
+    const actorAgentId = req.actor.agentId;
+    if (!actorAgentId) {
+      res.status(403).json({ error: "Agent authentication required" });
+      return false;
+    }
+    if (issue.status !== "in_progress" || issue.assigneeAgentId !== actorAgentId) {
+      return true;
+    }
+    const runId = requireAgentRunId(req, res);
+    if (!runId) return false;
+    await svc.assertCheckoutOwner(issue.id, actorAgentId, runId);
+    return true;
+  }
+
   router.get("/companies/:companyId/issues", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -225,6 +253,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
 
     const { comment: commentBody, hiddenAt: hiddenAtRaw, ...updateFields } = req.body;
     if (hiddenAtRaw !== undefined) {
@@ -276,35 +305,17 @@ export function issueRoutes(db: Db, storage: StorageService) {
         details: { commentId: comment.id },
       });
 
-      // @-mention wakeups
-      svc.findMentionedAgents(issue.companyId, commentBody).then((ids) => {
-        for (const mentionedId of ids) {
-          heartbeat.wakeup(mentionedId, {
-            source: "automation",
-            triggerDetail: "system",
-            reason: "issue_comment_mentioned",
-            payload: { issueId: id, commentId: comment!.id },
-            requestedByActorType: actor.actorType,
-            requestedByActorId: actor.actorId,
-            contextSnapshot: {
-              issueId: id,
-              taskId: id,
-              commentId: comment!.id,
-              wakeCommentId: comment!.id,
-              wakeReason: "issue_comment_mentioned",
-              source: "comment.mention",
-            },
-          }).catch((err) => logger.warn({ err, agentId: mentionedId }, "failed to wake mentioned agent"));
-        }
-      }).catch((err) => logger.warn({ err, issueId: id }, "failed to resolve @-mentions"));
     }
 
     const assigneeChanged =
       req.body.assigneeAgentId !== undefined && req.body.assigneeAgentId !== existing.assigneeAgentId;
 
-    if (assigneeChanged && issue.assigneeAgentId) {
-      void heartbeat
-        .wakeup(issue.assigneeAgentId, {
+    // Merge all wakeups from this update into one enqueue per agent to avoid duplicate runs.
+    void (async () => {
+      const wakeups = new Map<string, Parameters<typeof heartbeat.wakeup>[1]>();
+
+      if (assigneeChanged && issue.assigneeAgentId) {
+        wakeups.set(issue.assigneeAgentId, {
           source: "assignment",
           triggerDetail: "system",
           reason: "issue_assigned",
@@ -312,9 +323,44 @@ export function issueRoutes(db: Db, storage: StorageService) {
           requestedByActorType: actor.actorType,
           requestedByActorId: actor.actorId,
           contextSnapshot: { issueId: issue.id, source: "issue.update" },
-        })
-        .catch((err) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue update"));
-    }
+        });
+      }
+
+      if (commentBody && comment) {
+        let mentionedIds: string[] = [];
+        try {
+          mentionedIds = await svc.findMentionedAgents(issue.companyId, commentBody);
+        } catch (err) {
+          logger.warn({ err, issueId: id }, "failed to resolve @-mentions");
+        }
+
+        for (const mentionedId of mentionedIds) {
+          if (wakeups.has(mentionedId)) continue;
+          wakeups.set(mentionedId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_comment_mentioned",
+            payload: { issueId: id, commentId: comment.id },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: id,
+              taskId: id,
+              commentId: comment.id,
+              wakeCommentId: comment.id,
+              wakeReason: "issue_comment_mentioned",
+              source: "comment.mention",
+            },
+          });
+        }
+      }
+
+      for (const [agentId, wakeup] of wakeups.entries()) {
+        heartbeat
+          .wakeup(agentId, wakeup)
+          .catch((err) => logger.warn({ err, issueId: issue.id, agentId }, "failed to wake agent on issue update"));
+      }
+    })();
 
     res.json({ ...issue, comment });
   });
@@ -372,7 +418,9 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
 
-    const updated = await svc.checkout(id, req.body.agentId, req.body.expectedStatuses);
+    const checkoutRunId = requireAgentRunId(req, res);
+    if (req.actor.type === "agent" && !checkoutRunId) return;
+    const updated = await svc.checkout(id, req.body.agentId, req.body.expectedStatuses, checkoutRunId);
     const actor = getActorInfo(req);
 
     await logActivity(db, {
@@ -410,8 +458,14 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    const actorRunId = requireAgentRunId(req, res);
+    if (req.actor.type === "agent" && !actorRunId) return;
 
-    const released = await svc.release(id, req.actor.type === "agent" ? req.actor.agentId : undefined);
+    const released = await svc.release(
+      id,
+      req.actor.type === "agent" ? req.actor.agentId : undefined,
+      actorRunId,
+    );
     if (!released) {
       res.status(404).json({ error: "Issue not found" });
       return;
@@ -452,6 +506,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, issue.companyId);
+    if (!(await assertAgentRunCheckoutOwnership(req, res, issue))) return;
 
     const actor = getActorInfo(req);
     const reopenRequested = req.body.reopen === true;
@@ -505,10 +560,66 @@ export function issueRoutes(db: Db, storage: StorageService) {
       details: { commentId: comment.id },
     });
 
-    // @-mention wakeups
-    svc.findMentionedAgents(issue.companyId, req.body.body).then((ids) => {
-      for (const mentionedId of ids) {
-        heartbeat.wakeup(mentionedId, {
+    // Merge all wakeups from this comment into one enqueue per agent to avoid duplicate runs.
+    void (async () => {
+      const wakeups = new Map<string, Parameters<typeof heartbeat.wakeup>[1]>();
+      const assigneeId = currentIssue.assigneeAgentId;
+      if (assigneeId) {
+        if (reopened) {
+          wakeups.set(assigneeId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_reopened_via_comment",
+            payload: {
+              issueId: currentIssue.id,
+              commentId: comment.id,
+              reopenedFrom: reopenFromStatus,
+              mutation: "comment",
+            },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: currentIssue.id,
+              taskId: currentIssue.id,
+              commentId: comment.id,
+              source: "issue.comment.reopen",
+              wakeReason: "issue_reopened_via_comment",
+              reopenedFrom: reopenFromStatus,
+            },
+          });
+        } else {
+          wakeups.set(assigneeId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_commented",
+            payload: {
+              issueId: currentIssue.id,
+              commentId: comment.id,
+              mutation: "comment",
+            },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: currentIssue.id,
+              taskId: currentIssue.id,
+              commentId: comment.id,
+              source: "issue.comment",
+              wakeReason: "issue_commented",
+            },
+          });
+        }
+      }
+
+      let mentionedIds: string[] = [];
+      try {
+        mentionedIds = await svc.findMentionedAgents(issue.companyId, req.body.body);
+      } catch (err) {
+        logger.warn({ err, issueId: id }, "failed to resolve @-mentions");
+      }
+
+      for (const mentionedId of mentionedIds) {
+        if (wakeups.has(mentionedId)) continue;
+        wakeups.set(mentionedId, {
           source: "automation",
           triggerDetail: "system",
           reason: "issue_comment_mentioned",
@@ -523,57 +634,15 @@ export function issueRoutes(db: Db, storage: StorageService) {
             wakeReason: "issue_comment_mentioned",
             source: "comment.mention",
           },
-        }).catch((err) => logger.warn({ err, agentId: mentionedId }, "failed to wake mentioned agent"));
+        });
       }
-    }).catch((err) => logger.warn({ err, issueId: id }, "failed to resolve @-mentions"));
 
-    if (reopened && currentIssue.assigneeAgentId) {
-      void heartbeat
-        .wakeup(currentIssue.assigneeAgentId, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: "issue_reopened_via_comment",
-          payload: {
-            issueId: currentIssue.id,
-            commentId: comment.id,
-            reopenedFrom: reopenFromStatus,
-            mutation: "comment",
-          },
-          requestedByActorType: actor.actorType,
-          requestedByActorId: actor.actorId,
-          contextSnapshot: {
-            issueId: currentIssue.id,
-            taskId: currentIssue.id,
-            commentId: comment.id,
-            source: "issue.comment.reopen",
-            wakeReason: "issue_reopened_via_comment",
-            reopenedFrom: reopenFromStatus,
-          },
-        })
-        .catch((err) => logger.warn({ err, issueId: currentIssue.id }, "failed to wake assignee on issue reopen comment"));
-    } else if (currentIssue.assigneeAgentId) {
-      void heartbeat
-        .wakeup(currentIssue.assigneeAgentId, {
-          source: "automation",
-          triggerDetail: "system",
-          reason: "issue_commented",
-          payload: {
-            issueId: currentIssue.id,
-            commentId: comment.id,
-            mutation: "comment",
-          },
-          requestedByActorType: actor.actorType,
-          requestedByActorId: actor.actorId,
-          contextSnapshot: {
-            issueId: currentIssue.id,
-            taskId: currentIssue.id,
-            commentId: comment.id,
-            source: "issue.comment",
-            wakeReason: "issue_commented",
-          },
-        })
-        .catch((err) => logger.warn({ err, issueId: currentIssue.id }, "failed to wake assignee on issue comment"));
-    }
+      for (const [agentId, wakeup] of wakeups.entries()) {
+        heartbeat
+          .wakeup(agentId, wakeup)
+          .catch((err) => logger.warn({ err, issueId: currentIssue.id, agentId }, "failed to wake agent on issue comment"));
+      }
+    })();
 
     res.status(201).json(comment);
   });

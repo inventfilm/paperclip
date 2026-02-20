@@ -41,6 +41,10 @@ export interface Issue {
   status: IssueStatus;
   priority: IssuePriority;
   assigneeAgentId: string | null;
+  checkoutRunId: string | null;
+  executionRunId: string | null;
+  executionAgentNameKey: string | null;
+  executionLockedAt: Date | null;
   createdByAgentId: string | null;
   createdByUserId: string | null;
   issueNumber: number | null;

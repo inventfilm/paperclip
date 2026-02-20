@@ -45,6 +45,11 @@ export interface IssueFilters {
   projectId?: string;
 }
 
+function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
+  if (actorRunId) return checkoutRunId === actorRunId;
+  return checkoutRunId == null;
+}
+
 export function issueService(db: Db) {
   async function assertAssignableAgent(companyId: string, agentId: string) {
     const assignee = await db
@@ -161,6 +166,12 @@ export function issueService(db: Db) {
       if (data.status && data.status !== "cancelled") {
         patch.cancelledAt = null;
       }
+      if (data.status && data.status !== "in_progress") {
+        patch.checkoutRunId = null;
+      }
+      if (data.assigneeAgentId !== undefined && data.assigneeAgentId !== existing.assigneeAgentId) {
+        patch.checkoutRunId = null;
+      }
 
       return db
         .update(issues)
@@ -192,7 +203,7 @@ export function issueService(db: Db) {
         return removedIssue;
       }),
 
-    checkout: async (id: string, agentId: string, expectedStatuses: string[]) => {
+    checkout: async (id: string, agentId: string, expectedStatuses: string[], checkoutRunId: string | null) => {
       const issueCompany = await db
         .select({ companyId: issues.companyId })
         .from(issues)
@@ -202,10 +213,21 @@ export function issueService(db: Db) {
       await assertAssignableAgent(issueCompany.companyId, agentId);
 
       const now = new Date();
+      const sameRunAssigneeCondition = checkoutRunId
+        ? and(
+          eq(issues.assigneeAgentId, agentId),
+          or(isNull(issues.checkoutRunId), eq(issues.checkoutRunId, checkoutRunId)),
+        )
+        : and(eq(issues.assigneeAgentId, agentId), isNull(issues.checkoutRunId));
+      const executionLockCondition = checkoutRunId
+        ? or(isNull(issues.executionRunId), eq(issues.executionRunId, checkoutRunId))
+        : isNull(issues.executionRunId);
       const updated = await db
         .update(issues)
         .set({
           assigneeAgentId: agentId,
+          checkoutRunId,
+          executionRunId: checkoutRunId,
           status: "in_progress",
           startedAt: now,
           updatedAt: now,
@@ -214,7 +236,8 @@ export function issueService(db: Db) {
           and(
             eq(issues.id, id),
             inArray(issues.status, expectedStatuses),
-            or(isNull(issues.assigneeAgentId), eq(issues.assigneeAgentId, agentId)),
+            or(isNull(issues.assigneeAgentId), sameRunAssigneeCondition),
+            executionLockCondition,
           ),
         )
         .returning()
@@ -227,6 +250,8 @@ export function issueService(db: Db) {
           id: issues.id,
           status: issues.status,
           assigneeAgentId: issues.assigneeAgentId,
+          checkoutRunId: issues.checkoutRunId,
+          executionRunId: issues.executionRunId,
         })
         .from(issues)
         .where(eq(issues.id, id))
@@ -234,8 +259,40 @@ export function issueService(db: Db) {
 
       if (!current) throw notFound("Issue not found");
 
-      // If this agent already owns it and it's in_progress, return it (no self-409)
-      if (current.assigneeAgentId === agentId && current.status === "in_progress") {
+      if (
+        current.assigneeAgentId === agentId &&
+        current.status === "in_progress" &&
+        current.checkoutRunId == null &&
+        (current.executionRunId == null || current.executionRunId === checkoutRunId) &&
+        checkoutRunId
+      ) {
+        const adopted = await db
+          .update(issues)
+          .set({
+            checkoutRunId,
+            executionRunId: checkoutRunId,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(issues.id, id),
+              eq(issues.status, "in_progress"),
+              eq(issues.assigneeAgentId, agentId),
+              isNull(issues.checkoutRunId),
+              or(isNull(issues.executionRunId), eq(issues.executionRunId, checkoutRunId)),
+            ),
+          )
+          .returning()
+          .then((rows) => rows[0] ?? null);
+        if (adopted) return adopted;
+      }
+
+      // If this run already owns it and it's in_progress, return it (no self-409)
+      if (
+        current.assigneeAgentId === agentId &&
+        current.status === "in_progress" &&
+        sameRunLock(current.checkoutRunId, checkoutRunId)
+      ) {
         return db.select().from(issues).where(eq(issues.id, id)).then((rows) => rows[0]!);
       }
 
@@ -243,10 +300,44 @@ export function issueService(db: Db) {
         issueId: current.id,
         status: current.status,
         assigneeAgentId: current.assigneeAgentId,
+        checkoutRunId: current.checkoutRunId,
+        executionRunId: current.executionRunId,
       });
     },
 
-    release: async (id: string, actorAgentId?: string) => {
+    assertCheckoutOwner: async (id: string, actorAgentId: string, actorRunId: string | null) => {
+      const current = await db
+        .select({
+          id: issues.id,
+          status: issues.status,
+          assigneeAgentId: issues.assigneeAgentId,
+          checkoutRunId: issues.checkoutRunId,
+        })
+        .from(issues)
+        .where(eq(issues.id, id))
+        .then((rows) => rows[0] ?? null);
+
+      if (!current) throw notFound("Issue not found");
+
+      if (
+        current.status === "in_progress" &&
+        current.assigneeAgentId === actorAgentId &&
+        sameRunLock(current.checkoutRunId, actorRunId)
+      ) {
+        return current;
+      }
+
+      throw conflict("Issue run ownership conflict", {
+        issueId: current.id,
+        status: current.status,
+        assigneeAgentId: current.assigneeAgentId,
+        checkoutRunId: current.checkoutRunId,
+        actorAgentId,
+        actorRunId,
+      });
+    },
+
+    release: async (id: string, actorAgentId?: string, actorRunId?: string | null) => {
       const existing = await db
         .select()
         .from(issues)
@@ -257,12 +348,27 @@ export function issueService(db: Db) {
       if (actorAgentId && existing.assigneeAgentId && existing.assigneeAgentId !== actorAgentId) {
         throw conflict("Only assignee can release issue");
       }
+      if (
+        actorAgentId &&
+        existing.status === "in_progress" &&
+        existing.assigneeAgentId === actorAgentId &&
+        existing.checkoutRunId &&
+        !sameRunLock(existing.checkoutRunId, actorRunId ?? null)
+      ) {
+        throw conflict("Only checkout run can release issue", {
+          issueId: existing.id,
+          assigneeAgentId: existing.assigneeAgentId,
+          checkoutRunId: existing.checkoutRunId,
+          actorRunId: actorRunId ?? null,
+        });
+      }
 
       return db
         .update(issues)
         .set({
           status: "todo",
           assigneeAgentId: null,
+          checkoutRunId: null,
           updatedAt: new Date(),
         })
         .where(eq(issues.id, id))
