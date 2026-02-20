@@ -6,6 +6,7 @@ import { projectsApi } from "../api/projects";
 import { assetsApi } from "../api/assets";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
+import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { GoalProperties } from "../components/GoalProperties";
@@ -13,12 +14,15 @@ import { GoalTree } from "../components/GoalTree";
 import { StatusBadge } from "../components/StatusBadge";
 import { InlineEditor } from "../components/InlineEditor";
 import { EntityRow } from "../components/EntityRow";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus } from "lucide-react";
 import type { Goal, Project } from "@paperclip/shared";
 
 export function GoalDetail() {
   const { goalId } = useParams<{ goalId: string }>();
   const { selectedCompanyId } = useCompany();
+  const { openNewGoal } = useDialog();
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
@@ -117,7 +121,13 @@ export function GoalDetail() {
           <TabsTrigger value="projects">Projects ({linkedProjects.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="children" className="mt-4">
+        <TabsContent value="children" className="mt-4 space-y-3">
+          <div className="flex items-center justify-end">
+            <Button size="sm" variant="outline" onClick={() => openNewGoal({ parentId: goalId })}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Sub Goal
+            </Button>
+          </div>
           {childGoals.length === 0 ? (
             <p className="text-sm text-muted-foreground">No sub-goals.</p>
           ) : (

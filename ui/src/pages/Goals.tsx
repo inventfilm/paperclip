@@ -3,14 +3,17 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { useCompany } from "../context/CompanyContext";
+import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { GoalTree } from "../components/GoalTree";
 import { EmptyState } from "../components/EmptyState";
-import { Target } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Target, Plus } from "lucide-react";
 
 export function Goals() {
   const { selectedCompanyId } = useCompany();
+  const { openNewGoal } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
 
@@ -38,12 +41,20 @@ export function Goals() {
           icon={Target}
           message="No goals yet."
           action="Add Goal"
-          onAction={() => {/* TODO: goal creation */}}
+          onAction={() => openNewGoal()}
         />
       )}
 
       {goals && goals.length > 0 && (
-        <GoalTree goals={goals} onSelect={(goal) => navigate(`/goals/${goal.id}`)} />
+        <>
+          <div className="flex items-center justify-end">
+            <Button size="sm" variant="outline" onClick={() => openNewGoal()}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              New Goal
+            </Button>
+          </div>
+          <GoalTree goals={goals} onSelect={(goal) => navigate(`/goals/${goal.id}`)} />
+        </>
       )}
     </div>
   );

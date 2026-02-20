@@ -6,6 +6,7 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
+import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { OnboardingWizard } from "./OnboardingWizard";
 import { useDialog } from "../context/DialogContext";
@@ -84,6 +85,7 @@ export function Layout() {
       <CommandPalette />
       <NewIssueDialog />
       <NewProjectDialog />
+      <NewGoalDialog />
       <NewAgentDialog />
       <OnboardingWizard />
     </div>
