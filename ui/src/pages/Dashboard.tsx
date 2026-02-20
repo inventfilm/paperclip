@@ -266,23 +266,25 @@ export function Dashboard() {
                       className="px-4 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors"
                       onClick={() => navigate(`/issues/${issue.id}`)}
                     >
-                      <div className="flex items-start gap-2">
-                        <div className="flex items-center gap-2 shrink-0 mt-0.5">
-                          <PriorityIcon priority={issue.priority} />
-                          <StatusIcon status={issue.status} />
+                      <div className="flex gap-3">
+                        <div className="flex items-start gap-2 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                            <PriorityIcon priority={issue.priority} />
+                            <StatusIcon status={issue.status} />
+                          </div>
+                          <p className="min-w-0 flex-1 sm:truncate">
+                            <span>{issue.title}</span>
+                            {issue.assigneeAgentId && (() => {
+                              const name = agentName(issue.assigneeAgentId);
+                              return name
+                                ? <span className="hidden sm:inline"><Identity name={name} size="sm" className="ml-2 inline-flex" /></span>
+                                : null;
+                            })()}
+                          </p>
                         </div>
-                        <p className="min-w-0 flex-1">
-                          <span>{issue.title}</span>
-                          {issue.assigneeAgentId && (() => {
-                            const name = agentName(issue.assigneeAgentId);
-                            return name
-                              ? <span className="hidden sm:inline"><Identity name={name} size="sm" className="ml-2 inline-flex" /></span>
-                              : null;
-                          })()}
-                          <span className="text-xs text-muted-foreground ml-2">
-                            {timeAgo(issue.updatedAt)}
-                          </span>
-                        </p>
+                        <span className="text-xs text-muted-foreground shrink-0 pt-0.5">
+                          {timeAgo(issue.updatedAt)}
+                        </span>
                       </div>
                     </div>
                   ))}
