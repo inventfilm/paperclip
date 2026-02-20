@@ -159,6 +159,12 @@ export function IssueDetail() {
     enabled: !!issueId,
   });
 
+  const { data: allIssues } = useQuery({
+    queryKey: queryKeys.issues.list(selectedCompanyId!),
+    queryFn: () => issuesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
     queryFn: () => agentsApi.list(selectedCompanyId!),
@@ -176,6 +182,13 @@ export function IssueDetail() {
     for (const a of agents ?? []) map.set(a.id, a);
     return map;
   }, [agents]);
+
+  const childIssues = useMemo(() => {
+    if (!allIssues || !issueId) return [];
+    return allIssues
+      .filter((i) => i.parentId === issueId)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  }, [allIssues, issueId]);
 
   const commentsWithRunMeta = useMemo(() => {
     const runMetaByCommentId = new Map<string, { runId: string; runAgentId: string | null }>();
@@ -561,6 +574,39 @@ export function IssueDetail() {
           await addComment.mutateAsync({ body, reopen });
         }}
       />
+
+      {childIssues.length > 0 && (
+        <>
+          <Separator />
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-muted-foreground">Sub-issues</h3>
+            <div className="border border-border rounded-lg divide-y divide-border">
+              {childIssues.map((child) => (
+                <Link
+                  key={child.id}
+                  to={`/issues/${child.id}`}
+                  className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <StatusIcon status={child.status} />
+                    <PriorityIcon priority={child.priority} />
+                    <span className="font-mono text-muted-foreground shrink-0">
+                      {child.identifier ?? child.id.slice(0, 8)}
+                    </span>
+                    <span className="truncate">{child.title}</span>
+                  </div>
+                  {child.assigneeAgentId && (() => {
+                    const name = agentMap.get(child.assigneeAgentId)?.name;
+                    return name
+                      ? <Identity name={name} size="sm" />
+                      : <span className="text-muted-foreground font-mono">{child.assigneeAgentId.slice(0, 8)}</span>;
+                  })()}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       {linkedApprovals && linkedApprovals.length > 0 && (
         <>
