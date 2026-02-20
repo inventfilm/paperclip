@@ -297,22 +297,22 @@ export function AgentDetail() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold">{agent.name}</h2>
-          <p className="text-sm text-muted-foreground">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="text-xl font-bold truncate">{agent.name}</h2>
+          <p className="text-sm text-muted-foreground truncate">
             {roleLabels[agent.role] ?? agent.role}
             {agent.title ? ` - ${agent.title}` : ""}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <Button
             variant="outline"
             size="sm"
             onClick={() => openNewIssue({ assigneeAgentId: agentId })}
           >
-            <Plus className="h-3.5 w-3.5 mr-1" />
-            Assign Task
+            <Plus className="h-3.5 w-3.5 sm:mr-1" />
+            <span className="hidden sm:inline">Assign Task</span>
           </Button>
           <Button
             variant="outline"
@@ -320,8 +320,8 @@ export function AgentDetail() {
             onClick={() => agentAction.mutate("invoke")}
             disabled={agentAction.isPending || isPendingApproval}
           >
-            <Play className="h-3.5 w-3.5 mr-1" />
-            Invoke
+            <Play className="h-3.5 w-3.5 sm:mr-1" />
+            <span className="hidden sm:inline">Invoke</span>
           </Button>
           {agent.status === "paused" ? (
             <Button
@@ -330,8 +330,8 @@ export function AgentDetail() {
               onClick={() => agentAction.mutate("resume")}
               disabled={agentAction.isPending || isPendingApproval}
             >
-              <Play className="h-3.5 w-3.5 mr-1" />
-              Resume
+              <Play className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Resume</span>
             </Button>
           ) : (
             <Button
@@ -340,11 +340,11 @@ export function AgentDetail() {
               onClick={() => agentAction.mutate("pause")}
               disabled={agentAction.isPending || isPendingApproval}
             >
-              <Pause className="h-3.5 w-3.5 mr-1" />
-              Pause
+              <Pause className="h-3.5 w-3.5 sm:mr-1" />
+              <span className="hidden sm:inline">Pause</span>
             </Button>
           )}
-          <StatusBadge status={agent.status} />
+          <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
 
           {/* Overflow menu */}
           <Popover open={moreOpen} onOpenChange={setMoreOpen}>
@@ -434,6 +434,8 @@ export function AgentDetail() {
             { value: "costs", label: "Costs" },
             { value: "keys", label: "API Keys" },
           ]}
+          value={activeTab}
+          onValueChange={setActiveTab}
         />
 
         {/* OVERVIEW TAB */}
@@ -732,7 +734,7 @@ function ConfigurationTab({
   }, [onSavingChange, updateAgent.isPending]);
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="space-y-4">
       <div className="border border-border rounded-lg overflow-hidden">
         <AgentConfigForm
           mode="edit"
@@ -913,6 +915,23 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     queryKey: queryKeys.runIssues(run.id),
     queryFn: () => activityApi.issuesForRun(run.id),
   });
+  const touchedIssueIds = useMemo(
+    () => Array.from(new Set((touchedIssues ?? []).map((issue) => issue.issueId))),
+    [touchedIssues],
+  );
+
+  const clearSessionsForTouchedIssues = useMutation({
+    mutationFn: async () => {
+      if (touchedIssueIds.length === 0) return 0;
+      await Promise.all(touchedIssueIds.map((issueId) => agentsApi.resetSession(run.agentId, issueId)));
+      return touchedIssueIds.length;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(run.agentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(run.agentId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.runIssues(run.id) });
+    },
+  });
 
   const timeFormat: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
   const startTime = run.startedAt ? new Date(run.startedAt).toLocaleTimeString("en-US", timeFormat) : null;
@@ -1027,6 +1046,34 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                     <CopyText text={run.sessionIdAfter} className="font-mono" />
                   </div>
                 )}
+                {touchedIssueIds.length > 0 && (
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      className="text-[11px] text-muted-foreground underline underline-offset-2 hover:text-foreground disabled:opacity-60"
+                      disabled={clearSessionsForTouchedIssues.isPending}
+                      onClick={() => {
+                        const issueCount = touchedIssueIds.length;
+                        const confirmed = window.confirm(
+                          `Clear session for ${issueCount} issue${issueCount === 1 ? "" : "s"} touched by this run?`,
+                        );
+                        if (!confirmed) return;
+                        clearSessionsForTouchedIssues.mutate();
+                      }}
+                    >
+                      {clearSessionsForTouchedIssues.isPending
+                        ? "clearing session..."
+                        : "clear session for these issues"}
+                    </button>
+                    {clearSessionsForTouchedIssues.isError && (
+                      <p className="text-[11px] text-destructive mt-1">
+                        {clearSessionsForTouchedIssues.error instanceof Error
+                          ? clearSessionsForTouchedIssues.error.message
+                          : "Failed to clear sessions"}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1086,6 +1133,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   const [logLoading, setLogLoading] = useState(!!run.logRef);
   const [logError, setLogError] = useState<string | null>(null);
   const [logOffset, setLogOffset] = useState(0);
+  const [isFollowing, setIsFollowing] = useState(true);
   const logEndRef = useRef<HTMLDivElement>(null);
   const pendingLogLineRef = useRef("");
   const isLive = run.status === "running" || run.status === "queued";
@@ -1135,12 +1183,36 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     }
   }, [initialEvents]);
 
-  // Auto-scroll only for live runs
+  const updateFollowingState = useCallback(() => {
+    const el = logEndRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const inView = rect.top <= window.innerHeight && rect.bottom >= 0;
+    setIsFollowing((prev) => (prev === inView ? prev : inView));
+  }, []);
+
   useEffect(() => {
-    if (isLive) {
+    if (!isLive) return;
+    setIsFollowing(true);
+  }, [isLive, run.id]);
+
+  useEffect(() => {
+    if (!isLive) return;
+    updateFollowingState();
+    window.addEventListener("scroll", updateFollowingState, { passive: true });
+    window.addEventListener("resize", updateFollowingState);
+    return () => {
+      window.removeEventListener("scroll", updateFollowingState);
+      window.removeEventListener("resize", updateFollowingState);
+    };
+  }, [isLive, updateFollowingState]);
+
+  // Auto-scroll only for live runs when following
+  useEffect(() => {
+    if (isLive && isFollowing) {
       logEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [events, logLines, isLive]);
+  }, [events, logLines, isLive, isFollowing]);
 
   // Fetch persisted shell log
   useEffect(() => {
@@ -1315,15 +1387,29 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
         <span className="text-xs font-medium text-muted-foreground">
           Transcript ({transcript.length})
         </span>
-        {isLive && (
-          <span className="flex items-center gap-1 text-xs text-cyan-400">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+        <div className="flex items-center gap-2">
+          {isLive && !isFollowing && (
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => {
+                setIsFollowing(true);
+                logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+              }}
+            >
+              Jump to live
+            </Button>
+          )}
+          {isLive && (
+            <span className="flex items-center gap-1 text-xs text-cyan-400">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+              </span>
+              Live
             </span>
-            Live
-          </span>
-        )}
+          )}
+        </div>
       </div>
       <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5">
         {transcript.length === 0 && !run.logRef && (
@@ -1536,7 +1622,7 @@ function CostsTab({
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       {/* Cumulative totals */}
       {runtimeState && (
         <div className="border border-border rounded-lg p-4">

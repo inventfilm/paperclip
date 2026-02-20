@@ -10,6 +10,7 @@ const statusColors: Record<string, string> = {
   achieved: "bg-green-900/50 text-green-300",
   completed: "bg-green-900/50 text-green-300",
   failed: "bg-red-900/50 text-red-300",
+  timed_out: "bg-orange-900/50 text-orange-300",
   succeeded: "bg-green-900/50 text-green-300",
   error: "bg-red-900/50 text-red-300",
   pending_approval: "bg-amber-900/50 text-amber-300",

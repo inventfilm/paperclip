@@ -95,6 +95,7 @@ export function NewIssueDialog() {
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [assigneeSearch, setAssigneeSearch] = useState("");
   const [projectOpen, setProjectOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
 
@@ -341,14 +342,21 @@ export function NewIssueDialog() {
           </Popover>
 
           {/* Assignee chip */}
-          <Popover open={assigneeOpen} onOpenChange={setAssigneeOpen}>
+          <Popover open={assigneeOpen} onOpenChange={(open) => { setAssigneeOpen(open); if (!open) setAssigneeSearch(""); }}>
             <PopoverTrigger asChild>
               <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
                 <User className="h-3 w-3 text-muted-foreground" />
                 {currentAssignee ? currentAssignee.name : "Assignee"}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-44 p-1" align="start">
+            <PopoverContent className="w-52 p-1" align="start">
+              <input
+                className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+                placeholder="Search agents..."
+                value={assigneeSearch}
+                onChange={(e) => setAssigneeSearch(e.target.value)}
+                autoFocus
+              />
               <button
                 className={cn(
                   "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
@@ -358,7 +366,14 @@ export function NewIssueDialog() {
               >
                 No assignee
               </button>
-              {(agents ?? []).map((a) => (
+              {(agents ?? [])
+                .filter((a) => a.status !== "terminated")
+                .filter((a) => {
+                  if (!assigneeSearch.trim()) return true;
+                  const q = assigneeSearch.toLowerCase();
+                  return a.name.toLowerCase().includes(q);
+                })
+                .map((a) => (
                 <button
                   key={a.id}
                   className={cn(

@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "../lib/utils";
+import { useSidebar } from "../context/SidebarContext";
 import type { LucideIcon } from "lucide-react";
 
 interface SidebarNavItemProps {
@@ -8,6 +9,8 @@ interface SidebarNavItemProps {
   icon: LucideIcon;
   end?: boolean;
   badge?: number;
+  badgeTone?: "default" | "danger";
+  alert?: boolean;
 }
 
 export function SidebarNavItem({
@@ -16,11 +19,16 @@ export function SidebarNavItem({
   icon: Icon,
   end,
   badge,
+  badgeTone = "default",
+  alert = false,
 }: SidebarNavItemProps) {
+  const { isMobile, setSidebarOpen } = useSidebar();
+
   return (
     <NavLink
       to={to}
       end={end}
+      onClick={() => { if (isMobile) setSidebarOpen(false); }}
       className={({ isActive }) =>
         cn(
           "flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium transition-colors",
@@ -30,10 +38,22 @@ export function SidebarNavItem({
         )
       }
     >
-      <Icon className="h-4 w-4 shrink-0" />
+      <span className="relative shrink-0">
+        <Icon className="h-4 w-4" />
+        {alert && (
+          <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_2px_hsl(var(--background))]" />
+        )}
+      </span>
       <span className="flex-1 truncate">{label}</span>
       {badge != null && badge > 0 && (
-        <span className="ml-auto text-xs bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 leading-none">
+        <span
+          className={cn(
+            "ml-auto rounded-full px-1.5 py-0.5 text-xs leading-none",
+            badgeTone === "danger"
+              ? "bg-red-600/90 text-red-50"
+              : "bg-primary text-primary-foreground",
+          )}
+        >
           {badge}
         </span>
       )}

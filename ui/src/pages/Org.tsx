@@ -44,7 +44,7 @@ function OrgTreeNode({
     <div>
       <div
         className="flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer hover:bg-accent/50"
-        style={{ paddingLeft: `${depth * 24 + 12}px` }}
+        style={{ paddingLeft: `${depth * 16 + 12}px` }}
         onClick={() => onSelect(node.id)}
       >
         {hasChildren ? (

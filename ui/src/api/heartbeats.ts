@@ -38,4 +38,6 @@ export const heartbeatsApi = {
     api.get<LiveRunForIssue[]>(`/issues/${issueId}/live-runs`),
   activeRunForIssue: (issueId: string) =>
     api.get<ActiveRunForIssue | null>(`/issues/${issueId}/active-run`),
+  liveRunsForCompany: (companyId: string) =>
+    api.get<LiveRunForIssue[]>(`/companies/${companyId}/live-runs`),
 };

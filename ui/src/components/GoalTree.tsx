@@ -27,7 +27,7 @@ function GoalNode({ goal, children, allGoals, depth, onSelect }: GoalNodeProps) 
         className={cn(
           "flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer hover:bg-accent/50",
         )}
-        style={{ paddingLeft: `${depth * 20 + 12}px` }}
+        style={{ paddingLeft: `${depth * 16 + 12}px` }}
         onClick={() => onSelect?.(goal)}
       >
         {hasChildren ? (

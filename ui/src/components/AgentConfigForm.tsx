@@ -42,6 +42,7 @@ export const defaultCreateValues: CreateConfigValues = {
   cwd: "",
   promptTemplate: "",
   model: "",
+  thinkingEffort: "",
   dangerouslySkipPermissions: false,
   search: false,
   dangerouslyBypassSandbox: false,
@@ -125,6 +126,21 @@ function formatArgList(value: unknown): string {
   }
   return typeof value === "string" ? value : "";
 }
+
+const codexThinkingEffortOptions = [
+  { id: "", label: "Auto" },
+  { id: "minimal", label: "Minimal" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+] as const;
+
+const claudeThinkingEffortOptions = [
+  { id: "", label: "Auto" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+] as const;
 
 
 function extractPickedDirectoryPath(handle: unknown): string | null {
@@ -269,6 +285,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
   // Popover states
   const [modelOpen, setModelOpen] = useState(false);
+  const [thinkingEffortOpen, setThinkingEffortOpen] = useState(false);
 
   // Create mode helpers
   const val = isCreate ? props.values : null;
@@ -280,6 +297,22 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const currentModelId = isCreate
     ? val!.model
     : eff("adapterConfig", "model", String(config.model ?? ""));
+
+  const thinkingEffortKey = adapterType === "codex_local" ? "modelReasoningEffort" : "effort";
+  const thinkingEffortOptions =
+    adapterType === "codex_local" ? codexThinkingEffortOptions : claudeThinkingEffortOptions;
+  const currentThinkingEffort = isCreate
+    ? val!.thinkingEffort
+    : adapterType === "codex_local"
+      ? eff(
+          "adapterConfig",
+          "modelReasoningEffort",
+          String(config.modelReasoningEffort ?? config.reasoningEffort ?? ""),
+        )
+      : eff("adapterConfig", "effort", String(config.effort ?? ""));
+  const codexSearchEnabled = adapterType === "codex_local"
+    ? (isCreate ? Boolean(val!.search) : eff("adapterConfig", "search", Boolean(config.search)))
+    : false;
 
   return (
     <div className="relative">
@@ -342,7 +375,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             value={adapterType}
             onChange={(t) => {
               if (isCreate) {
-                set!({ adapterType: t });
+                set!({ adapterType: t, model: "", thinkingEffort: "" });
               } else {
                 setOverlay((prev) => ({
                   ...prev,
@@ -486,6 +519,25 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   open={modelOpen}
                   onOpenChange={setModelOpen}
                 />
+
+                <ThinkingEffortDropdown
+                  value={currentThinkingEffort}
+                  options={thinkingEffortOptions}
+                  onChange={(v) =>
+                    isCreate
+                      ? set!({ thinkingEffort: v })
+                      : mark("adapterConfig", thinkingEffortKey, v || undefined)
+                  }
+                  open={thinkingEffortOpen}
+                  onOpenChange={setThinkingEffortOpen}
+                />
+                {adapterType === "codex_local" &&
+                  codexSearchEnabled &&
+                  currentThinkingEffort === "minimal" && (
+                    <p className="text-xs text-amber-400">
+                      Codex may reject `minimal` thinking when search is enabled.
+                    </p>
+                  )}
                 <Field label="Bootstrap prompt (first run)" hint={help.bootstrapPrompt}>
                   {isCreate ? (
                     <AutoExpandTextarea
@@ -985,11 +1037,23 @@ function ModelDropdown({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const [modelSearch, setModelSearch] = useState("");
   const selected = models.find((m) => m.id === value);
+  const filteredModels = models.filter((m) => {
+    if (!modelSearch.trim()) return true;
+    const q = modelSearch.toLowerCase();
+    return m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q);
+  });
 
   return (
     <Field label="Model" hint={help.model}>
-      <Popover open={open} onOpenChange={onOpenChange}>
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          onOpenChange(nextOpen);
+          if (!nextOpen) setModelSearch("");
+        }}
+      >
         <PopoverTrigger asChild>
           <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
             <span className={cn(!value && "text-muted-foreground")}>
@@ -999,6 +1063,13 @@ function ModelDropdown({
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
+          <input
+            className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+            placeholder="Search models..."
+            value={modelSearch}
+            onChange={(e) => setModelSearch(e.target.value)}
+            autoFocus
+          />
           <button
             className={cn(
               "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
@@ -1011,7 +1082,7 @@ function ModelDropdown({
           >
             Default
           </button>
-          {models.map((m) => (
+          {filteredModels.map((m) => (
             <button
               key={m.id}
               className={cn(
@@ -1025,6 +1096,56 @@ function ModelDropdown({
             >
               <span>{m.label}</span>
               <span className="text-xs text-muted-foreground font-mono">{m.id}</span>
+            </button>
+          ))}
+          {filteredModels.length === 0 && (
+            <p className="px-2 py-1.5 text-xs text-muted-foreground">No models found.</p>
+          )}
+        </PopoverContent>
+      </Popover>
+    </Field>
+  );
+}
+
+function ThinkingEffortDropdown({
+  value,
+  options,
+  onChange,
+  open,
+  onOpenChange,
+}: {
+  value: string;
+  options: ReadonlyArray<{ id: string; label: string }>;
+  onChange: (id: string) => void;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const selected = options.find((option) => option.id === value) ?? options[0];
+
+  return (
+    <Field label="Thinking effort" hint={help.thinkingEffort}>
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverTrigger asChild>
+          <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm hover:bg-accent/50 transition-colors w-full justify-between">
+            <span className={cn(!value && "text-muted-foreground")}>{selected?.label ?? "Auto"}</span>
+            <ChevronDown className="h-3 w-3 text-muted-foreground" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-1" align="start">
+          {options.map((option) => (
+            <button
+              key={option.id || "auto"}
+              className={cn(
+                "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+                option.id === value && "bg-accent",
+              )}
+              onClick={() => {
+                onChange(option.id);
+                onOpenChange(false);
+              }}
+            >
+              <span>{option.label}</span>
+              {option.id ? <span className="text-xs text-muted-foreground font-mono">{option.id}</span> : null}
             </button>
           ))}
         </PopoverContent>

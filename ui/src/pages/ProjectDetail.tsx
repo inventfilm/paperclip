@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useParams, useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
 import { usePanel } from "../context/PanelContext";
@@ -8,6 +8,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { ProjectProperties } from "../components/ProjectProperties";
+import { InlineEditor } from "../components/InlineEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,6 +19,8 @@ export function ProjectDetail() {
   const { selectedCompanyId } = useCompany();
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: project, isLoading, error } = useQuery({
     queryKey: queryKeys.projects.detail(projectId!),
@@ -33,6 +36,18 @@ export function ProjectDetail() {
 
   const projectIssues = (allIssues ?? []).filter((i) => i.projectId === projectId);
 
+  const invalidateProject = () => {
+    queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(projectId!) });
+    if (selectedCompanyId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId) });
+    }
+  };
+
+  const updateProject = useMutation({
+    mutationFn: (data: Record<string, unknown>) => projectsApi.update(projectId!, data),
+    onSuccess: invalidateProject,
+  });
+
   useEffect(() => {
     setBreadcrumbs([
       { label: "Projects", href: "/projects" },
@@ -42,7 +57,7 @@ export function ProjectDetail() {
 
   useEffect(() => {
     if (project) {
-      openPanel(<ProjectProperties project={project} />);
+      openPanel(<ProjectProperties project={project} onUpdate={(data) => updateProject.mutate(data)} />);
     }
     return () => closePanel();
   }, [project]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -53,11 +68,22 @@ export function ProjectDetail() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold">{project.name}</h2>
-        {project.description && (
-          <p className="text-sm text-muted-foreground mt-1">{project.description}</p>
-        )}
+      <div className="space-y-3">
+        <InlineEditor
+          value={project.name}
+          onSave={(name) => updateProject.mutate({ name })}
+          as="h2"
+          className="text-xl font-bold"
+        />
+
+        <InlineEditor
+          value={project.description ?? ""}
+          onSave={(description) => updateProject.mutate({ description })}
+          as="p"
+          className="text-sm text-muted-foreground"
+          placeholder="Add a description..."
+          multiline
+        />
       </div>
 
       <Tabs defaultValue="overview">
@@ -67,7 +93,7 @@ export function ProjectDetail() {
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
-          <div className="grid grid-cols-2 gap-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-muted-foreground">Status</span>
               <div className="mt-1">
@@ -94,6 +120,7 @@ export function ProjectDetail() {
                   identifier={issue.identifier ?? issue.id.slice(0, 8)}
                   title={issue.title}
                   trailing={<StatusBadge status={issue.status} />}
+                  onClick={() => navigate(`/issues/${issue.id}`)}
                 />
               ))}
             </div>

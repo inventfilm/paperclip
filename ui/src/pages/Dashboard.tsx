@@ -19,6 +19,7 @@ import { Identity } from "../components/Identity";
 import { timeAgo } from "../lib/timeAgo";
 import { cn, formatCents } from "../lib/utils";
 import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard } from "lucide-react";
+import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import type { Agent, Issue } from "@paperclip/shared";
 
 function getRecentIssues(issues: Issue[]): Issue[] {
@@ -271,8 +272,8 @@ export function Dashboard() {
                       {issue.assigneeAgentId && (() => {
                         const name = agentName(issue.assigneeAgentId);
                         return name
-                          ? <Identity name={name} size="sm" className="shrink-0" />
-                          : <span className="text-xs text-muted-foreground font-mono shrink-0">{issue.assigneeAgentId.slice(0, 8)}</span>;
+                          ? <Identity name={name} size="sm" className="shrink-0 hidden sm:flex" />
+                          : <span className="text-xs text-muted-foreground font-mono shrink-0 hidden sm:inline">{issue.assigneeAgentId.slice(0, 8)}</span>;
                       })()}
                       <span className="text-xs text-muted-foreground shrink-0">
                         {timeAgo(issue.updatedAt)}
@@ -283,6 +284,8 @@ export function Dashboard() {
               )}
             </div>
           </div>
+
+          <ActiveAgentsPanel companyId={selectedCompanyId!} />
         </>
       )}
     </div>

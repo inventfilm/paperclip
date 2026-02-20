@@ -23,9 +23,10 @@ interface StatusIconProps {
   status: string;
   onChange?: (status: string) => void;
   className?: string;
+  showLabel?: boolean;
 }
 
-export function StatusIcon({ status, onChange, className }: StatusIconProps) {
+export function StatusIcon({ status, onChange, className, showLabel }: StatusIconProps) {
   const [open, setOpen] = useState(false);
   const colorClass = statusColors[status] ?? "text-muted-foreground border-muted-foreground";
   const isDone = status === "done";
@@ -35,7 +36,7 @@ export function StatusIcon({ status, onChange, className }: StatusIconProps) {
       className={cn(
         "relative inline-flex h-4 w-4 rounded-full border-2 shrink-0",
         colorClass,
-        onChange && "cursor-pointer",
+        onChange && !showLabel && "cursor-pointer",
         className
       )}
     >
@@ -45,11 +46,18 @@ export function StatusIcon({ status, onChange, className }: StatusIconProps) {
     </span>
   );
 
-  if (!onChange) return circle;
+  if (!onChange) return showLabel ? <span className="inline-flex items-center gap-1.5">{circle}<span className="text-sm">{statusLabel(status)}</span></span> : circle;
+
+  const trigger = showLabel ? (
+    <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
+      {circle}
+      <span className="text-sm">{statusLabel(status)}</span>
+    </button>
+  ) : circle;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{circle}</PopoverTrigger>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent className="w-40 p-1" align="start">
         {allStatuses.map((s) => (
           <Button

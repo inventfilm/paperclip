@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
+import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -78,6 +79,24 @@ export function Agents() {
     enabled: !!selectedCompanyId && view === "org",
   });
 
+  const { data: runs } = useQuery({
+    queryKey: queryKeys.heartbeats(selectedCompanyId!),
+    queryFn: () => heartbeatsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 15_000,
+  });
+
+  // Map agentId -> first live run (running or queued)
+  const liveRunByAgent = useMemo(() => {
+    const map = new Map<string, { runId: string }>();
+    for (const r of runs ?? []) {
+      if ((r.status === "running" || r.status === "queued") && !map.has(r.agentId)) {
+        map.set(r.agentId, { runId: r.id });
+      }
+    }
+    return map;
+  }, [runs]);
+
   const agentMap = useMemo(() => {
     const map = new Map<string, Agent>();
     for (const a of agents ?? []) map.set(a.id, a);
@@ -97,14 +116,18 @@ export function Agents() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={tab} onValueChange={(v) => navigate(`/agents/${v}`)}>
-          <PageTabBar items={[
-            { value: "all", label: "All" },
-            { value: "active", label: "Active" },
-            { value: "paused", label: "Paused" },
-            { value: "error", label: "Error" },
-          ]} />
+          <PageTabBar
+            items={[
+              { value: "all", label: "All" },
+              { value: "active", label: "Active" },
+              { value: "paused", label: "Paused" },
+              { value: "error", label: "Error" },
+            ]}
+            value={tab}
+            onValueChange={(v) => navigate(`/agents/${v}`)}
+          />
         </Tabs>
         <div className="flex items-center gap-2">
           {/* Filters */}
@@ -217,6 +240,13 @@ export function Agents() {
                 }
                 trailing={
                   <div className="flex items-center gap-3">
+                    {liveRunByAgent.has(agent.id) && (
+                      <LiveRunIndicator
+                        agentId={agent.id}
+                        runId={liveRunByAgent.get(agent.id)!.runId}
+                        navigate={navigate}
+                      />
+                    )}
                     <span className="text-xs text-muted-foreground font-mono w-14 text-right">
                       {adapterLabels[agent.adapterType] ?? agent.adapterType}
                     </span>
@@ -261,7 +291,7 @@ export function Agents() {
       {view === "org" && filteredOrg.length > 0 && (
         <div className="border border-border py-1">
           {filteredOrg.map((node) => (
-            <OrgTreeNode key={node.id} node={node} depth={0} navigate={navigate} agentMap={agentMap} />
+            <OrgTreeNode key={node.id} node={node} depth={0} navigate={navigate} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
           ))}
         </div>
       )}
@@ -286,11 +316,13 @@ function OrgTreeNode({
   depth,
   navigate,
   agentMap,
+  liveRunByAgent,
 }: {
   node: OrgNode;
   depth: number;
   navigate: (path: string) => void;
   agentMap: Map<string, Agent>;
+  liveRunByAgent: Map<string, { runId: string }>;
 }) {
   const agent = agentMap.get(node.id);
 
@@ -329,6 +361,13 @@ function OrgTreeNode({
           </span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
+          {liveRunByAgent.has(node.id) && (
+            <LiveRunIndicator
+              agentId={node.id}
+              runId={liveRunByAgent.get(node.id)!.runId}
+              navigate={navigate}
+            />
+          )}
           {agent && (
             <>
               <span className="text-xs text-muted-foreground font-mono w-14 text-right">
@@ -364,10 +403,36 @@ function OrgTreeNode({
       {node.reports && node.reports.length > 0 && (
         <div className="border-l border-border/50 ml-4">
           {node.reports.map((child) => (
-            <OrgTreeNode key={child.id} node={child} depth={depth + 1} navigate={navigate} agentMap={agentMap} />
+            <OrgTreeNode key={child.id} node={child} depth={depth + 1} navigate={navigate} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+function LiveRunIndicator({
+  agentId,
+  runId,
+  navigate,
+}: {
+  agentId: string;
+  runId: string;
+  navigate: (path: string) => void;
+}) {
+  return (
+    <button
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
+      onClick={(e) => {
+        e.stopPropagation();
+        navigate(`/agents/${agentId}/runs/${runId}`);
+      }}
+    >
+      <span className="relative flex h-2 w-2">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+      </span>
+      <span className="text-[11px] font-medium text-blue-400">Live</span>
+    </button>
   );
 }

@@ -9,7 +9,7 @@ export function PropertiesPanel() {
   if (!panelContent) return null;
 
   return (
-    <aside className="w-80 border-l border-border bg-card flex flex-col shrink-0">
+    <aside className="hidden md:flex w-80 border-l border-border bg-card flex-col shrink-0">
       <div className="flex items-center justify-between px-4 py-2 border-b border-border">
         <span className="text-sm font-medium">Properties</span>
         <Button variant="ghost" size="icon-xs" onClick={closePanel}>

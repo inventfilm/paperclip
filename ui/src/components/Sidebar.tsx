@@ -77,6 +77,8 @@ export function Sidebar() {
               label="Inbox"
               icon={Inbox}
               badge={sidebarBadges?.inbox}
+              badgeTone={sidebarBadges?.failedRuns ? "danger" : "default"}
+              alert={(sidebarBadges?.failedRuns ?? 0) > 0}
             />
           </div>
 

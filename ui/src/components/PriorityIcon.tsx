@@ -17,9 +17,10 @@ interface PriorityIconProps {
   priority: string;
   onChange?: (priority: string) => void;
   className?: string;
+  showLabel?: boolean;
 }
 
-export function PriorityIcon({ priority, onChange, className }: PriorityIconProps) {
+export function PriorityIcon({ priority, onChange, className, showLabel }: PriorityIconProps) {
   const [open, setOpen] = useState(false);
   const config = priorityConfig[priority] ?? priorityConfig.medium!;
   const Icon = config.icon;
@@ -29,7 +30,7 @@ export function PriorityIcon({ priority, onChange, className }: PriorityIconProp
       className={cn(
         "inline-flex items-center justify-center shrink-0",
         config.color,
-        onChange && "cursor-pointer",
+        onChange && !showLabel && "cursor-pointer",
         className
       )}
     >
@@ -37,11 +38,18 @@ export function PriorityIcon({ priority, onChange, className }: PriorityIconProp
     </span>
   );
 
-  if (!onChange) return icon;
+  if (!onChange) return showLabel ? <span className="inline-flex items-center gap-1.5">{icon}<span className="text-sm">{config.label}</span></span> : icon;
+
+  const trigger = showLabel ? (
+    <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
+      {icon}
+      <span className="text-sm">{config.label}</span>
+    </button>
+  ) : icon;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{icon}</PopoverTrigger>
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent className="w-36 p-1" align="start">
         {allPriorities.map((p) => {
           const c = priorityConfig[p]!;

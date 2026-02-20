@@ -1,5 +1,8 @@
 import { Link } from "react-router-dom";
+import { Menu } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useSidebar } from "../context/SidebarContext";
+import { Button } from "@/components/ui/button";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -12,13 +15,26 @@ import { Fragment } from "react";
 
 export function BreadcrumbBar() {
   const { breadcrumbs } = useBreadcrumbs();
+  const { toggleSidebar, isMobile } = useSidebar();
 
   if (breadcrumbs.length === 0) return null;
+
+  const menuButton = isMobile && (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="mr-2 shrink-0"
+      onClick={toggleSidebar}
+    >
+      <Menu className="h-5 w-5" />
+    </Button>
+  );
 
   // Single breadcrumb = page title (uppercase)
   if (breadcrumbs.length === 1) {
     return (
-      <div className="border-b border-border px-6 py-4">
+      <div className="border-b border-border px-4 md:px-6 py-4 flex items-center">
+        {menuButton}
         <h1 className="text-sm font-semibold uppercase tracking-wider">
           {breadcrumbs[0].label}
         </h1>
@@ -28,7 +44,8 @@ export function BreadcrumbBar() {
 
   // Multiple breadcrumbs = breadcrumb trail
   return (
-    <div className="border-b border-border px-6 py-3">
+    <div className="border-b border-border px-4 md:px-6 py-3 flex items-center">
+      {menuButton}
       <Breadcrumb>
         <BreadcrumbList>
           {breadcrumbs.map((crumb, i) => {

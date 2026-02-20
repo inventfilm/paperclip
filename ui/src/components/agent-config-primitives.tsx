@@ -18,6 +18,7 @@ export const help: Record<string, string> = {
   cwd: "The working directory where the agent operates. Use an absolute path on the machine running Paperclip.",
   promptTemplate: "The prompt sent to the agent on each heartbeat. Supports {{ agent.id }}, {{ agent.name }}, {{ agent.role }} variables.",
   model: "Override the default model used by the adapter.",
+  thinkingEffort: "Control model reasoning depth. Supported values vary by adapter/model.",
   dangerouslySkipPermissions: "Run Claude without permission prompts. Required for unattended operation.",
   dangerouslyBypassSandbox: "Run Codex without sandbox restrictions. Required for filesystem/network access.",
   search: "Enable Codex web search capability during runs.",

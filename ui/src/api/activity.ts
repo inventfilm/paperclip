@@ -9,6 +9,8 @@ export interface RunForIssue {
   finishedAt: string | null;
   createdAt: string;
   invocationSource: string;
+  usageJson: Record<string, unknown> | null;
+  resultJson: Record<string, unknown> | null;
 }
 
 export interface IssueForRun {

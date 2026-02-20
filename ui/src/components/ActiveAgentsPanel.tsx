@@ -1,0 +1,402 @@
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import type { LiveEvent } from "@paperclip/shared";
+import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
+import { getUIAdapter } from "../adapters";
+import type { TranscriptEntry } from "../adapters";
+import { queryKeys } from "../lib/queryKeys";
+import { cn, relativeTime } from "../lib/utils";
+import { ExternalLink } from "lucide-react";
+import { Identity } from "./Identity";
+
+type FeedTone = "info" | "warn" | "error" | "assistant" | "tool";
+
+interface FeedItem {
+  id: string;
+  ts: string;
+  runId: string;
+  agentId: string;
+  agentName: string;
+  text: string;
+  tone: FeedTone;
+}
+
+const MAX_FEED_ITEMS = 40;
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function summarizeEntry(entry: TranscriptEntry): { text: string; tone: FeedTone } | null {
+  if (entry.kind === "assistant") {
+    const text = entry.text.trim();
+    return text ? { text, tone: "assistant" } : null;
+  }
+  if (entry.kind === "thinking") {
+    const text = entry.text.trim();
+    return text ? { text: `[thinking] ${text}`, tone: "info" } : null;
+  }
+  if (entry.kind === "tool_call") {
+    return { text: `tool ${entry.name}`, tone: "tool" };
+  }
+  if (entry.kind === "tool_result") {
+    const base = entry.content.trim();
+    return {
+      text: entry.isError ? `tool error: ${base}` : `tool result: ${base}`,
+      tone: entry.isError ? "error" : "tool",
+    };
+  }
+  if (entry.kind === "stderr") {
+    const text = entry.text.trim();
+    return text ? { text, tone: "error" } : null;
+  }
+  if (entry.kind === "system") {
+    const text = entry.text.trim();
+    return text ? { text, tone: "warn" } : null;
+  }
+  if (entry.kind === "stdout") {
+    const text = entry.text.trim();
+    return text ? { text, tone: "info" } : null;
+  }
+  return null;
+}
+
+function createFeedItem(
+  run: LiveRunForIssue,
+  ts: string,
+  text: string,
+  tone: FeedTone,
+  nextId: number,
+): FeedItem | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  return {
+    id: `${run.id}:${nextId}`,
+    ts,
+    runId: run.id,
+    agentId: run.agentId,
+    agentName: run.agentName,
+    text: trimmed.slice(0, 220),
+    tone,
+  };
+}
+
+function parseStdoutChunk(
+  run: LiveRunForIssue,
+  chunk: string,
+  ts: string,
+  pendingByRun: Map<string, string>,
+  nextIdRef: MutableRefObject<number>,
+): FeedItem[] {
+  const pendingKey = `${run.id}:stdout`;
+  const combined = `${pendingByRun.get(pendingKey) ?? ""}${chunk}`;
+  const split = combined.split(/\r?\n/);
+  pendingByRun.set(pendingKey, split.pop() ?? "");
+  const adapter = getUIAdapter(run.adapterType);
+
+  const items: FeedItem[] = [];
+  for (const line of split.slice(-8)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const parsed = adapter.parseStdoutLine(trimmed, ts);
+    if (parsed.length === 0) {
+      const fallback = createFeedItem(run, ts, trimmed, "info", nextIdRef.current++);
+      if (fallback) items.push(fallback);
+      continue;
+    }
+    for (const entry of parsed) {
+      const summary = summarizeEntry(entry);
+      if (!summary) continue;
+      const item = createFeedItem(run, ts, summary.text, summary.tone, nextIdRef.current++);
+      if (item) items.push(item);
+    }
+  }
+
+  return items;
+}
+
+function parseStderrChunk(
+  run: LiveRunForIssue,
+  chunk: string,
+  ts: string,
+  pendingByRun: Map<string, string>,
+  nextIdRef: MutableRefObject<number>,
+): FeedItem[] {
+  const pendingKey = `${run.id}:stderr`;
+  const combined = `${pendingByRun.get(pendingKey) ?? ""}${chunk}`;
+  const split = combined.split(/\r?\n/);
+  pendingByRun.set(pendingKey, split.pop() ?? "");
+
+  const items: FeedItem[] = [];
+  for (const line of split.slice(-8)) {
+    const item = createFeedItem(run, ts, line, "error", nextIdRef.current++);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+interface ActiveAgentsPanelProps {
+  companyId: string;
+}
+
+interface AgentRunGroup {
+  agentId: string;
+  agentName: string;
+  runs: LiveRunForIssue[];
+}
+
+export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
+  const [feedByAgent, setFeedByAgent] = useState<Map<string, FeedItem[]>>(new Map());
+  const seenKeysRef = useRef(new Set<string>());
+  const pendingByRunRef = useRef(new Map<string, string>());
+  const nextIdRef = useRef(1);
+
+  const { data: liveRuns } = useQuery({
+    queryKey: queryKeys.liveRuns(companyId),
+    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId),
+    refetchInterval: 5000,
+  });
+
+  const runs = liveRuns ?? [];
+  const runById = useMemo(() => new Map(runs.map((r) => [r.id, r])), [runs]);
+  const activeRunIds = useMemo(() => new Set(runs.map((r) => r.id)), [runs]);
+
+  const agentGroups = useMemo(() => {
+    const map = new Map<string, AgentRunGroup>();
+    for (const run of runs) {
+      let group = map.get(run.agentId);
+      if (!group) {
+        group = { agentId: run.agentId, agentName: run.agentName, runs: [] };
+        map.set(run.agentId, group);
+      }
+      group.runs.push(run);
+    }
+    return Array.from(map.values());
+  }, [runs]);
+
+  // Clean up pending buffers for runs that ended
+  useEffect(() => {
+    const stillActive = new Set<string>();
+    for (const runId of activeRunIds) {
+      stillActive.add(`${runId}:stdout`);
+      stillActive.add(`${runId}:stderr`);
+    }
+    for (const key of pendingByRunRef.current.keys()) {
+      if (!stillActive.has(key)) {
+        pendingByRunRef.current.delete(key);
+      }
+    }
+  }, [activeRunIds]);
+
+  // WebSocket connection for streaming
+  useEffect(() => {
+    if (activeRunIds.size === 0) return;
+
+    let closed = false;
+    let reconnectTimer: number | null = null;
+    let socket: WebSocket | null = null;
+
+    const appendItems = (agentId: string, items: FeedItem[]) => {
+      if (items.length === 0) return;
+      setFeedByAgent((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(agentId) ?? [];
+        next.set(agentId, [...existing, ...items].slice(-MAX_FEED_ITEMS));
+        return next;
+      });
+    };
+
+    const scheduleReconnect = () => {
+      if (closed) return;
+      reconnectTimer = window.setTimeout(connect, 1500);
+    };
+
+    const connect = () => {
+      if (closed) return;
+      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+      const url = `${protocol}://${window.location.host}/api/companies/${encodeURIComponent(companyId)}/events/ws`;
+      socket = new WebSocket(url);
+
+      socket.onmessage = (message) => {
+        const raw = typeof message.data === "string" ? message.data : "";
+        if (!raw) return;
+
+        let event: LiveEvent;
+        try {
+          event = JSON.parse(raw) as LiveEvent;
+        } catch {
+          return;
+        }
+
+        if (event.companyId !== companyId) return;
+        const payload = event.payload ?? {};
+        const runId = readString(payload["runId"]);
+        if (!runId || !activeRunIds.has(runId)) return;
+
+        const run = runById.get(runId);
+        if (!run) return;
+
+        if (event.type === "heartbeat.run.event") {
+          const seq = typeof payload["seq"] === "number" ? payload["seq"] : null;
+          const eventType = readString(payload["eventType"]) ?? "event";
+          const messageText = readString(payload["message"]) ?? eventType;
+          const dedupeKey = `${runId}:event:${seq ?? `${eventType}:${messageText}:${event.createdAt}`}`;
+          if (seenKeysRef.current.has(dedupeKey)) return;
+          seenKeysRef.current.add(dedupeKey);
+          if (seenKeysRef.current.size > 2000) seenKeysRef.current.clear();
+          const tone = eventType === "error" ? "error" : eventType === "lifecycle" ? "warn" : "info";
+          const item = createFeedItem(run, event.createdAt, messageText, tone, nextIdRef.current++);
+          if (item) appendItems(run.agentId, [item]);
+          return;
+        }
+
+        if (event.type === "heartbeat.run.status") {
+          const status = readString(payload["status"]) ?? "updated";
+          const dedupeKey = `${runId}:status:${status}:${readString(payload["finishedAt"]) ?? ""}`;
+          if (seenKeysRef.current.has(dedupeKey)) return;
+          seenKeysRef.current.add(dedupeKey);
+          if (seenKeysRef.current.size > 2000) seenKeysRef.current.clear();
+          const tone = status === "failed" || status === "timed_out" ? "error" : "warn";
+          const item = createFeedItem(run, event.createdAt, `run ${status}`, tone, nextIdRef.current++);
+          if (item) appendItems(run.agentId, [item]);
+          return;
+        }
+
+        if (event.type === "heartbeat.run.log") {
+          const chunk = readString(payload["chunk"]);
+          if (!chunk) return;
+          const stream = readString(payload["stream"]) === "stderr" ? "stderr" : "stdout";
+          if (stream === "stderr") {
+            appendItems(run.agentId, parseStderrChunk(run, chunk, event.createdAt, pendingByRunRef.current, nextIdRef));
+            return;
+          }
+          appendItems(run.agentId, parseStdoutChunk(run, chunk, event.createdAt, pendingByRunRef.current, nextIdRef));
+        }
+      };
+
+      socket.onerror = () => {
+        socket?.close();
+      };
+
+      socket.onclose = () => {
+        scheduleReconnect();
+      };
+    };
+
+    connect();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      if (socket) {
+        socket.onmessage = null;
+        socket.onerror = null;
+        socket.onclose = null;
+        socket.close(1000, "active_agents_panel_unmount");
+      }
+    };
+  }, [activeRunIds, companyId, runById]);
+
+  if (agentGroups.length === 0) return null;
+
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+        Active Agents
+      </h3>
+      <div className="grid md:grid-cols-2 gap-4">
+        {agentGroups.map((group) => (
+          <AgentRunCard
+            key={group.agentId}
+            group={group}
+            feed={feedByAgent.get(group.agentId) ?? []}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AgentRunCard({ group, feed }: { group: AgentRunGroup; feed: FeedItem[] }) {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const recent = feed.slice(-20);
+  const primaryRun = group.runs[0];
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    body.scrollTo({ top: body.scrollHeight, behavior: "smooth" });
+  }, [feed.length]);
+
+  return (
+    <div className="rounded-lg border border-blue-500/30 bg-background/80 overflow-hidden shadow-[0_0_12px_rgba(59,130,246,0.08)]">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+          </span>
+          <Identity name={group.agentName} size="sm" />
+          <span className="text-[11px] font-medium text-blue-400">Live</span>
+          {group.runs.length > 1 && (
+            <span className="text-[10px] text-muted-foreground">
+              ({group.runs.length} runs)
+            </span>
+          )}
+        </div>
+        {primaryRun && (
+          <Link
+            to={`/agents/${primaryRun.agentId}/runs/${primaryRun.id}`}
+            className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
+          >
+            Open run
+            <ExternalLink className="h-2.5 w-2.5" />
+          </Link>
+        )}
+      </div>
+
+      <div ref={bodyRef} className="max-h-[180px] overflow-y-auto p-2 font-mono text-[11px] space-y-1">
+        {recent.length === 0 && (
+          <div className="text-xs text-muted-foreground">Waiting for output...</div>
+        )}
+        {recent.map((item, index) => (
+          <div
+            key={item.id}
+            className={cn(
+              "flex gap-2 items-start",
+              index === recent.length - 1 && "animate-in fade-in slide-in-from-bottom-1 duration-300",
+            )}
+          >
+            <span className="text-[10px] text-muted-foreground shrink-0">{relativeTime(item.ts)}</span>
+            <span className={cn(
+              "min-w-0 break-words",
+              item.tone === "error" && "text-red-300",
+              item.tone === "warn" && "text-amber-300",
+              item.tone === "assistant" && "text-emerald-200",
+              item.tone === "tool" && "text-cyan-300",
+              item.tone === "info" && "text-foreground/80",
+            )}>
+              {item.text}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {group.runs.length > 1 && (
+        <div className="border-t border-border/50 px-3 py-1.5 flex flex-wrap gap-2">
+          {group.runs.map((run) => (
+            <Link
+              key={run.id}
+              to={`/agents/${run.agentId}/runs/${run.id}`}
+              className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
+            >
+              {run.id.slice(0, 8)}
+              <ExternalLink className="h-2.5 w-2.5" />
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator";
 
 interface ProjectPropertiesProps {
   project: Project;
+  onUpdate?: (data: Record<string, unknown>) => void;
 }
 
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -16,7 +17,7 @@ function PropertyRow({ label, children }: { label: string; children: React.React
   );
 }
 
-export function ProjectProperties({ project }: ProjectPropertiesProps) {
+export function ProjectProperties({ project, onUpdate }: ProjectPropertiesProps) {
   return (
     <div className="space-y-4">
       <div className="space-y-1">

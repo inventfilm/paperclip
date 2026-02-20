@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
@@ -9,7 +9,7 @@ import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { relativeTime, cn } from "../lib/utils";
+import { relativeTime, cn, formatTokens } from "../lib/utils";
 import { InlineEditor } from "../components/InlineEditor";
 import { CommentThread } from "../components/CommentThread";
 import { IssueProperties } from "../components/IssueProperties";
@@ -21,9 +21,9 @@ import { Identity } from "../components/Identity";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, MoreHorizontal, EyeOff, Hexagon } from "lucide-react";
+import { ChevronRight, MoreHorizontal, EyeOff, Hexagon, Paperclip, Trash2 } from "lucide-react";
 import type { ActivityEvent } from "@paperclip/shared";
-import type { Agent } from "@paperclip/shared";
+import type { Agent, IssueAttachment } from "@paperclip/shared";
 
 const ACTION_LABELS: Record<string, string> = {
   "issue.created": "created the issue",
@@ -47,6 +47,20 @@ const ACTION_LABELS: Record<string, string> = {
 function humanizeValue(value: unknown): string {
   if (typeof value !== "string") return String(value ?? "none");
   return value.replace(/_/g, " ");
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function usageNumber(usage: Record<string, unknown> | null, ...keys: string[]) {
+  if (!usage) return 0;
+  for (const key of keys) {
+    const value = usage[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return 0;
 }
 
 function formatAction(action: string, details?: Record<string, unknown> | null): string {
@@ -101,6 +115,8 @@ export function IssueDetail() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [projectSearch, setProjectSearch] = useState("");
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const { data: issue, isLoading, error } = useQuery({
     queryKey: queryKeys.issues.detail(issueId!),
@@ -130,6 +146,12 @@ export function IssueDetail() {
   const { data: linkedApprovals } = useQuery({
     queryKey: queryKeys.issues.approvals(issueId!),
     queryFn: () => issuesApi.listApprovals(issueId!),
+    enabled: !!issueId,
+  });
+
+  const { data: attachments } = useQuery({
+    queryKey: queryKeys.issues.attachments(issueId!),
+    queryFn: () => issuesApi.listAttachments(issueId!),
     enabled: !!issueId,
   });
 
@@ -173,11 +195,53 @@ export function IssueDetail() {
     });
   }, [activity, comments, linkedRuns]);
 
+  const issueCostSummary = useMemo(() => {
+    let input = 0;
+    let output = 0;
+    let cached = 0;
+    let cost = 0;
+    let hasCost = false;
+    let hasTokens = false;
+
+    for (const run of linkedRuns ?? []) {
+      const usage = asRecord(run.usageJson);
+      const result = asRecord(run.resultJson);
+      const runInput = usageNumber(usage, "inputTokens", "input_tokens");
+      const runOutput = usageNumber(usage, "outputTokens", "output_tokens");
+      const runCached = usageNumber(
+        usage,
+        "cachedInputTokens",
+        "cached_input_tokens",
+        "cache_read_input_tokens",
+      );
+      const runCost =
+        usageNumber(usage, "costUsd", "cost_usd", "total_cost_usd") ||
+        usageNumber(result, "total_cost_usd", "cost_usd", "costUsd");
+      if (runCost > 0) hasCost = true;
+      if (runInput + runOutput + runCached > 0) hasTokens = true;
+      input += runInput;
+      output += runOutput;
+      cached += runCached;
+      cost += runCost;
+    }
+
+    return {
+      input,
+      output,
+      cached,
+      cost,
+      totalTokens: input + output,
+      hasCost,
+      hasTokens,
+    };
+  }, [linkedRuns]);
+
   const invalidateIssue = () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.approvals(issueId!) });
+    queryClient.invalidateQueries({ queryKey: queryKeys.issues.attachments(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(issueId!) });
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(issueId!) });
     if (selectedCompanyId) {
@@ -196,6 +260,33 @@ export function IssueDetail() {
     onSuccess: () => {
       invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+    },
+  });
+
+  const uploadAttachment = useMutation({
+    mutationFn: async (file: File) => {
+      if (!selectedCompanyId) throw new Error("No company selected");
+      return issuesApi.uploadAttachment(selectedCompanyId, issueId!, file);
+    },
+    onSuccess: () => {
+      setAttachmentError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.attachments(issueId!) });
+      invalidateIssue();
+    },
+    onError: (err) => {
+      setAttachmentError(err instanceof Error ? err.message : "Upload failed");
+    },
+  });
+
+  const deleteAttachment = useMutation({
+    mutationFn: (attachmentId: string) => issuesApi.deleteAttachment(attachmentId),
+    onSuccess: () => {
+      setAttachmentError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.attachments(issueId!) });
+      invalidateIssue();
+    },
+    onError: (err) => {
+      setAttachmentError(err instanceof Error ? err.message : "Delete failed");
     },
   });
 
@@ -221,6 +312,17 @@ export function IssueDetail() {
 
   // Ancestors are returned oldest-first from the server (root at end, immediate parent at start)
   const ancestors = issue.ancestors ?? [];
+
+  const handleFilePicked = async (evt: ChangeEvent<HTMLInputElement>) => {
+    const file = evt.target.files?.[0];
+    if (!file) return;
+    await uploadAttachment.mutateAsync(file);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const isImageAttachment = (attachment: IssueAttachment) => attachment.contentType.startsWith("image/");
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -357,6 +459,80 @@ export function IssueDetail() {
 
       <Separator />
 
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-medium text-muted-foreground">Attachments</h3>
+          <div className="flex items-center gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              className="hidden"
+              onChange={handleFilePicked}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploadAttachment.isPending}
+            >
+              <Paperclip className="h-3.5 w-3.5 mr-1.5" />
+              {uploadAttachment.isPending ? "Uploading..." : "Upload image"}
+            </Button>
+          </div>
+        </div>
+
+        {attachmentError && (
+          <p className="text-xs text-destructive">{attachmentError}</p>
+        )}
+
+        {(!attachments || attachments.length === 0) ? (
+          <p className="text-xs text-muted-foreground">No attachments yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {attachments.map((attachment) => (
+              <div key={attachment.id} className="border border-border rounded-md p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <a
+                    href={attachment.contentPath}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs hover:underline truncate"
+                    title={attachment.originalFilename ?? attachment.id}
+                  >
+                    {attachment.originalFilename ?? attachment.id}
+                  </a>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => deleteAttachment.mutate(attachment.id)}
+                    disabled={deleteAttachment.isPending}
+                    title="Delete attachment"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {attachment.contentType} · {(attachment.byteSize / 1024).toFixed(1)} KB
+                </p>
+                {isImageAttachment(attachment) && (
+                  <a href={attachment.contentPath} target="_blank" rel="noreferrer">
+                    <img
+                      src={attachment.contentPath}
+                      alt={attachment.originalFilename ?? "attachment"}
+                      className="mt-2 max-h-56 rounded border border-border object-contain bg-accent/10"
+                      loading="lazy"
+                    />
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Separator />
+
       <CommentThread
         comments={commentsWithRunMeta}
         issueStatus={issue.status}
@@ -434,6 +610,34 @@ export function IssueDetail() {
                 </div>
               ))}
             </div>
+          </div>
+        </>
+      )}
+
+      {(linkedRuns && linkedRuns.length > 0) && (
+        <>
+          <Separator />
+          <div className="space-y-2">
+            <h3 className="text-sm font-medium text-muted-foreground">Cost</h3>
+            {!issueCostSummary.hasCost && !issueCostSummary.hasTokens ? (
+              <div className="text-xs text-muted-foreground">No cost data yet.</div>
+            ) : (
+              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                {issueCostSummary.hasCost && (
+                  <span className="font-medium text-foreground">
+                    ${issueCostSummary.cost.toFixed(4)}
+                  </span>
+                )}
+                {issueCostSummary.hasTokens && (
+                  <span>
+                    Tokens {formatTokens(issueCostSummary.totalTokens)}
+                    {issueCostSummary.cached > 0
+                      ? ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)}, cached ${formatTokens(issueCostSummary.cached)})`
+                      : ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)})`}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}
