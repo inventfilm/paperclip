@@ -15,6 +15,7 @@ export interface RunForIssue {
 
 export interface IssueForRun {
   issueId: string;
+  identifier: string | null;
   title: string;
   status: string;
   priority: string;

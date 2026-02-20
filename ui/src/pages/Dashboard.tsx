@@ -266,7 +266,7 @@ export function Dashboard() {
                     <div
                       key={issue.id}
                       className="px-4 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors"
-                      onClick={() => navigate(`/issues/${issue.id}`)}
+                      onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
                     >
                       <div className="flex gap-3">
                         <div className="flex items-start gap-2 min-w-0 flex-1">

@@ -106,6 +106,21 @@ export function issueRoutes(db: Db, storage: StorageService) {
     return true;
   }
 
+  // Resolve issue identifiers (e.g. "PAP-39") to UUIDs for all /issues/:id routes
+  router.param("id", async (req, res, next, rawId) => {
+    try {
+      if (/^[A-Z]+-\d+$/i.test(rawId)) {
+        const issue = await svc.getByIdentifier(rawId);
+        if (issue) {
+          req.params.id = issue.id;
+        }
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get("/companies/:companyId/issues", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -119,8 +134,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
   router.get("/issues/:id", async (req, res) => {
     const id = req.params.id as string;
-    const isIdentifier = /^[A-Z]+-\d+$/i.test(id);
-    const issue = isIdentifier ? await svc.getByIdentifier(id) : await svc.getById(id);
+    const issue = await svc.getById(id);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;

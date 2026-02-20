@@ -1017,9 +1017,10 @@ export function agentRoutes(db: Db) {
   });
 
   router.get("/issues/:id/live-runs", async (req, res) => {
-    const id = req.params.id as string;
+    const rawId = req.params.id as string;
     const issueSvc = issueService(db);
-    const issue = await issueSvc.getById(id);
+    const isIdentifier = /^[A-Z]+-\d+$/i.test(rawId);
+    const issue = isIdentifier ? await issueSvc.getByIdentifier(rawId) : await issueSvc.getById(rawId);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;
@@ -1045,7 +1046,7 @@ export function agentRoutes(db: Db) {
         and(
           eq(heartbeatRuns.companyId, issue.companyId),
           inArray(heartbeatRuns.status, ["queued", "running"]),
-          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${id}`,
+          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issue.id}`,
         ),
       )
       .orderBy(desc(heartbeatRuns.createdAt));
@@ -1054,9 +1055,10 @@ export function agentRoutes(db: Db) {
   });
 
   router.get("/issues/:id/active-run", async (req, res) => {
-    const id = req.params.id as string;
+    const rawId = req.params.id as string;
     const issueSvc = issueService(db);
-    const issue = await issueSvc.getById(id);
+    const isIdentifier = /^[A-Z]+-\d+$/i.test(rawId);
+    const issue = isIdentifier ? await issueSvc.getByIdentifier(rawId) : await issueSvc.getById(rawId);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;

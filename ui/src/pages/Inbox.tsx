@@ -299,7 +299,7 @@ export function Inbox() {
                           <button
                             type="button"
                             className="truncate text-muted-foreground transition-colors hover:text-foreground"
-                            onClick={() => navigate(`/issues/${issue.id}`)}
+                            onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
                           >
                             {issue.identifier ?? issue.id.slice(0, 8)} · {issue.title}
                           </button>
@@ -372,7 +372,7 @@ export function Inbox() {
                 <div
                   key={issue.id}
                   className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50"
-                  onClick={() => navigate(`/issues/${issue.id}`)}
+                  onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
                 >
                   <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <PriorityIcon priority={issue.priority} />

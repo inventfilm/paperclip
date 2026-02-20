@@ -359,7 +359,7 @@ function AgentRunCard({
         <div className="px-3 py-1.5 border-b border-border/40 text-xs flex items-center gap-1 min-w-0">
           <span className="text-muted-foreground mr-1">Working on:</span>
           <Link
-            to={`/issues/${run.issueId}`}
+            to={`/issues/${issue?.identifier ?? run.issueId}`}
             className="text-blue-400 hover:text-blue-300 hover:underline min-w-0 truncate"
             title={issue?.title ? `${issue?.identifier ?? run.issueId.slice(0, 8)} - ${issue.title}` : issue?.identifier ?? run.issueId.slice(0, 8)}
           >

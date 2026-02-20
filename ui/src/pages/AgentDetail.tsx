@@ -670,7 +670,7 @@ export function AgentDetail() {
                   key={issue.id}
                   identifier={issue.identifier ?? issue.id.slice(0, 8)}
                   title={issue.title}
-                  onClick={() => navigate(`/issues/${issue.id}`)}
+                  onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
                   trailing={<StatusBadge status={issue.status} />}
                 />
               ))}
@@ -1210,13 +1210,13 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               <button
                 key={issue.issueId}
                 className="flex items-center justify-between w-full px-3 py-2 text-xs hover:bg-accent/20 transition-colors text-left"
-                onClick={() => navigate(`/issues/${issue.issueId}`)}
+                onClick={() => navigate(`/issues/${issue.identifier ?? issue.issueId}`)}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <StatusBadge status={issue.status} />
                   <span className="truncate">{issue.title}</span>
                 </div>
-                <span className="font-mono text-muted-foreground shrink-0 ml-2">{issue.issueId.slice(0, 8)}</span>
+                <span className="font-mono text-muted-foreground shrink-0 ml-2">{issue.identifier ?? issue.issueId.slice(0, 8)}</span>
               </button>
             ))}
           </div>

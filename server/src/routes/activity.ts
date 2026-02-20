@@ -47,6 +47,21 @@ export function activityRoutes(db: Db) {
     res.status(201).json(event);
   });
 
+  // Resolve issue identifiers (e.g. "PAP-39") to UUIDs
+  router.param("id", async (req, res, next, rawId) => {
+    try {
+      if (/^[A-Z]+-\d+$/i.test(rawId)) {
+        const issue = await issueSvc.getByIdentifier(rawId);
+        if (issue) {
+          req.params.id = issue.id;
+        }
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get("/issues/:id/activity", async (req, res) => {
     const id = req.params.id as string;
     const issue = await issueSvc.getById(id);

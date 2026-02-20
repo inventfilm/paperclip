@@ -149,7 +149,7 @@ export function ApprovalDetail() {
             (linkedIssues?.length ?? 0) > 1
               ? "Review linked issues"
               : "Review linked issue",
-          to: `/issues/${primaryLinkedIssue.id}`,
+          to: `/issues/${primaryLinkedIssue.identifier ?? primaryLinkedIssue.id}`,
         }
       : linkedAgentId
         ? {
@@ -236,7 +236,7 @@ export function ApprovalDetail() {
               {linkedIssues.map((issue) => (
                 <Link
                   key={issue.id}
-                  to={`/issues/${issue.id}`}
+                  to={`/issues/${issue.identifier ?? issue.id}`}
                   className="block text-xs rounded border border-border/70 px-2 py-1.5 hover:bg-accent/20"
                 >
                   <span className="font-mono text-muted-foreground mr-2">

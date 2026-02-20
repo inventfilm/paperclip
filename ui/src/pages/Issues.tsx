@@ -157,7 +157,7 @@ export function Issues() {
               key={issue.id}
               identifier={issue.identifier ?? issue.id.slice(0, 8)}
               title={issue.title}
-              onClick={() => navigate(`/issues/${issue.id}`)}
+              onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
               leading={
                 // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -220,7 +220,7 @@ export function Issues() {
                   key={issue.id}
                   identifier={issue.identifier ?? issue.id.slice(0, 8)}
                   title={issue.title}
-                  onClick={() => navigate(`/issues/${issue.id}`)}
+                  onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
                   leading={
                     // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
                     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>

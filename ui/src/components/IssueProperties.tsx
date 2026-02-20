@@ -211,7 +211,7 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
         {issue.parentId && (
           <PropertyRow label="Parent">
             <Link
-              to={`/issues/${issue.parentId}`}
+              to={`/issues/${issue.ancestors?.[0]?.identifier ?? issue.parentId}`}
               className="text-sm hover:underline"
             >
               {issue.ancestors?.[0]?.title ?? issue.parentId.slice(0, 8)}

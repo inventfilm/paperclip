@@ -189,11 +189,11 @@ export function IssueDetail() {
   }, [agents]);
 
   const childIssues = useMemo(() => {
-    if (!allIssues || !issueId) return [];
+    if (!allIssues || !issue) return [];
     return allIssues
-      .filter((i) => i.parentId === issueId)
+      .filter((i) => i.parentId === issue.id)
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-  }, [allIssues, issueId]);
+  }, [allIssues, issue]);
 
   const commentsWithRunMeta = useMemo(() => {
     const runMetaByCommentId = new Map<string, { runId: string; runAgentId: string | null }>();
@@ -281,7 +281,7 @@ export function IssueDetail() {
         title: `${issueRef} updated`,
         body: truncate(updated.title, 96),
         tone: "success",
-        action: { label: `View ${issueRef}`, href: `/issues/${updated.id}` },
+        action: { label: `View ${issueRef}`, href: `/issues/${updated.identifier ?? updated.id}` },
       });
     },
   });
@@ -298,7 +298,7 @@ export function IssueDetail() {
         title: `Comment posted on ${issueRef}`,
         body: issue?.title ? truncate(issue.title, 96) : undefined,
         tone: "success",
-        action: issueId ? { label: `View ${issueRef}`, href: `/issues/${issueId}` } : undefined,
+        action: issueId ? { label: `View ${issueRef}`, href: `/issues/${issue?.identifier ?? issueId}` } : undefined,
       });
     },
   });
@@ -337,6 +337,13 @@ export function IssueDetail() {
     ]);
   }, [setBreadcrumbs, issue, issueId]);
 
+  // Redirect to identifier-based URL if navigated via UUID
+  useEffect(() => {
+    if (issue?.identifier && issueId !== issue.identifier) {
+      navigate(`/issues/${issue.identifier}`, { replace: true });
+    }
+  }, [issue, issueId, navigate]);
+
   useEffect(() => {
     if (issue) {
       openPanel(
@@ -373,7 +380,7 @@ export function IssueDetail() {
             <span key={ancestor.id} className="flex items-center gap-1">
               {i > 0 && <ChevronRight className="h-3 w-3 shrink-0" />}
               <Link
-                to={`/issues/${ancestor.id}`}
+                to={`/issues/${ancestor.identifier ?? ancestor.id}`}
                 className="hover:text-foreground transition-colors truncate max-w-[200px]"
                 title={ancestor.title}
               >
@@ -595,7 +602,7 @@ export function IssueDetail() {
               {childIssues.map((child) => (
                 <Link
                   key={child.id}
-                  to={`/issues/${child.id}`}
+                  to={`/issues/${child.identifier ?? child.id}`}
                   className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors"
                 >
                   <div className="flex items-center gap-2 min-w-0">

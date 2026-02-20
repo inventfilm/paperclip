@@ -36,3 +36,8 @@ export function formatTokens(n: number): string {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
 }
+
+/** Build an issue URL using the human-readable identifier when available. */
+export function issueUrl(issue: { id: string; identifier?: string | null }): string {
+  return `/issues/${issue.identifier ?? issue.id}`;
+}

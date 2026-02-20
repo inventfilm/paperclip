@@ -149,7 +149,7 @@ export function CommandPalette() {
             <CommandSeparator />
             <CommandGroup heading="Issues">
               {issues.slice(0, 10).map((issue) => (
-                <CommandItem key={issue.id} onSelect={() => go(`/issues/${issue.id}`)}>
+                <CommandItem key={issue.id} onSelect={() => go(`/issues/${issue.identifier ?? issue.id}`)}>
                   <CircleDot className="mr-2 h-4 w-4" />
                   <span className="text-muted-foreground mr-2 font-mono text-xs">
                     {issue.identifier ?? issue.id.slice(0, 8)}

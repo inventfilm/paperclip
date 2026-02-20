@@ -18,6 +18,7 @@ export interface IssueAncestorGoal {
 
 export interface IssueAncestor {
   id: string;
+  identifier: string | null;
   title: string;
   description: string | null;
   status: string;

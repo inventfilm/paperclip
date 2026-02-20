@@ -100,7 +100,7 @@ function resolveIssueToastContext(
     ref,
     title,
     label: title ? `${ref} - ${truncate(title, 72)}` : ref,
-    href: `/issues/${issueId}`,
+    href: `/issues/${cachedIssue?.identifier ?? issueId}`,
   };
 }
 

@@ -52,7 +52,7 @@ export function MyIssues() {
               key={issue.id}
               identifier={issue.identifier ?? issue.id.slice(0, 8)}
               title={issue.title}
-              onClick={() => navigate(`/issues/${issue.id}`)}
+              onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
               leading={
                 <>
                   <PriorityIcon priority={issue.priority} />

@@ -132,7 +132,7 @@ export function ProjectDetail() {
                   identifier={issue.identifier ?? issue.id.slice(0, 8)}
                   title={issue.title}
                   trailing={<StatusBadge status={issue.status} />}
-                  onClick={() => navigate(`/issues/${issue.id}`)}
+                  onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
                 />
               ))}
             </div>

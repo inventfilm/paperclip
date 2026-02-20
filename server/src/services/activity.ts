@@ -88,6 +88,7 @@ export function activityService(db: Db) {
       db
         .selectDistinctOn([issueIdAsText], {
           issueId: issues.id,
+          identifier: issues.identifier,
           title: issues.title,
           status: issues.status,
           priority: issues.priority,
