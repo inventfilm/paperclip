@@ -108,17 +108,13 @@ function detectMention(container: HTMLElement): MentionState | null {
   };
 }
 
-function insertMention(state: MentionState, option: MentionOption) {
-  const range = document.createRange();
-  range.setStart(state.textNode, state.atPos);
-  range.setEnd(state.textNode, state.endPos);
-
-  const sel = window.getSelection();
-  sel?.removeAllRanges();
-  sel?.addRange(range);
-
-  // insertText preserves undo stack and triggers editor onChange
-  document.execCommand("insertText", false, `@${option.name} `);
+/** Replace `@<query>` in the markdown string with `@<Name> `. */
+function applyMention(markdown: string, query: string, option: MentionOption): string {
+  const search = `@${query}`;
+  const replacement = `@${option.name} `;
+  const idx = markdown.lastIndexOf(search);
+  if (idx === -1) return markdown;
+  return markdown.slice(0, idx) + replacement + markdown.slice(idx + search.length);
 }
 
 /* ---- Component ---- */
@@ -213,17 +209,35 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   useEffect(() => {
     if (!mentions || mentions.length === 0) return;
 
+    const el = containerRef.current;
+    // Listen for input events on the container so mention detection
+    // also fires after typing (e.g. space to dismiss).
+    const onInput = () => requestAnimationFrame(checkMention);
+
     document.addEventListener("selectionchange", checkMention);
-    return () => document.removeEventListener("selectionchange", checkMention);
+    el?.addEventListener("input", onInput, true);
+    return () => {
+      document.removeEventListener("selectionchange", checkMention);
+      el?.removeEventListener("input", onInput, true);
+    };
   }, [checkMention, mentions]);
 
   const selectMention = useCallback(
     (option: MentionOption) => {
       if (!mentionState) return;
-      insertMention(mentionState, option);
+      const current = latestValueRef.current;
+      const next = applyMention(current, mentionState.query, option);
+      if (next !== current) {
+        latestValueRef.current = next;
+        ref.current?.setMarkdown(next);
+        onChange(next);
+      }
       setMentionState(null);
+      requestAnimationFrame(() => {
+        ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
+      });
     },
-    [mentionState],
+    [mentionState, onChange],
   );
 
   function hasFilePayload(evt: DragEvent<HTMLDivElement>) {
