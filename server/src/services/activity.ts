@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import { activityLog, heartbeatRuns, issues } from "@paperclip/db";
 
@@ -25,7 +25,27 @@ export function activityService(db: Db) {
         conditions.push(eq(activityLog.entityId, filters.entityId));
       }
 
-      return db.select().from(activityLog).where(and(...conditions)).orderBy(desc(activityLog.createdAt));
+      return db
+        .select({ activityLog })
+        .from(activityLog)
+        .leftJoin(
+          issues,
+          and(
+            eq(activityLog.entityType, sql`'issue'`),
+            eq(activityLog.entityId, issueIdAsText),
+          ),
+        )
+        .where(
+          and(
+            ...conditions,
+            or(
+              sql`${activityLog.entityType} != 'issue'`,
+              isNull(issues.hiddenAt),
+            ),
+          ),
+        )
+        .orderBy(desc(activityLog.createdAt))
+        .then((rows) => rows.map((r) => r.activityLog));
     },
 
     forIssue: (issueId: string) =>
@@ -76,6 +96,7 @@ export function activityService(db: Db) {
           and(
             eq(activityLog.runId, runId),
             eq(activityLog.entityType, "issue"),
+            isNull(issues.hiddenAt),
           ),
         )
         .orderBy(issueIdAsText),

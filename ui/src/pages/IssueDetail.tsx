@@ -235,6 +235,13 @@ export function IssueDetail() {
         </nav>
       )}
 
+      {issue.hiddenAt && (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <EyeOff className="h-4 w-4 shrink-0" />
+          This issue is hidden
+        </div>
+      )}
+
       <div className="space-y-3">
         <div className="flex items-center gap-2">
           <StatusIcon
@@ -249,7 +256,7 @@ export function IssueDetail() {
 
           <Popover open={moreOpen} onOpenChange={setMoreOpen}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon-xs">
+              <Button variant="ghost" size="icon-xs" className="ml-auto">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
@@ -259,7 +266,7 @@ export function IssueDetail() {
                 onClick={() => {
                   updateIssue.mutate(
                     { hiddenAt: new Date().toISOString() },
-                    { onSuccess: () => navigate("/issues") },
+                    { onSuccess: () => navigate("/issues/all") },
                   );
                   setMoreOpen(false);
                 }}

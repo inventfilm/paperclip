@@ -5,7 +5,7 @@ import { HttpError } from "../errors.js";
 
 export function errorHandler(
   err: unknown,
-  _req: Request,
+  req: Request,
   res: Response,
   _next: NextFunction,
 ) {
@@ -22,6 +22,16 @@ export function errorHandler(
     return;
   }
 
-  logger.error(err, "Unhandled error");
+  const errObj = err instanceof Error
+    ? { message: err.message, stack: err.stack, name: err.name }
+    : { raw: err };
+
+  logger.error(
+    { err: errObj, method: req.method, url: req.originalUrl },
+    "Unhandled error: %s %s — %s",
+    req.method,
+    req.originalUrl,
+    err instanceof Error ? err.message : String(err),
+  );
   res.status(500).json({ error: "Internal server error" });
 }

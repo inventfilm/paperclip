@@ -324,6 +324,7 @@ export function issueService(db: Db) {
           and(
             eq(issues.companyId, companyId),
             eq(issues.status, "in_progress"),
+            isNull(issues.hiddenAt),
             sql`${issues.startedAt} < ${cutoff.toISOString()}`,
           ),
         )

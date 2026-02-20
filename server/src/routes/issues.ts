@@ -186,7 +186,10 @@ export function issueRoutes(db: Db) {
     }
     assertCompanyAccess(req, existing.companyId);
 
-    const { comment: commentBody, ...updateFields } = req.body;
+    const { comment: commentBody, hiddenAt: hiddenAtRaw, ...updateFields } = req.body;
+    if (hiddenAtRaw !== undefined) {
+      updateFields.hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
+    }
     const issue = await svc.update(id, updateFields);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
