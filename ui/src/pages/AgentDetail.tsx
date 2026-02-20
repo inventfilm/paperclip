@@ -510,7 +510,14 @@ export function AgentDetail() {
                         const hb = (agent.runtimeConfig as Record<string, unknown>).heartbeat as Record<string, unknown>;
                         if (!hb.enabled) return <span className="text-muted-foreground">Disabled</span>;
                         const sec = Number(hb.intervalSec) || 300;
-                        return <span>Every {sec >= 60 ? `${Math.round(sec / 60)} min` : `${sec}s`}</span>;
+                        const maxConcurrentRuns = Math.max(1, Math.floor(Number(hb.maxConcurrentRuns) || 1));
+                        const intervalLabel = sec >= 60 ? `${Math.round(sec / 60)} min` : `${sec}s`;
+                        return (
+                          <span>
+                            Every {intervalLabel}
+                            {maxConcurrentRuns > 1 ? ` (max ${maxConcurrentRuns} concurrent)` : ""}
+                          </span>
+                        );
                       })()
                     : <span className="text-muted-foreground">Not configured</span>
                   }

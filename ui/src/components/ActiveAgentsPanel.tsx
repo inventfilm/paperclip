@@ -155,7 +155,6 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.liveRuns(companyId),
     queryFn: () => heartbeatsApi.liveRunsForCompany(companyId),
-    refetchInterval: 5000,
   });
 
   const runs = liveRuns ?? [];

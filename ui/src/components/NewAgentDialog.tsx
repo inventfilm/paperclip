@@ -112,6 +112,7 @@ export function NewAgentDialog() {
           intervalSec: configValues.intervalSec,
           wakeOnDemand: true,
           cooldownSec: 10,
+          maxConcurrentRuns: 1,
         },
       },
       budgetMonthlyCents: 0,

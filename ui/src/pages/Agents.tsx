@@ -90,13 +90,17 @@ export function Agents() {
     refetchInterval: 15_000,
   });
 
-  // Map agentId -> first live run (running or queued)
+  // Map agentId -> first live run + live run count
   const liveRunByAgent = useMemo(() => {
-    const map = new Map<string, { runId: string }>();
+    const map = new Map<string, { runId: string; liveCount: number }>();
     for (const r of runs ?? []) {
-      if ((r.status === "running" || r.status === "queued") && !map.has(r.agentId)) {
-        map.set(r.agentId, { runId: r.id });
+      if (r.status !== "running" && r.status !== "queued") continue;
+      const existing = map.get(r.agentId);
+      if (existing) {
+        existing.liveCount += 1;
+        continue;
       }
+      map.set(r.agentId, { runId: r.id, liveCount: 1 });
     }
     return map;
   }, [runs]);
@@ -246,6 +250,7 @@ export function Agents() {
                         <LiveRunIndicator
                           agentId={agent.id}
                           runId={liveRunByAgent.get(agent.id)!.runId}
+                          liveCount={liveRunByAgent.get(agent.id)!.liveCount}
                           navigate={navigate}
                         />
                       ) : (
@@ -257,6 +262,7 @@ export function Agents() {
                         <LiveRunIndicator
                           agentId={agent.id}
                           runId={liveRunByAgent.get(agent.id)!.runId}
+                          liveCount={liveRunByAgent.get(agent.id)!.liveCount}
                           navigate={navigate}
                         />
                       )}
@@ -319,7 +325,7 @@ function OrgTreeNode({
   depth: number;
   navigate: (path: string) => void;
   agentMap: Map<string, Agent>;
-  liveRunByAgent: Map<string, { runId: string }>;
+  liveRunByAgent: Map<string, { runId: string; liveCount: number }>;
 }) {
   const agent = agentMap.get(node.id);
 
@@ -358,6 +364,7 @@ function OrgTreeNode({
               <LiveRunIndicator
                 agentId={node.id}
                 runId={liveRunByAgent.get(node.id)!.runId}
+                liveCount={liveRunByAgent.get(node.id)!.liveCount}
                 navigate={navigate}
               />
             ) : (
@@ -369,6 +376,7 @@ function OrgTreeNode({
               <LiveRunIndicator
                 agentId={node.id}
                 runId={liveRunByAgent.get(node.id)!.runId}
+                liveCount={liveRunByAgent.get(node.id)!.liveCount}
                 navigate={navigate}
               />
             )}
@@ -402,10 +410,12 @@ function OrgTreeNode({
 function LiveRunIndicator({
   agentId,
   runId,
+  liveCount,
   navigate,
 }: {
   agentId: string;
   runId: string;
+  liveCount: number;
   navigate: (path: string) => void;
 }) {
   return (
@@ -420,7 +430,9 @@ function LiveRunIndicator({
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
         <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
       </span>
-      <span className="text-[11px] font-medium text-blue-400">Live</span>
+      <span className="text-[11px] font-medium text-blue-400">
+        Live{liveCount > 1 ? ` (${liveCount})` : ""}
+      </span>
     </button>
   );
 }

@@ -13,6 +13,7 @@ function invalidateHeartbeatQueries(
   companyId: string,
   payload: Record<string, unknown>,
 ) {
+  queryClient.invalidateQueries({ queryKey: queryKeys.liveRuns(companyId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(companyId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(companyId) });
   queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(companyId) });
@@ -100,8 +101,12 @@ function handleLiveEvent(
     return;
   }
 
-  if (event.type === "heartbeat.run.queued" || event.type === "heartbeat.run.status" || event.type === "heartbeat.run.event") {
+  if (event.type === "heartbeat.run.queued" || event.type === "heartbeat.run.status") {
     invalidateHeartbeatQueries(queryClient, expectedCompanyId, payload);
+    return;
+  }
+
+  if (event.type === "heartbeat.run.event") {
     return;
   }
 

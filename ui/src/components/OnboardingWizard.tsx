@@ -154,6 +154,7 @@ export function OnboardingWizard() {
             intervalSec: 300,
             wakeOnDemand: true,
             cooldownSec: 10,
+            maxConcurrentRuns: 1,
           },
         },
       });
