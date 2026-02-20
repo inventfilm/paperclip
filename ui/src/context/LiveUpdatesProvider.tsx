@@ -1,10 +1,14 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { LiveEvent } from "@paperclip/shared";
 import { useCompany } from "./CompanyContext";
 import type { ToastInput } from "./ToastContext";
 import { useToast } from "./ToastContext";
 import { queryKeys } from "../lib/queryKeys";
+
+const TOAST_COOLDOWN_WINDOW_MS = 10_000;
+const TOAST_COOLDOWN_MAX = 3;
+const RECONNECT_SUPPRESS_MS = 2000;
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
@@ -198,11 +202,47 @@ function invalidateActivityQueries(
   }
 }
 
+interface ToastGate {
+  cooldownHits: Map<string, number[]>;
+  suppressUntil: number;
+}
+
+function shouldSuppressToast(gate: ToastGate, category: string): boolean {
+  const now = Date.now();
+  if (now < gate.suppressUntil) return true;
+
+  const hits = gate.cooldownHits.get(category);
+  if (!hits) return false;
+
+  const recent = hits.filter((t) => now - t < TOAST_COOLDOWN_WINDOW_MS);
+  gate.cooldownHits.set(category, recent);
+  return recent.length >= TOAST_COOLDOWN_MAX;
+}
+
+function recordToastHit(gate: ToastGate, category: string) {
+  const now = Date.now();
+  const hits = gate.cooldownHits.get(category) ?? [];
+  hits.push(now);
+  gate.cooldownHits.set(category, hits);
+}
+
+function gatedPushToast(
+  gate: ToastGate,
+  pushToast: (toast: ToastInput) => string | null,
+  category: string,
+  toast: ToastInput,
+) {
+  if (shouldSuppressToast(gate, category)) return;
+  const id = pushToast(toast);
+  if (id !== null) recordToastHit(gate, category);
+}
+
 function handleLiveEvent(
   queryClient: ReturnType<typeof useQueryClient>,
   expectedCompanyId: string,
   event: LiveEvent,
   pushToast: (toast: ToastInput) => string | null,
+  gate: ToastGate,
 ) {
   if (event.companyId !== expectedCompanyId) return;
 
@@ -215,7 +255,7 @@ function handleLiveEvent(
     invalidateHeartbeatQueries(queryClient, expectedCompanyId, payload);
     if (event.type === "heartbeat.run.status") {
       const toast = buildRunStatusToast(payload);
-      if (toast) pushToast(toast);
+      if (toast) gatedPushToast(gate, pushToast, "run-status", toast);
     }
     return;
   }
@@ -231,14 +271,15 @@ function handleLiveEvent(
     const agentId = readString(payload.agentId);
     if (agentId) queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId) });
     const toast = buildAgentStatusToast(payload);
-    if (toast) pushToast(toast);
+    if (toast) gatedPushToast(gate, pushToast, "agent-status", toast);
     return;
   }
 
   if (event.type === "activity.logged") {
     invalidateActivityQueries(queryClient, expectedCompanyId, payload);
+    const action = readString(payload.action);
     const toast = buildActivityToast(payload);
-    if (toast) pushToast(toast);
+    if (toast) gatedPushToast(gate, pushToast, `activity:${action ?? "unknown"}`, toast);
   }
 }
 
@@ -246,6 +287,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const { pushToast } = useToast();
+  const gateRef = useRef<ToastGate>({ cooldownHits: new Map(), suppressUntil: 0 });
 
   useEffect(() => {
     if (!selectedCompanyId) return;
@@ -279,6 +321,9 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
       socket = new WebSocket(url);
 
       socket.onopen = () => {
+        if (reconnectAttempt > 0) {
+          gateRef.current.suppressUntil = Date.now() + RECONNECT_SUPPRESS_MS;
+        }
         reconnectAttempt = 0;
       };
 
@@ -288,7 +333,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
 
         try {
           const parsed = JSON.parse(raw) as LiveEvent;
-          handleLiveEvent(queryClient, selectedCompanyId, parsed, pushToast);
+          handleLiveEvent(queryClient, selectedCompanyId, parsed, pushToast, gateRef.current);
         } catch {
           // Ignore non-JSON payloads.
         }

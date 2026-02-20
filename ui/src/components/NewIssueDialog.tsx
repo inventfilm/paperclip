@@ -126,7 +126,7 @@ export function NewIssueDialog() {
       reset();
       closeNewIssue();
       pushToast({
-        dedupeKey: `issue-created-${issue.id}`,
+        dedupeKey: `activity:issue.created:${issue.id}`,
         title: `${issue.identifier ?? "Issue"} created`,
         body: issue.title,
         tone: "success",

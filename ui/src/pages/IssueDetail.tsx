@@ -258,7 +258,7 @@ export function IssueDetail() {
     onSuccess: (updated) => {
       invalidateIssue();
       pushToast({
-        dedupeKey: `issue-updated-${updated.id}`,
+        dedupeKey: `activity:issue.updated:${updated.id}`,
         title: "Issue updated",
         tone: "success",
       });
@@ -272,7 +272,7 @@ export function IssueDetail() {
       invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
       pushToast({
-        dedupeKey: `issue-comment-${issueId}`,
+        dedupeKey: `activity:issue.comment_added:${issueId}`,
         title: "Comment posted",
         tone: "success",
       });
