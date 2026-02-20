@@ -19,8 +19,8 @@ interface ProjectPropertiesProps {
 
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 py-1.5">
-      <span className="text-xs text-muted-foreground shrink-0">{label}</span>
+    <div className="flex items-center gap-3 py-1.5">
+      <span className="text-xs text-muted-foreground shrink-0 w-20">{label}</span>
       <div className="flex items-center gap-1.5 min-w-0">{children}</div>
     </div>
   );
