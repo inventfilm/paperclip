@@ -43,7 +43,12 @@ interface ToastContextValue {
   clearToasts: () => void;
 }
 
-const DEFAULT_TTL_MS = 5000;
+const DEFAULT_TTL_BY_TONE: Record<ToastTone, number> = {
+  info: 4000,
+  success: 3500,
+  warn: 8000,
+  error: 10000,
+};
 const MIN_TTL_MS = 1500;
 const MAX_TTL_MS = 15000;
 const MAX_TOASTS = 5;
@@ -52,8 +57,8 @@ const DEDUPE_MAX_AGE_MS = 20000;
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-function normalizeTtl(value: number | undefined) {
-  const fallback = DEFAULT_TTL_MS;
+function normalizeTtl(value: number | undefined, tone: ToastTone) {
+  const fallback = DEFAULT_TTL_BY_TONE[tone];
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   return Math.max(MIN_TTL_MS, Math.min(MAX_TTL_MS, Math.floor(value)));
 }
@@ -95,7 +100,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (input: ToastInput) => {
       const now = Date.now();
       const tone = input.tone ?? "info";
-      const ttlMs = normalizeTtl(input.ttlMs);
+      const ttlMs = normalizeTtl(input.ttlMs, tone);
       const dedupeKey =
         input.dedupeKey ?? input.id ?? `${tone}|${input.title}|${input.body ?? ""}|${input.action?.href ?? ""}`;
 
