@@ -105,7 +105,7 @@ export function ActivityRow({ event, agentMap, entityNameMap, className }: Activ
   return (
     <div
       className={cn(
-        "px-4 py-2 flex items-center justify-between gap-2 text-sm",
+        "px-4 py-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-sm",
         link && "cursor-pointer hover:bg-accent/50 transition-colors",
         className,
       )}

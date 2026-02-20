@@ -6,6 +6,7 @@ import { heartbeatsApi } from "../api/heartbeats";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
 import { usePanel } from "../context/PanelContext";
+import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -47,6 +48,7 @@ import {
   EyeOff,
   Copy,
   ChevronRight,
+  ArrowLeft,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState } from "@paperclip/shared";
@@ -809,8 +811,59 @@ function ConfigurationTab({
 
 /* ---- Runs Tab ---- */
 
+function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelected: boolean; agentId: string }) {
+  const navigate = useNavigate();
+  const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
+  const StatusIcon = statusInfo.icon;
+  const metrics = runMetrics(run);
+  const summary = run.resultJson
+    ? String((run.resultJson as Record<string, unknown>).summary ?? (run.resultJson as Record<string, unknown>).result ?? "")
+    : run.error ?? "";
+
+  return (
+    <button
+      className={cn(
+        "flex flex-col gap-1 w-full px-3 py-2.5 text-left border-b border-border last:border-b-0 transition-colors",
+        isSelected ? "bg-accent/40" : "hover:bg-accent/20",
+      )}
+      onClick={() => navigate(isSelected ? `/agents/${agentId}/runs` : `/agents/${agentId}/runs/${run.id}`)}
+    >
+      <div className="flex items-center gap-2">
+        <StatusIcon className={cn("h-3.5 w-3.5 shrink-0", statusInfo.color, run.status === "running" && "animate-spin")} />
+        <span className="font-mono text-xs text-muted-foreground">
+          {run.id.slice(0, 8)}
+        </span>
+        <span className={cn(
+          "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
+          run.invocationSource === "timer" ? "bg-blue-900/50 text-blue-300"
+            : run.invocationSource === "assignment" ? "bg-violet-900/50 text-violet-300"
+            : run.invocationSource === "on_demand" ? "bg-cyan-900/50 text-cyan-300"
+            : "bg-neutral-800 text-neutral-400"
+        )}>
+          {sourceLabels[run.invocationSource] ?? run.invocationSource}
+        </span>
+        <span className="ml-auto text-[11px] text-muted-foreground shrink-0">
+          {relativeTime(run.createdAt)}
+        </span>
+      </div>
+      {summary && (
+        <span className="text-xs text-muted-foreground truncate pl-5.5">
+          {summary.slice(0, 60)}
+        </span>
+      )}
+      {(metrics.totalTokens > 0 || metrics.cost > 0) && (
+        <div className="flex items-center gap-2 pl-5.5 text-[11px] text-muted-foreground">
+          {metrics.totalTokens > 0 && <span>{formatTokens(metrics.totalTokens)} tok</span>}
+          {metrics.cost > 0 && <span>${metrics.cost.toFixed(3)}</span>}
+        </div>
+      )}
+    </button>
+  );
+}
+
 function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { runs: HeartbeatRun[]; companyId: string; agentId: string; selectedRunId: string | null; adapterType: string }) {
   const navigate = useNavigate();
+  const { isMobile } = useSidebar();
 
   if (runs.length === 0) {
     return <p className="text-sm text-muted-foreground">No runs yet.</p>;
@@ -821,10 +874,36 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 
-  // Auto-select latest run when no run is selected
-  const effectiveRunId = selectedRunId ?? sorted[0]?.id ?? null;
+  // On mobile, don't auto-select so the list shows first; on desktop, auto-select latest
+  const effectiveRunId = isMobile ? selectedRunId : (selectedRunId ?? sorted[0]?.id ?? null);
   const selectedRun = sorted.find((r) => r.id === effectiveRunId) ?? null;
 
+  // Mobile: show either run list OR run detail with back button
+  if (isMobile) {
+    if (selectedRun) {
+      return (
+        <div className="space-y-3">
+          <button
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            onClick={() => navigate(`/agents/${agentId}/runs`)}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to runs
+          </button>
+          <RunDetail key={selectedRun.id} run={selectedRun} adapterType={adapterType} />
+        </div>
+      );
+    }
+    return (
+      <div className="border border-border rounded-lg">
+        {sorted.map((run) => (
+          <RunListItem key={run.id} run={run} isSelected={false} agentId={agentId} />
+        ))}
+      </div>
+    );
+  }
+
+  // Desktop: side-by-side layout
   return (
     <div className="flex gap-0">
       {/* Left: run list — border stretches full height, content sticks */}
@@ -833,56 +912,9 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
         selectedRun ? "w-72" : "w-full",
       )}>
         <div className="sticky top-4 overflow-y-auto" style={{ maxHeight: "calc(100vh - 2rem)" }}>
-        {sorted.map((run) => {
-          const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
-          const StatusIcon = statusInfo.icon;
-          const isSelected = run.id === effectiveRunId;
-          const metrics = runMetrics(run);
-          const summary = run.resultJson
-            ? String((run.resultJson as Record<string, unknown>).summary ?? (run.resultJson as Record<string, unknown>).result ?? "")
-            : run.error ?? "";
-
-          return (
-            <button
-              key={run.id}
-              className={cn(
-                "flex flex-col gap-1 w-full px-3 py-2.5 text-left border-b border-border last:border-b-0 transition-colors",
-                isSelected ? "bg-accent/40" : "hover:bg-accent/20",
-              )}
-              onClick={() => navigate(isSelected ? `/agents/${agentId}/runs` : `/agents/${agentId}/runs/${run.id}`)}
-            >
-              <div className="flex items-center gap-2">
-                <StatusIcon className={cn("h-3.5 w-3.5 shrink-0", statusInfo.color, run.status === "running" && "animate-spin")} />
-                <span className="font-mono text-xs text-muted-foreground">
-                  {run.id.slice(0, 8)}
-                </span>
-                <span className={cn(
-                  "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
-                  run.invocationSource === "timer" ? "bg-blue-900/50 text-blue-300"
-                    : run.invocationSource === "assignment" ? "bg-violet-900/50 text-violet-300"
-                    : run.invocationSource === "on_demand" ? "bg-cyan-900/50 text-cyan-300"
-                    : "bg-neutral-800 text-neutral-400"
-                )}>
-                  {sourceLabels[run.invocationSource] ?? run.invocationSource}
-                </span>
-                <span className="ml-auto text-[11px] text-muted-foreground shrink-0">
-                  {relativeTime(run.createdAt)}
-                </span>
-              </div>
-              {summary && (
-                <span className="text-xs text-muted-foreground truncate pl-5.5">
-                  {summary.slice(0, 60)}
-                </span>
-              )}
-              {(metrics.totalTokens > 0 || metrics.cost > 0) && (
-                <div className="flex items-center gap-2 pl-5.5 text-[11px] text-muted-foreground">
-                  {metrics.totalTokens > 0 && <span>{formatTokens(metrics.totalTokens)} tok</span>}
-                  {metrics.cost > 0 && <span>${metrics.cost.toFixed(3)}</span>}
-                </div>
-              )}
-            </button>
-          );
-        })}
+        {sorted.map((run) => (
+          <RunListItem key={run.id} run={run} isSelected={run.id === effectiveRunId} agentId={agentId} />
+        ))}
         </div>
       </div>
 
@@ -1753,7 +1785,7 @@ function KeysTab({ agentId }: { agentId: string }) {
   const revokedKeys = (keys ?? []).filter((k: AgentKey) => k.revokedAt);
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6">
       {/* New token banner */}
       {newToken && (
         <div className="border border-yellow-600/40 bg-yellow-500/5 rounded-lg p-4 space-y-2">

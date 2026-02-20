@@ -108,9 +108,9 @@ export function Issues() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)}>
-          <PageTabBar items={[...issueTabItems]} />
+          <PageTabBar items={[...issueTabItems]} value={tab} onValueChange={(v) => setTab(v as TabFilter)} />
         </Tabs>
         <Button size="sm" onClick={() => openNewIssue()}>
           <Plus className="h-4 w-4 mr-1" />
