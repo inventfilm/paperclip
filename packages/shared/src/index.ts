@@ -49,6 +49,7 @@ export type {
   AdapterEnvironmentTestResult,
   AssetImage,
   Project,
+  ProjectGoalRef,
   Issue,
   IssueComment,
   IssueAttachment,
