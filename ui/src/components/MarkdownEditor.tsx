@@ -138,8 +138,9 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const [isDragOver, setIsDragOver] = useState(false);
   const dragDepthRef = useRef(0);
 
-  // Mention state
+  // Mention state (ref kept in sync so callbacks always see the latest value)
   const [mentionState, setMentionState] = useState<MentionState | null>(null);
+  const mentionStateRef = useRef<MentionState | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionActive = mentionState !== null && mentions && mentions.length > 0;
 
@@ -194,10 +195,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   // Mention detection: listen for selection changes and input events
   const checkMention = useCallback(() => {
     if (!mentions || mentions.length === 0 || !containerRef.current) {
+      mentionStateRef.current = null;
       setMentionState(null);
       return;
     }
     const result = detectMention(containerRef.current);
+    mentionStateRef.current = result;
     if (result) {
       setMentionState(result);
       setMentionIndex(0);
@@ -224,20 +227,24 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
 
   const selectMention = useCallback(
     (option: MentionOption) => {
-      if (!mentionState) return;
+      // Read from ref to avoid stale-closure issues (selectionchange can
+      // update state between the last render and this callback firing).
+      const state = mentionStateRef.current;
+      if (!state) return;
       const current = latestValueRef.current;
-      const next = applyMention(current, mentionState.query, option);
+      const next = applyMention(current, state.query, option);
       if (next !== current) {
         latestValueRef.current = next;
         ref.current?.setMarkdown(next);
         onChange(next);
       }
+      mentionStateRef.current = null;
       setMentionState(null);
       requestAnimationFrame(() => {
         ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
       });
     },
-    [mentionState, onChange],
+    [onChange],
   );
 
   function hasFilePayload(evt: DragEvent<HTMLDivElement>) {
@@ -264,31 +271,42 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           return;
         }
 
-        // Mention keyboard navigation
-        if (mentionActive && filteredMentions.length > 0) {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            e.stopPropagation();
-            setMentionIndex((prev) => Math.min(prev + 1, filteredMentions.length - 1));
+        // Mention keyboard handling
+        if (mentionActive) {
+          // Space dismisses the popup (let the character be typed normally)
+          if (e.key === " ") {
+            mentionStateRef.current = null;
+            setMentionState(null);
             return;
           }
-          if (e.key === "ArrowUp") {
-            e.preventDefault();
-            e.stopPropagation();
-            setMentionIndex((prev) => Math.max(prev - 1, 0));
-            return;
-          }
-          if (e.key === "Enter" || e.key === "Tab") {
-            e.preventDefault();
-            e.stopPropagation();
-            selectMention(filteredMentions[mentionIndex]);
-            return;
-          }
+          // Escape always dismisses
           if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation();
+            mentionStateRef.current = null;
             setMentionState(null);
             return;
+          }
+          // Arrow / Enter / Tab only when there are filtered results
+          if (filteredMentions.length > 0) {
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              e.stopPropagation();
+              setMentionIndex((prev) => Math.min(prev + 1, filteredMentions.length - 1));
+              return;
+            }
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              e.stopPropagation();
+              setMentionIndex((prev) => Math.max(prev - 1, 0));
+              return;
+            }
+            if (e.key === "Enter" || e.key === "Tab") {
+              e.preventDefault();
+              e.stopPropagation();
+              selectMention(filteredMentions[mentionIndex]);
+              return;
+            }
           }
         }
       }}
