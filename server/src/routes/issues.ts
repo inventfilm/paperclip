@@ -282,11 +282,18 @@ export function issueRoutes(db: Db, storage: StorageService) {
           heartbeat.wakeup(mentionedId, {
             source: "automation",
             triggerDetail: "system",
-            reason: `Mentioned in comment on issue ${id}`,
+            reason: "issue_comment_mentioned",
             payload: { issueId: id, commentId: comment!.id },
             requestedByActorType: actor.actorType,
             requestedByActorId: actor.actorId,
-            contextSnapshot: { issueId: id, commentId: comment!.id, source: "comment.mention" },
+            contextSnapshot: {
+              issueId: id,
+              taskId: id,
+              commentId: comment!.id,
+              wakeCommentId: comment!.id,
+              wakeReason: "issue_comment_mentioned",
+              source: "comment.mention",
+            },
           }).catch((err) => logger.warn({ err, agentId: mentionedId }, "failed to wake mentioned agent"));
         }
       }).catch((err) => logger.warn({ err, issueId: id }, "failed to resolve @-mentions"));
@@ -504,11 +511,18 @@ export function issueRoutes(db: Db, storage: StorageService) {
         heartbeat.wakeup(mentionedId, {
           source: "automation",
           triggerDetail: "system",
-          reason: `Mentioned in comment on issue ${id}`,
+          reason: "issue_comment_mentioned",
           payload: { issueId: id, commentId: comment.id },
           requestedByActorType: actor.actorType,
           requestedByActorId: actor.actorId,
-          contextSnapshot: { issueId: id, commentId: comment.id, source: "comment.mention" },
+          contextSnapshot: {
+            issueId: id,
+            taskId: id,
+            commentId: comment.id,
+            wakeCommentId: comment.id,
+            wakeReason: "issue_comment_mentioned",
+            source: "comment.mention",
+          },
         }).catch((err) => logger.warn({ err, agentId: mentionedId }, "failed to wake mentioned agent"));
       }
     }).catch((err) => logger.warn({ err, issueId: id }, "failed to resolve @-mentions"));

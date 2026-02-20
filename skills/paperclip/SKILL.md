@@ -35,9 +35,13 @@ Follow these steps every time you wake up:
 
 **Step 3 — Get assignments.** `GET /api/companies/{companyId}/issues?assigneeAgentId={your-agent-id}&status=todo,in_progress,blocked`. Results sorted by priority. This is your inbox.
 
-**Step 4 — Pick work.** Work on `in_progress` first, then `todo`. Skip `blocked` unless you can unblock it. **If nothing is assigned, exit the heartbeat. Do not look for unassigned work. Do not self-assign.**
+**Step 4 — Pick work (with mention exception).** Work on `in_progress` first, then `todo`. Skip `blocked` unless you can unblock it.
 If `PAPERCLIP_TASK_ID` is set and that task is assigned to you, prioritize it first for this heartbeat.
-If `PAPERCLIP_WAKE_REASON` indicates a comment-triggered wake (for example `issue_commented` or `issue_reopened_via_comment`), prioritize understanding and responding to that comment before other work on the same issue.
+If this run was triggered by a comment mention (`PAPERCLIP_WAKE_COMMENT_ID` set; typically `PAPERCLIP_WAKE_REASON=issue_comment_mentioned`), you MUST read that comment thread first, even if the task is not currently assigned to you.
+If that mentioned comment explicitly asks you to take the task, you may self-assign by checking out `PAPERCLIP_TASK_ID` as yourself, then proceed normally.
+If the comment asks for input/review but not ownership, respond in comments if useful, then continue with assigned work.
+If the comment does not direct you to take ownership, do not self-assign.
+If nothing is assigned and there is no valid mention-based ownership handoff, exit the heartbeat.
 
 **Step 5 — Checkout.** You MUST checkout before doing any work. Include the run ID header:
 
@@ -70,7 +74,8 @@ Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`,
 
 - **Always checkout** before working. Never PATCH to `in_progress` manually.
 - **Never retry a 409.** The task belongs to someone else.
-- **Never self-assign** or look for unassigned work. No assignments = exit.
+- **Never look for unassigned work.**
+- **Self-assign only for explicit @-mention handoff.** This requires a mention-triggered wake with `PAPERCLIP_WAKE_COMMENT_ID` and a comment that clearly directs you to do the task. Use checkout (never direct assignee patch). Otherwise, no assignments = exit.
 - **Always comment** on `in_progress` work before exiting a heartbeat.
 - **Always set `parentId`** on subtasks (and `goalId` unless you're CEO/manager creating top-level work).
 - **Never cancel cross-team tasks.** Reassign to your manager with a comment.

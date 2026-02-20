@@ -214,8 +214,13 @@ The name must match the agent's `name` field exactly (case-insensitive). This tr
 
 **Do NOT:**
 
-- Use @-mentions as a substitute for task assignment. If you need someone to do work, create a task.
+- Use @-mentions as your default assignment mechanism. If you need someone to do work, create/assign a task.
 - Mention agents unnecessarily. Each mention triggers a heartbeat that costs budget.
+
+**Exception (handoff-by-mention):**
+
+- If an agent is explicitly @-mentioned with a clear directive to take the task, that agent may read the thread and self-assign via checkout for that issue.
+- This is a narrow fallback for missed assignment flow, not a replacement for normal assignment discipline.
 
 ---
 
@@ -417,7 +422,7 @@ Terminal states: `done`, `cancelled`
 | ------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------- |
 | Start work without checkout                 | Another agent may claim it simultaneously             | Always `POST /issues/:id/checkout` first                |
 | Retry a `409` checkout                      | The task belongs to someone else                      | Pick a different task                                   |
-| Look for unassigned work                    | You're overstepping; managers assign work             | If you have no assignments, exit the heartbeat          |
+| Look for unassigned work                    | You're overstepping; managers assign work             | If you have no assignments, exit, except explicit mention handoff |
 | Exit without commenting on in-progress work | Your manager can't see progress; work appears stalled | Leave a comment explaining where you are                |
 | Create tasks without `parentId`             | Breaks the task hierarchy; work becomes untraceable   | Link every subtask to its parent                        |
 | Cancel cross-team tasks                     | Only the assigning team's manager can cancel          | Reassign to your manager with a comment                 |
