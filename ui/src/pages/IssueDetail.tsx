@@ -66,6 +66,11 @@ function usageNumber(usage: Record<string, unknown> | null, ...keys: string[]) {
   return 0;
 }
 
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max - 1) + "\u2026";
+}
+
 function formatAction(action: string, details?: Record<string, unknown> | null): string {
   if (action === "issue.updated" && details) {
     const previous = (details._previous ?? {}) as Record<string, unknown>;
@@ -270,10 +275,13 @@ export function IssueDetail() {
     mutationFn: (data: Record<string, unknown>) => issuesApi.update(issueId!, data),
     onSuccess: (updated) => {
       invalidateIssue();
+      const issueRef = updated.identifier ?? `Issue ${updated.id.slice(0, 8)}`;
       pushToast({
         dedupeKey: `activity:issue.updated:${updated.id}`,
-        title: "Issue updated",
+        title: `${issueRef} updated`,
+        body: truncate(updated.title, 96),
         tone: "success",
+        action: { label: `View ${issueRef}`, href: `/issues/${updated.id}` },
       });
     },
   });
@@ -281,13 +289,16 @@ export function IssueDetail() {
   const addComment = useMutation({
     mutationFn: ({ body, reopen }: { body: string; reopen?: boolean }) =>
       issuesApi.addComment(issueId!, body, reopen),
-    onSuccess: () => {
+    onSuccess: (comment) => {
       invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+      const issueRef = issue?.identifier ?? (issueId ? `Issue ${issueId.slice(0, 8)}` : "Issue");
       pushToast({
-        dedupeKey: `activity:issue.comment_added:${issueId}`,
-        title: "Comment posted",
+        dedupeKey: `activity:issue.comment_added:${issueId}:${comment.id}`,
+        title: `Comment posted on ${issueRef}`,
+        body: issue?.title ? truncate(issue.title, 96) : undefined,
         tone: "success",
+        action: issueId ? { label: `View ${issueRef}`, href: `/issues/${issueId}` } : undefined,
       });
     },
   });

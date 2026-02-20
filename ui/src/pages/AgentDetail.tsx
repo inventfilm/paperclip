@@ -112,6 +112,60 @@ const sourceLabels: Record<string, string> = {
   automation: "Automation",
 };
 
+const LIVE_SCROLL_BOTTOM_TOLERANCE_PX = 32;
+type ScrollContainer = Window | HTMLElement;
+
+function isWindowContainer(container: ScrollContainer): container is Window {
+  return container === window;
+}
+
+function isElementScrollContainer(element: HTMLElement): boolean {
+  const overflowY = window.getComputedStyle(element).overflowY;
+  return overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay";
+}
+
+function findScrollContainer(anchor: HTMLElement | null): ScrollContainer {
+  let parent = anchor?.parentElement ?? null;
+  while (parent) {
+    if (isElementScrollContainer(parent)) return parent;
+    parent = parent.parentElement;
+  }
+  return window;
+}
+
+function readScrollMetrics(container: ScrollContainer): { scrollHeight: number; distanceFromBottom: number } {
+  if (isWindowContainer(container)) {
+    const pageHeight = Math.max(
+      document.documentElement.scrollHeight,
+      document.body.scrollHeight,
+    );
+    const viewportBottom = window.scrollY + window.innerHeight;
+    return {
+      scrollHeight: pageHeight,
+      distanceFromBottom: Math.max(0, pageHeight - viewportBottom),
+    };
+  }
+
+  const viewportBottom = container.scrollTop + container.clientHeight;
+  return {
+    scrollHeight: container.scrollHeight,
+    distanceFromBottom: Math.max(0, container.scrollHeight - viewportBottom),
+  };
+}
+
+function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBehavior = "auto") {
+  if (isWindowContainer(container)) {
+    const pageHeight = Math.max(
+      document.documentElement.scrollHeight,
+      document.body.scrollHeight,
+    );
+    window.scrollTo({ top: pageHeight, behavior });
+    return;
+  }
+
+  container.scrollTo({ top: container.scrollHeight, behavior });
+}
+
 type AgentDetailTab = "overview" | "configuration" | "runs" | "issues" | "costs" | "keys";
 
 function parseAgentDetailTab(value: string | null): AgentDetailTab {
@@ -1200,9 +1254,15 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   const [logLoading, setLogLoading] = useState(!!run.logRef);
   const [logError, setLogError] = useState<string | null>(null);
   const [logOffset, setLogOffset] = useState(0);
-  const [isFollowing, setIsFollowing] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
   const pendingLogLineRef = useRef("");
+  const scrollContainerRef = useRef<ScrollContainer | null>(null);
+  const isFollowingRef = useRef(false);
+  const lastMetricsRef = useRef<{ scrollHeight: number; distanceFromBottom: number }>({
+    scrollHeight: 0,
+    distanceFromBottom: Number.POSITIVE_INFINITY,
+  });
   const isLive = run.status === "running" || run.status === "queued";
 
   function appendLogContent(content: string, finalize = false) {
@@ -1250,39 +1310,86 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     }
   }, [initialEvents]);
 
-  const updateFollowingState = useCallback(() => {
-    const viewportBottom = window.scrollY + window.innerHeight;
-    const pageHeight = Math.max(
-      document.documentElement.scrollHeight,
-      document.body.scrollHeight,
-    );
-    const distanceFromBottom = pageHeight - viewportBottom;
-    const isNearBottom = distanceFromBottom <= 32;
-    setIsFollowing((prev) => (prev === isNearBottom ? prev : isNearBottom));
+  const getScrollContainer = useCallback((): ScrollContainer => {
+    if (scrollContainerRef.current) return scrollContainerRef.current;
+    const container = findScrollContainer(logEndRef.current);
+    scrollContainerRef.current = container;
+    return container;
   }, []);
 
+  const updateFollowingState = useCallback(() => {
+    const container = getScrollContainer();
+    const metrics = readScrollMetrics(container);
+    lastMetricsRef.current = metrics;
+    const nearBottom = metrics.distanceFromBottom <= LIVE_SCROLL_BOTTOM_TOLERANCE_PX;
+    isFollowingRef.current = nearBottom;
+    setIsFollowing((prev) => (prev === nearBottom ? prev : nearBottom));
+  }, [getScrollContainer]);
+
   useEffect(() => {
-    if (!isLive) return;
-    setIsFollowing(true);
-  }, [isLive, run.id]);
+    scrollContainerRef.current = null;
+    lastMetricsRef.current = {
+      scrollHeight: 0,
+      distanceFromBottom: Number.POSITIVE_INFINITY,
+    };
+
+    if (!isLive) {
+      isFollowingRef.current = false;
+      setIsFollowing(false);
+      return;
+    }
+
+    updateFollowingState();
+  }, [isLive, run.id, updateFollowingState]);
 
   useEffect(() => {
     if (!isLive) return;
+    const container = getScrollContainer();
     updateFollowingState();
-    window.addEventListener("scroll", updateFollowingState, { passive: true });
+
+    if (container === window) {
+      window.addEventListener("scroll", updateFollowingState, { passive: true });
+    } else {
+      container.addEventListener("scroll", updateFollowingState, { passive: true });
+    }
     window.addEventListener("resize", updateFollowingState);
     return () => {
-      window.removeEventListener("scroll", updateFollowingState);
+      if (container === window) {
+        window.removeEventListener("scroll", updateFollowingState);
+      } else {
+        container.removeEventListener("scroll", updateFollowingState);
+      }
       window.removeEventListener("resize", updateFollowingState);
     };
-  }, [isLive, updateFollowingState]);
+  }, [isLive, run.id, getScrollContainer, updateFollowingState]);
 
   // Auto-scroll only for live runs when following
   useEffect(() => {
-    if (isLive && isFollowing) {
-      logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!isLive || !isFollowingRef.current) return;
+
+    const container = getScrollContainer();
+    const previous = lastMetricsRef.current;
+    const current = readScrollMetrics(container);
+    const growth = Math.max(0, current.scrollHeight - previous.scrollHeight);
+    const expectedDistance = previous.distanceFromBottom + growth;
+    const movedAwayBy = current.distanceFromBottom - expectedDistance;
+
+    // If user moved away from bottom between updates, release auto-follow immediately.
+    if (movedAwayBy > LIVE_SCROLL_BOTTOM_TOLERANCE_PX) {
+      isFollowingRef.current = false;
+      setIsFollowing(false);
+      lastMetricsRef.current = current;
+      return;
     }
-  }, [events, logLines, isLive, isFollowing]);
+
+    scrollToContainerBottom(container, "auto");
+    const after = readScrollMetrics(container);
+    lastMetricsRef.current = after;
+    if (!isFollowingRef.current) {
+      isFollowingRef.current = true;
+    }
+    setIsFollowing((prev) => (prev ? prev : true));
+  }, [events.length, logLines.length, isLive, getScrollContainer]);
 
   // Fetch persisted shell log
   useEffect(() => {
@@ -1463,8 +1570,11 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               variant="ghost"
               size="xs"
               onClick={() => {
+                const container = getScrollContainer();
+                isFollowingRef.current = true;
                 setIsFollowing(true);
-                logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+                scrollToContainerBottom(container, "auto");
+                lastMetricsRef.current = readScrollMetrics(container);
               }}
             >
               Jump to live

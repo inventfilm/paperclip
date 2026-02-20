@@ -64,7 +64,12 @@ export function GoalDetail() {
   });
 
   const childGoals = (allGoals ?? []).filter((g) => g.parentId === goalId);
-  const linkedProjects = (allProjects ?? []).filter((p) => p.goalId === goalId);
+  const linkedProjects = (allProjects ?? []).filter((p) => {
+    if (!goalId) return false;
+    if (p.goalIds.includes(goalId)) return true;
+    if (p.goals.some((goalRef) => goalRef.id === goalId)) return true;
+    return p.goalId === goalId;
+  });
 
   useEffect(() => {
     setBreadcrumbs([

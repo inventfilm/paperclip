@@ -130,7 +130,7 @@ export function NewIssueDialog() {
         title: `${issue.identifier ?? "Issue"} created`,
         body: issue.title,
         tone: "success",
-        action: { label: "View issue", href: `/issues/${issue.id}` },
+        action: { label: `View ${issue.identifier ?? "issue"}`, href: `/issues/${issue.id}` },
       });
     },
   });

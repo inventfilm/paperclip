@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import type { LiveEvent } from "@paperclip/shared";
+import type { Issue, LiveEvent } from "@paperclip/shared";
 import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
+import { issuesApi } from "../api/issues";
 import { getUIAdapter } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { queryKeys } from "../lib/queryKeys";
@@ -152,6 +153,20 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
   });
 
   const runs = liveRuns ?? [];
+  const { data: issues } = useQuery({
+    queryKey: queryKeys.issues.list(companyId),
+    queryFn: () => issuesApi.list(companyId),
+    enabled: runs.length > 0,
+  });
+
+  const issueById = useMemo(() => {
+    const map = new Map<string, Issue>();
+    for (const issue of issues ?? []) {
+      map.set(issue.id, issue);
+    }
+    return map;
+  }, [issues]);
+
   const runById = useMemo(() => new Map(runs.map((r) => [r.id, r])), [runs]);
   const activeRunIds = useMemo(() => new Set(runs.map((r) => r.id)), [runs]);
 
@@ -290,6 +305,7 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
           <AgentRunCard
             key={run.id}
             run={run}
+            issue={run.issueId ? issueById.get(run.issueId) : undefined}
             feed={feedByRun.get(run.id) ?? []}
           />
         ))}
@@ -298,7 +314,15 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
   );
 }
 
-function AgentRunCard({ run, feed }: { run: LiveRunForIssue; feed: FeedItem[] }) {
+function AgentRunCard({
+  run,
+  issue,
+  feed,
+}: {
+  run: LiveRunForIssue;
+  issue?: Issue;
+  feed: FeedItem[];
+}) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const recent = feed.slice(-20);
 
@@ -330,6 +354,20 @@ function AgentRunCard({ run, feed }: { run: LiveRunForIssue; feed: FeedItem[] })
           <ExternalLink className="h-2.5 w-2.5" />
         </Link>
       </div>
+
+      {run.issueId && (
+        <div className="px-3 py-1.5 border-b border-border/40 text-xs flex items-center gap-1 min-w-0">
+          <span className="text-muted-foreground mr-1">Working on:</span>
+          <Link
+            to={`/issues/${run.issueId}`}
+            className="text-blue-400 hover:text-blue-300 hover:underline min-w-0 truncate"
+            title={issue?.title ? `${issue?.identifier ?? run.issueId.slice(0, 8)} - ${issue.title}` : issue?.identifier ?? run.issueId.slice(0, 8)}
+          >
+            {issue?.identifier ?? run.issueId.slice(0, 8)}
+            {issue?.title ? ` - ${issue.title}` : ""}
+          </Link>
+        </div>
+      )}
 
       <div ref={bodyRef} className="max-h-[180px] overflow-y-auto p-2 font-mono text-[11px] space-y-1">
         {recent.length === 0 && (

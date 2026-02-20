@@ -21,11 +21,12 @@ import {
   Minimize2,
   Target,
   Calendar,
+  Plus,
+  X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
-import type { Goal } from "@paperclip/shared";
 
 const projectStatuses = [
   { value: "backlog", label: "Backlog" },
@@ -42,7 +43,7 @@ export function NewProjectDialog() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("planned");
-  const [goalId, setGoalId] = useState("");
+  const [goalIds, setGoalIds] = useState<string[]>([]);
   const [targetDate, setTargetDate] = useState("");
   const [expanded, setExpanded] = useState(false);
 
@@ -77,7 +78,7 @@ export function NewProjectDialog() {
     setName("");
     setDescription("");
     setStatus("planned");
-    setGoalId("");
+    setGoalIds([]);
     setTargetDate("");
     setExpanded(false);
   }
@@ -88,7 +89,7 @@ export function NewProjectDialog() {
       name: name.trim(),
       description: description.trim() || undefined,
       status,
-      ...(goalId ? { goalId } : {}),
+      ...(goalIds.length > 0 ? { goalIds } : {}),
       ...(targetDate ? { targetDate } : {}),
     });
   }
@@ -100,7 +101,8 @@ export function NewProjectDialog() {
     }
   }
 
-  const currentGoal = (goals ?? []).find((g) => g.id === goalId);
+  const selectedGoals = (goals ?? []).filter((g) => goalIds.includes(g.id));
+  const availableGoals = (goals ?? []).filter((g) => !goalIds.includes(g.id));
 
   return (
     <Dialog
@@ -206,36 +208,60 @@ export function NewProjectDialog() {
             </PopoverContent>
           </Popover>
 
-          {/* Goal */}
+          {selectedGoals.map((goal) => (
+            <span
+              key={goal.id}
+              className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs"
+            >
+              <Target className="h-3 w-3 text-muted-foreground" />
+              <span className="max-w-[160px] truncate">{goal.title}</span>
+              <button
+                className="text-muted-foreground hover:text-foreground"
+                onClick={() => setGoalIds((prev) => prev.filter((id) => id !== goal.id))}
+                aria-label={`Remove goal ${goal.title}`}
+                type="button"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+
           <Popover open={goalOpen} onOpenChange={setGoalOpen}>
             <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
-                <Target className="h-3 w-3 text-muted-foreground" />
-                {currentGoal ? currentGoal.title : "Goal"}
+              <button
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors disabled:opacity-60"
+                disabled={selectedGoals.length > 0 && availableGoals.length === 0}
+              >
+                {selectedGoals.length > 0 ? <Plus className="h-3 w-3 text-muted-foreground" /> : <Target className="h-3 w-3 text-muted-foreground" />}
+                {selectedGoals.length > 0 ? "+ Goal" : "Goal"}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-48 p-1" align="start">
-              <button
-                className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                  !goalId && "bg-accent"
-                )}
-                onClick={() => { setGoalId(""); setGoalOpen(false); }}
-              >
-                No goal
-              </button>
-              {(goals ?? []).map((g) => (
+            <PopoverContent className="w-56 p-1" align="start">
+              {selectedGoals.length === 0 && (
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-muted-foreground"
+                  onClick={() => setGoalOpen(false)}
+                >
+                  No goal
+                </button>
+              )}
+              {availableGoals.map((g) => (
                 <button
                   key={g.id}
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 truncate",
-                    g.id === goalId && "bg-accent"
-                  )}
-                  onClick={() => { setGoalId(g.id); setGoalOpen(false); }}
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 truncate"
+                  onClick={() => {
+                    setGoalIds((prev) => [...prev, g.id]);
+                    setGoalOpen(false);
+                  }}
                 >
                   {g.title}
                 </button>
               ))}
+              {selectedGoals.length > 0 && availableGoals.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  All goals already selected.
+                </div>
+              )}
             </PopoverContent>
           </Popover>
 

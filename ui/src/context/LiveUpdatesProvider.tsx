@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type { Agent, LiveEvent } from "@paperclip/shared";
+import type { Agent, Issue, LiveEvent } from "@paperclip/shared";
 import { useCompany } from "./CompanyContext";
 import type { ToastInput } from "./ToastContext";
 import { useToast } from "./ToastContext";
@@ -39,6 +39,71 @@ function truncate(text: string, max: number): string {
   return text.slice(0, max - 1) + "\u2026";
 }
 
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(" ")
+    .filter((part) => part.length > 0)
+    .map((part) => part[0]!.toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function resolveActorLabel(
+  queryClient: QueryClient,
+  companyId: string,
+  actorType: string | null,
+  actorId: string | null,
+): string {
+  if (actorType === "agent" && actorId) {
+    return resolveAgentName(queryClient, companyId, actorId) ?? `Agent ${shortId(actorId)}`;
+  }
+  if (actorType === "system") return "System";
+  if (actorType === "user" && actorId) {
+    if (looksLikeUuid(actorId)) return `User ${shortId(actorId)}`;
+    return titleCase(actorId.replace(/[_-]+/g, " "));
+  }
+  return "Someone";
+}
+
+interface IssueToastContext {
+  ref: string;
+  title: string | null;
+  label: string;
+  href: string;
+}
+
+function resolveIssueToastContext(
+  queryClient: QueryClient,
+  companyId: string,
+  issueId: string,
+  details: Record<string, unknown> | null,
+): IssueToastContext {
+  const detailIssue = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issueId));
+  const listIssue = queryClient
+    .getQueryData<Issue[]>(queryKeys.issues.list(companyId))
+    ?.find((issue) => issue.id === issueId);
+  const cachedIssue = detailIssue ?? listIssue ?? null;
+  const ref =
+    readString(details?.identifier) ??
+    readString(details?.issueIdentifier) ??
+    cachedIssue?.identifier ??
+    `Issue ${shortId(issueId)}`;
+  const title =
+    readString(details?.title) ??
+    readString(details?.issueTitle) ??
+    cachedIssue?.title ??
+    null;
+  return {
+    ref,
+    title,
+    label: title ? `${ref} - ${truncate(title, 72)}` : ref,
+    href: `/issues/${issueId}`,
+  };
+}
+
 const ISSUE_TOAST_ACTIONS = new Set(["issue.created", "issue.updated", "issue.comment_added"]);
 const AGENT_TOAST_STATUSES = new Set(["running", "idle", "error"]);
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "timed_out", "cancelled"]);
@@ -46,17 +111,24 @@ const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "timed_out", "canc
 function describeIssueUpdate(details: Record<string, unknown> | null): string | null {
   if (!details) return null;
   const changes: string[] = [];
-  if (typeof details.status === "string") changes.push(`status \u2192 ${details.status}`);
-  if (typeof details.priority === "string") changes.push(`priority \u2192 ${details.priority}`);
+  if (typeof details.status === "string") changes.push(`status -> ${details.status.replace(/_/g, " ")}`);
+  if (typeof details.priority === "string") changes.push(`priority -> ${details.priority}`);
   if (typeof details.assigneeAgentId === "string") changes.push("reassigned");
   else if (details.assigneeAgentId === null) changes.push("unassigned");
+  if (details.reopened === true) {
+    const from = readString(details.reopenedFrom);
+    changes.push(from ? `reopened from ${from.replace(/_/g, " ")}` : "reopened");
+  }
+  if (typeof details.title === "string") changes.push("title changed");
+  if (typeof details.description === "string") changes.push("description changed");
   if (changes.length > 0) return changes.join(", ");
   return null;
 }
 
 function buildActivityToast(
+  queryClient: QueryClient,
+  companyId: string,
   payload: Record<string, unknown>,
-  nameOf: (id: string) => string | null,
 ): ToastInput | null {
   const entityType = readString(payload.entityType);
   const entityId = readString(payload.entityId);
@@ -69,43 +141,43 @@ function buildActivityToast(
     return null;
   }
 
-  const issueHref = `/issues/${entityId}`;
-  const issueTitle = details?.title && typeof details.title === "string"
-    ? truncate(details.title, 60)
-    : null;
-  const actorName = actorType === "agent" && actorId ? nameOf(actorId) : null;
-  const byLine = actorName ? ` by ${actorName}` : "";
+  const issue = resolveIssueToastContext(queryClient, companyId, entityId, details);
+  const actor = resolveActorLabel(queryClient, companyId, actorType, actorId);
 
   if (action === "issue.created") {
     return {
-      title: `Issue created${byLine}`,
-      body: issueTitle ?? `Issue ${shortId(entityId)}`,
+      title: `${actor} created ${issue.ref}`,
+      body: issue.title ? truncate(issue.title, 96) : undefined,
       tone: "success",
-      action: { label: "Open issue", href: issueHref },
+      action: { label: `View ${issue.ref}`, href: issue.href },
       dedupeKey: `activity:${action}:${entityId}`,
     };
   }
 
   if (action === "issue.updated") {
     const changeDesc = describeIssueUpdate(details);
-    const label = issueTitle ?? `Issue ${shortId(entityId)}`;
-    const body = changeDesc ? `${label} \u2014 ${changeDesc}` : label;
+    const body = changeDesc
+      ? issue.title
+        ? `${truncate(issue.title, 64)} - ${changeDesc}`
+        : changeDesc
+      : issue.title
+        ? truncate(issue.title, 96)
+        : issue.label;
     return {
-      title: `Issue updated${byLine}`,
+      title: `${actor} updated ${issue.ref}`,
       body: truncate(body, 100),
       tone: "info",
-      action: { label: "Open issue", href: issueHref },
+      action: { label: `View ${issue.ref}`, href: issue.href },
       dedupeKey: `activity:${action}:${entityId}`,
     };
   }
 
   const commentId = readString(details?.commentId);
-  const issueLabel = issueTitle ?? `Issue ${shortId(entityId)}`;
   return {
-    title: `New comment${byLine}`,
-    body: issueLabel,
+    title: `${actor} posted a comment on ${issue.ref}`,
+    body: issue.title ? truncate(issue.title, 96) : undefined,
     tone: "info",
-    action: { label: "Open issue", href: issueHref },
+    action: { label: `View ${issue.ref}`, href: issue.href },
     dedupeKey: `activity:${action}:${entityId}:${commentId ?? "na"}`,
   };
 }
@@ -324,7 +396,7 @@ function handleLiveEvent(
   if (event.type === "activity.logged") {
     invalidateActivityQueries(queryClient, expectedCompanyId, payload);
     const action = readString(payload.action);
-    const toast = buildActivityToast(payload, nameOf);
+    const toast = buildActivityToast(queryClient, expectedCompanyId, payload);
     if (toast) gatedPushToast(gate, pushToast, `activity:${action ?? "unknown"}`, toast);
   }
 }
