@@ -247,12 +247,11 @@ export function Companies() {
                 <div className="flex items-center gap-1.5">
                   <DollarSign className="h-3.5 w-3.5" />
                   <span>
-                    {formatCents(company.spentMonthlyCents)} /{" "}
-                    {formatCents(company.budgetMonthlyCents)}
+                    {formatCents(company.spentMonthlyCents)}
+                    {company.budgetMonthlyCents > 0
+                      ? <> / {formatCents(company.budgetMonthlyCents)} <span className="text-xs">({budgetPct}%)</span></>
+                      : <span className="text-xs ml-1">Unlimited budget</span>}
                   </span>
-                  {company.budgetMonthlyCents > 0 && (
-                    <span className="text-xs">({budgetPct}%)</span>
-                  )}
                 </div>
                 <div className="flex items-center gap-1.5 ml-auto">
                   <Calendar className="h-3.5 w-3.5" />

@@ -211,7 +211,9 @@ export function Dashboard() {
               onClick={() => navigate("/costs")}
               description={
                 <span className="cursor-pointer" onClick={() => navigate("/costs")}>
-                  {data.costs.monthUtilizationPercent}% of {formatCents(data.costs.monthBudgetCents)} budget
+                  {data.costs.monthBudgetCents > 0
+                    ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
+                    : "Unlimited budget"}
                 </span>
               }
             />

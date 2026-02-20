@@ -195,7 +195,7 @@ export function Inbox() {
     !!dashboard && dashboard.agents.error > 0 && !hasRunFailures;
   const hasAlerts =
     !!dashboard &&
-    (showAggregateAgentError || dashboard.costs.monthUtilizationPercent >= 80);
+    (showAggregateAgentError || (dashboard.costs.monthBudgetCents > 0 && dashboard.costs.monthUtilizationPercent >= 80));
   const hasStale = staleIssues.length > 0;
   const hasContent = hasActionableApprovals || hasRunFailures || hasAlerts || hasStale;
 
@@ -339,7 +339,7 @@ export function Inbox() {
                   </span>
                 </div>
               )}
-              {dashboard!.costs.monthUtilizationPercent >= 80 && (
+              {dashboard!.costs.monthBudgetCents > 0 && dashboard!.costs.monthUtilizationPercent >= 80 && (
                 <div
                   className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50"
                   onClick={() => navigate("/costs")}

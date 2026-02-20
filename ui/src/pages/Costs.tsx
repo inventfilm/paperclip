@@ -134,28 +134,34 @@ export function Costs() {
             <CardContent className="p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <p className="text-sm text-muted-foreground">{PRESET_LABELS[preset]}</p>
-                <p className="text-sm text-muted-foreground">
-                  {data.summary.utilizationPercent}% utilized
-                </p>
+                {data.summary.budgetCents > 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    {data.summary.utilizationPercent}% utilized
+                  </p>
+                )}
               </div>
               <p className="text-2xl font-bold">
                 {formatCents(data.summary.spendCents)}{" "}
                 <span className="text-base font-normal text-muted-foreground">
-                  / {formatCents(data.summary.budgetCents)}
+                  {data.summary.budgetCents > 0
+                    ? `/ ${formatCents(data.summary.budgetCents)}`
+                    : "Unlimited budget"}
                 </span>
               </p>
-              <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    data.summary.utilizationPercent > 90
-                      ? "bg-red-400"
-                      : data.summary.utilizationPercent > 70
-                        ? "bg-yellow-400"
-                        : "bg-green-400"
-                  }`}
-                  style={{ width: `${Math.min(100, data.summary.utilizationPercent)}%` }}
-                />
-              </div>
+              {data.summary.budgetCents > 0 && (
+                <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      data.summary.utilizationPercent > 90
+                        ? "bg-red-400"
+                        : data.summary.utilizationPercent > 70
+                          ? "bg-yellow-400"
+                          : "bg-green-400"
+                    }`}
+                    style={{ width: `${Math.min(100, data.summary.utilizationPercent)}%` }}
+                  />
+                </div>
+              )}
             </CardContent>
           </Card>
 
