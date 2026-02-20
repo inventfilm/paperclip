@@ -229,13 +229,16 @@ export function AgentDetail() {
         case "terminate": return agentsApi.terminate(agentId);
       }
     },
-    onSuccess: () => {
+    onSuccess: (data, action) => {
       setActionError(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId!) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(agentId!) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(agentId!) });
       if (selectedCompanyId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) });
+      }
+      if (action === "invoke" && data && typeof data === "object" && "id" in data) {
+        navigate(`/agents/${agentId}/runs/${(data as HeartbeatRun).id}`);
       }
     },
     onError: (err) => {
