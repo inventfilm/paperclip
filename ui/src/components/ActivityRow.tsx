@@ -11,6 +11,8 @@ const ACTION_VERBS: Record<string, string> = {
   "issue.checked_out": "checked out",
   "issue.released": "released",
   "issue.comment_added": "commented on",
+  "issue.attachment_added": "attached file to",
+  "issue.attachment_removed": "removed attachment from",
   "issue.commented": "commented on",
   "issue.deleted": "deleted",
   "agent.created": "created",
@@ -105,23 +107,24 @@ export function ActivityRow({ event, agentMap, entityNameMap, className }: Activ
   return (
     <div
       className={cn(
-        "px-4 py-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-sm",
+        "px-4 py-2 text-sm",
         link && "cursor-pointer hover:bg-accent/50 transition-colors",
         className,
       )}
       onClick={link ? () => navigate(link) : undefined}
     >
-      <div className="flex items-center gap-1.5 min-w-0">
-        <Identity
-          name={actor?.name ?? (event.actorType === "system" ? "System" : event.actorId || "You")}
-          size="sm"
-        />
-        <span className="text-muted-foreground shrink-0">{verb}</span>
-        {name && <span className="truncate">{name}</span>}
+      <div className="flex gap-3">
+        <p className="flex-1 min-w-0">
+          <Identity
+            name={actor?.name ?? (event.actorType === "system" ? "System" : event.actorId || "You")}
+            size="xs"
+            className="align-baseline"
+          />
+          <span className="text-muted-foreground ml-1">{verb} </span>
+          {name && <span className="font-medium">{name}</span>}
+        </p>
+        <span className="text-xs text-muted-foreground shrink-0 pt-0.5">{timeAgo(event.createdAt)}</span>
       </div>
-      <span className="text-xs text-muted-foreground shrink-0">
-        {timeAgo(event.createdAt)}
-      </span>
     </div>
   );
 }

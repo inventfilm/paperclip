@@ -177,6 +177,7 @@ export function AgentDetail() {
   const [configSaving, setConfigSaving] = useState(false);
   const saveConfigActionRef = useRef<(() => void) | null>(null);
   const cancelConfigActionRef = useRef<(() => void) | null>(null);
+  const { isMobile } = useSidebar();
   const setSaveConfigAction = useCallback((fn: (() => void) | null) => { saveConfigActionRef.current = fn; }, []);
   const setCancelConfigAction = useCallback((fn: (() => void) | null) => { cancelConfigActionRef.current = fn; }, []);
 
@@ -213,6 +214,10 @@ export function AgentDetail() {
   const assignedIssues = (allIssues ?? []).filter((i) => i.assigneeAgentId === agentId);
   const reportsToAgent = (allAgents ?? []).find((a) => a.id === agent?.reportsTo);
   const directReports = (allAgents ?? []).filter((a) => a.reportsTo === agentId && a.status !== "terminated");
+  const mobileLiveRun = useMemo(
+    () => (heartbeats ?? []).find((r) => r.status === "running" || r.status === "queued") ?? null,
+    [heartbeats],
+  );
 
   const agentAction = useMutation({
     mutationFn: async (action: "invoke" | "pause" | "resume" | "terminate") => {
@@ -295,9 +300,10 @@ export function AgentDetail() {
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!agent) return null;
   const isPendingApproval = agent.status === "pending_approval";
+  const showConfigActionBar = activeTab === "configuration" && configDirty;
 
   return (
-    <div className="space-y-6">
+    <div className={cn("space-y-6", isMobile && showConfigActionBar && "pb-24")}>
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
@@ -347,6 +353,18 @@ export function AgentDetail() {
             </Button>
           )}
           <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
+          {mobileLiveRun && (
+            <button
+              className="sm:hidden flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
+              onClick={() => navigate(`/agents/${agent.id}/runs/${mobileLiveRun.id}`)}
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+              </span>
+              <span className="text-[11px] font-medium text-blue-400">Live</span>
+            </button>
+          )}
 
           {/* Overflow menu */}
           <Popover open={moreOpen} onOpenChange={setMoreOpen}>
@@ -398,33 +416,61 @@ export function AgentDetail() {
         </p>
       )}
 
-      {/* Floating Save/Cancel — sticky so it's always reachable when scrolled */}
-      <div
-        className={cn(
-          "sticky top-6 z-10 float-right transition-opacity duration-150",
-          activeTab === "configuration" && configDirty
-            ? "opacity-100"
-            : "opacity-0 pointer-events-none"
-        )}
-      >
-        <div className="flex items-center gap-2 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-1.5 shadow-lg">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => cancelConfigActionRef.current?.()}
-            disabled={configSaving}
-          >
-            Cancel
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => saveConfigActionRef.current?.()}
-            disabled={configSaving}
-          >
-            {configSaving ? "Saving..." : "Save"}
-          </Button>
+      {/* Floating Save/Cancel (desktop) */}
+      {!isMobile && (
+        <div
+          className={cn(
+            "sticky top-6 z-10 float-right transition-opacity duration-150",
+            showConfigActionBar
+              ? "opacity-100"
+              : "opacity-0 pointer-events-none"
+          )}
+        >
+          <div className="flex items-center gap-2 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-1.5 shadow-lg">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => cancelConfigActionRef.current?.()}
+              disabled={configSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => saveConfigActionRef.current?.()}
+              disabled={configSaving}
+            >
+              {configSaving ? "Saving..." : "Save"}
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Mobile bottom Save/Cancel bar */}
+      {isMobile && showConfigActionBar && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur-sm">
+          <div
+            className="flex items-center justify-end gap-2 px-3 py-2"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => cancelConfigActionRef.current?.()}
+              disabled={configSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => saveConfigActionRef.current?.()}
+              disabled={configSaving}
+            >
+              {configSaving ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <PageTabBar
@@ -471,27 +517,6 @@ export function AgentDetail() {
                     ? <span>{relativeTime(agent.lastHeartbeatAt)}</span>
                     : <span className="text-muted-foreground">Never</span>
                   }
-                </SummaryRow>
-                <SummaryRow label="Budget">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={cn(
-                          "h-full rounded-full",
-                          (() => {
-                            const pct = agent.budgetMonthlyCents > 0
-                              ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100)
-                              : 0;
-                            return pct > 90 ? "bg-red-400" : pct > 70 ? "bg-yellow-400" : "bg-green-400";
-                          })(),
-                        )}
-                        style={{ width: `${Math.min(100, agent.budgetMonthlyCents > 0 ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100) : 0)}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)}
-                    </span>
-                  </div>
                 </SummaryRow>
               </div>
             </div>
@@ -591,7 +616,7 @@ export function AgentDetail() {
 
         {/* COSTS TAB */}
         <TabsContent value="costs" className="mt-4">
-          <CostsTab agent={agent} runtimeState={runtimeState ?? undefined} runs={heartbeats ?? []} />
+          <CostsTab runtimeState={runtimeState ?? undefined} runs={heartbeats ?? []} />
         </TabsContent>
 
         {/* KEYS TAB */}
@@ -1633,19 +1658,12 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 /* ---- Costs Tab ---- */
 
 function CostsTab({
-  agent,
   runtimeState,
   runs,
 }: {
-  agent: Agent;
   runtimeState?: AgentRuntimeState;
   runs: HeartbeatRun[];
 }) {
-  const budgetPct =
-    agent.budgetMonthlyCents > 0
-      ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100)
-      : 0;
-
   const runsWithCost = runs
     .filter((r) => {
       const u = r.usageJson as Record<string, unknown> | null;
@@ -1679,27 +1697,6 @@ function CostsTab({
           </div>
         </div>
       )}
-
-      {/* Monthly budget */}
-      <div className="border border-border rounded-lg p-4">
-        <h3 className="text-sm font-medium mb-3">Monthly Budget</h3>
-        <div className="flex items-center justify-between text-sm mb-1">
-          <span className="text-muted-foreground">Utilization</span>
-          <span>
-            {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)}
-          </span>
-        </div>
-        <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
-          <div
-            className={cn(
-              "h-full rounded-full transition-all",
-              budgetPct > 90 ? "bg-red-400" : budgetPct > 70 ? "bg-yellow-400" : "bg-green-400"
-            )}
-            style={{ width: `${Math.min(100, budgetPct)}%` }}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground mt-1">{budgetPct}% utilized</p>
-      </div>
 
       {/* Per-run cost table */}
       {runsWithCost.length > 0 && (

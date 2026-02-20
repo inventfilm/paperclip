@@ -175,7 +175,7 @@ export function Dashboard() {
 
       {data && (
         <>
-          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
             <MetricCard
               icon={Bot}
               value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
@@ -263,21 +263,27 @@ export function Dashboard() {
                   {recentIssues.slice(0, 10).map((issue) => (
                     <div
                       key={issue.id}
-                      className="px-4 py-2 flex items-center gap-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+                      className="px-4 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors"
                       onClick={() => navigate(`/issues/${issue.id}`)}
                     >
-                      <PriorityIcon priority={issue.priority} />
-                      <StatusIcon status={issue.status} />
-                      <span className="truncate flex-1">{issue.title}</span>
-                      {issue.assigneeAgentId && (() => {
-                        const name = agentName(issue.assigneeAgentId);
-                        return name
-                          ? <Identity name={name} size="sm" className="shrink-0 hidden sm:flex" />
-                          : <span className="text-xs text-muted-foreground font-mono shrink-0 hidden sm:inline">{issue.assigneeAgentId.slice(0, 8)}</span>;
-                      })()}
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {timeAgo(issue.updatedAt)}
-                      </span>
+                      <div className="flex items-start gap-2">
+                        <div className="flex items-center gap-2 shrink-0 mt-0.5">
+                          <PriorityIcon priority={issue.priority} />
+                          <StatusIcon status={issue.status} />
+                        </div>
+                        <p className="min-w-0 flex-1">
+                          <span>{issue.title}</span>
+                          {issue.assigneeAgentId && (() => {
+                            const name = agentName(issue.assigneeAgentId);
+                            return name
+                              ? <span className="hidden sm:inline"><Identity name={name} size="sm" className="ml-2 inline-flex" /></span>
+                              : null;
+                          })()}
+                          <span className="text-xs text-muted-foreground ml-2">
+                            {timeAgo(issue.updatedAt)}
+                          </span>
+                        </p>
+                      </div>
                     </div>
                   ))}
                 </div>

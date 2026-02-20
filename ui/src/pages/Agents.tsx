@@ -6,11 +6,12 @@ import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useSidebar } from "../context/SidebarContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
-import { formatCents, relativeTime, cn } from "../lib/utils";
+import { relativeTime, cn } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -61,9 +62,12 @@ export function Agents() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const location = useLocation();
+  const { isMobile } = useSidebar();
   const pathSegment = location.pathname.split("/").pop() ?? "all";
   const tab: FilterTab = (pathSegment === "all" || pathSegment === "active" || pathSegment === "paused" || pathSegment === "error") ? pathSegment : "all";
   const [view, setView] = useState<"list" | "org">("org");
+  const forceListView = isMobile;
+  const effectiveView: "list" | "org" = forceListView ? "list" : view;
   const [showTerminated, setShowTerminated] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -76,7 +80,7 @@ export function Agents() {
   const { data: orgTree } = useQuery({
     queryKey: queryKeys.org(selectedCompanyId!),
     queryFn: () => agentsApi.org(selectedCompanyId!),
-    enabled: !!selectedCompanyId && view === "org",
+    enabled: !!selectedCompanyId && effectiveView === "org",
   });
 
   const { data: runs } = useQuery({
@@ -161,26 +165,28 @@ export function Agents() {
             )}
           </div>
           {/* View toggle */}
-          <div className="flex items-center border border-border">
-            <button
-              className={cn(
-                "p-1.5 transition-colors",
-                view === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"
-              )}
-              onClick={() => setView("list")}
-            >
-              <List className="h-3.5 w-3.5" />
-            </button>
-            <button
-              className={cn(
-                "p-1.5 transition-colors",
-                view === "org" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"
-              )}
-              onClick={() => setView("org")}
-            >
-              <GitBranch className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          {!forceListView && (
+            <div className="flex items-center border border-border">
+              <button
+                className={cn(
+                  "p-1.5 transition-colors",
+                  effectiveView === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"
+                )}
+                onClick={() => setView("list")}
+              >
+                <List className="h-3.5 w-3.5" />
+              </button>
+              <button
+                className={cn(
+                  "p-1.5 transition-colors",
+                  effectiveView === "org" ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50"
+                )}
+                onClick={() => setView("org")}
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
           <Button size="sm" onClick={openNewAgent}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
             New Agent
@@ -205,14 +211,9 @@ export function Agents() {
       )}
 
       {/* List view */}
-      {view === "list" && filtered.length > 0 && (
+      {effectiveView === "list" && filtered.length > 0 && (
         <div className="border border-border">
           {filtered.map((agent) => {
-            const budgetPct =
-              agent.budgetMonthlyCents > 0
-                ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100)
-                : 0;
-
             return (
               <EntityRow
                 key={agent.id}
@@ -240,39 +241,35 @@ export function Agents() {
                 }
                 trailing={
                   <div className="flex items-center gap-3">
-                    {liveRunByAgent.has(agent.id) && (
-                      <LiveRunIndicator
-                        agentId={agent.id}
-                        runId={liveRunByAgent.get(agent.id)!.runId}
-                        navigate={navigate}
-                      />
-                    )}
-                    <span className="text-xs text-muted-foreground font-mono w-14 text-right">
-                      {adapterLabels[agent.adapterType] ?? agent.adapterType}
-                    </span>
-                    <span className="text-xs text-muted-foreground w-16 text-right">
-                      {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            budgetPct > 90
-                              ? "bg-red-400"
-                              : budgetPct > 70
-                                ? "bg-yellow-400"
-                                : "bg-green-400"
-                          }`}
-                          style={{ width: `${Math.min(100, budgetPct)}%` }}
+                    <span className="sm:hidden">
+                      {liveRunByAgent.has(agent.id) ? (
+                        <LiveRunIndicator
+                          agentId={agent.id}
+                          runId={liveRunByAgent.get(agent.id)!.runId}
+                          navigate={navigate}
                         />
-                      </div>
-                      <span className="text-xs text-muted-foreground w-24 text-right">
-                        {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)}
+                      ) : (
+                        <StatusBadge status={agent.status} />
+                      )}
+                    </span>
+                    <div className="hidden sm:flex items-center gap-3">
+                      {liveRunByAgent.has(agent.id) && (
+                        <LiveRunIndicator
+                          agentId={agent.id}
+                          runId={liveRunByAgent.get(agent.id)!.runId}
+                          navigate={navigate}
+                        />
+                      )}
+                      <span className="text-xs text-muted-foreground font-mono w-14 text-right">
+                        {adapterLabels[agent.adapterType] ?? agent.adapterType}
+                      </span>
+                      <span className="text-xs text-muted-foreground w-16 text-right">
+                        {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
+                      </span>
+                      <span className="w-20 flex justify-end">
+                        <StatusBadge status={agent.status} />
                       </span>
                     </div>
-                    <span className="w-20 flex justify-end">
-                      <StatusBadge status={agent.status} />
-                    </span>
                   </div>
                 }
               />
@@ -281,14 +278,14 @@ export function Agents() {
         </div>
       )}
 
-      {view === "list" && agents && agents.length > 0 && filtered.length === 0 && (
+      {effectiveView === "list" && agents && agents.length > 0 && filtered.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
           No agents match the selected filter.
         </p>
       )}
 
       {/* Org chart view */}
-      {view === "org" && filteredOrg.length > 0 && (
+      {effectiveView === "org" && filteredOrg.length > 0 && (
         <div className="border border-border py-1">
           {filteredOrg.map((node) => (
             <OrgTreeNode key={node.id} node={node} depth={0} navigate={navigate} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
@@ -296,13 +293,13 @@ export function Agents() {
         </div>
       )}
 
-      {view === "org" && orgTree && orgTree.length > 0 && filteredOrg.length === 0 && (
+      {effectiveView === "org" && orgTree && orgTree.length > 0 && filteredOrg.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
           No agents match the selected filter.
         </p>
       )}
 
-      {view === "org" && orgTree && orgTree.length === 0 && (
+      {effectiveView === "org" && orgTree && orgTree.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
           No organizational hierarchy defined.
         </p>
@@ -339,11 +336,6 @@ function OrgTreeNode({
             ? "bg-red-400"
             : "bg-neutral-400";
 
-  const budgetPct =
-    agent && agent.budgetMonthlyCents > 0
-      ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100)
-      : 0;
-
   return (
     <div style={{ paddingLeft: depth * 24 }}>
       <button
@@ -361,43 +353,39 @@ function OrgTreeNode({
           </span>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          {liveRunByAgent.has(node.id) && (
-            <LiveRunIndicator
-              agentId={node.id}
-              runId={liveRunByAgent.get(node.id)!.runId}
-              navigate={navigate}
-            />
-          )}
-          {agent && (
-            <>
-              <span className="text-xs text-muted-foreground font-mono w-14 text-right">
-                {adapterLabels[agent.adapterType] ?? agent.adapterType}
-              </span>
-              <span className="text-xs text-muted-foreground w-16 text-right">
-                {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
-              </span>
-              <div className="flex items-center gap-1.5">
-                <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${
-                      budgetPct > 90
-                        ? "bg-red-400"
-                        : budgetPct > 70
-                          ? "bg-yellow-400"
-                          : "bg-green-400"
-                    }`}
-                    style={{ width: `${Math.min(100, budgetPct)}%` }}
-                  />
-                </div>
-                <span className="text-xs text-muted-foreground w-24 text-right">
-                  {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)}
-                </span>
-              </div>
-            </>
-          )}
-          <span className="w-20 flex justify-end">
-            <StatusBadge status={node.status} />
+          <span className="sm:hidden">
+            {liveRunByAgent.has(node.id) ? (
+              <LiveRunIndicator
+                agentId={node.id}
+                runId={liveRunByAgent.get(node.id)!.runId}
+                navigate={navigate}
+              />
+            ) : (
+              <StatusBadge status={node.status} />
+            )}
           </span>
+          <div className="hidden sm:flex items-center gap-3">
+            {liveRunByAgent.has(node.id) && (
+              <LiveRunIndicator
+                agentId={node.id}
+                runId={liveRunByAgent.get(node.id)!.runId}
+                navigate={navigate}
+              />
+            )}
+            {agent && (
+              <>
+                <span className="text-xs text-muted-foreground font-mono w-14 text-right">
+                  {adapterLabels[agent.adapterType] ?? agent.adapterType}
+                </span>
+                <span className="text-xs text-muted-foreground w-16 text-right">
+                  {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "—"}
+                </span>
+              </>
+            )}
+            <span className="w-20 flex justify-end">
+              <StatusBadge status={node.status} />
+            </span>
+          </div>
         </div>
       </button>
       {node.reports && node.reports.length > 0 && (

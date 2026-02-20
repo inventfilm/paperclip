@@ -13,27 +13,27 @@ interface MetricCardProps {
 export function MetricCard({ icon: Icon, value, label, description, onClick }: MetricCardProps) {
   return (
     <Card>
-      <CardContent className="p-4">
-        <div className="flex gap-3">
+      <CardContent className="p-3 sm:p-4">
+        <div className="flex gap-2 sm:gap-3">
           <div className="flex-1 min-w-0">
             <p
-              className={`text-2xl font-bold${onClick ? " cursor-pointer" : ""}`}
+              className={`text-lg sm:text-2xl font-bold${onClick ? " cursor-pointer" : ""}`}
               onClick={onClick}
             >
               {value}
             </p>
             <p
-              className={`text-sm text-muted-foreground${onClick ? " cursor-pointer" : ""}`}
+              className={`text-xs sm:text-sm text-muted-foreground${onClick ? " cursor-pointer" : ""}`}
               onClick={onClick}
             >
               {label}
             </p>
             {description && (
-              <div className="text-xs text-muted-foreground mt-1">{description}</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground mt-1 hidden sm:block">{description}</div>
             )}
           </div>
-          <div className="bg-muted p-2 rounded-md h-fit shrink-0">
-            <Icon className="h-4 w-4 text-muted-foreground" />
+          <div className="bg-muted p-1.5 sm:p-2 rounded-md h-fit shrink-0">
+            <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
           </div>
         </div>
       </CardContent>

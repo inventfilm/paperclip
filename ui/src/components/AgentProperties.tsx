@@ -6,7 +6,7 @@ import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "./StatusBadge";
 import { Identity } from "./Identity";
-import { formatCents, formatDate } from "../lib/utils";
+import { formatDate } from "../lib/utils";
 import { Separator } from "@/components/ui/separator";
 
 interface AgentPropertiesProps {
@@ -57,24 +57,6 @@ export function AgentProperties({ agent, runtimeState }: AgentPropertiesProps) {
         )}
         <PropertyRow label="Adapter">
           <span className="text-sm font-mono">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span>
-        </PropertyRow>
-      </div>
-
-      <Separator />
-
-      <div className="space-y-1">
-        <PropertyRow label="Budget">
-          <span className="text-sm">
-            {formatCents(agent.spentMonthlyCents)} / {formatCents(agent.budgetMonthlyCents)}
-          </span>
-        </PropertyRow>
-        <PropertyRow label="Utilization">
-          <span className="text-sm">
-            {agent.budgetMonthlyCents > 0
-              ? Math.round((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100)
-              : 0}
-            %
-          </span>
         </PropertyRow>
       </div>
 

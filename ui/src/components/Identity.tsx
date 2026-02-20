@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-type IdentitySize = "sm" | "default" | "lg";
+type IdentitySize = "xs" | "sm" | "default" | "lg";
 
 export interface IdentityProps {
   name: string;
@@ -18,6 +18,7 @@ function deriveInitials(name: string): string {
 }
 
 const textSize: Record<IdentitySize, string> = {
+  xs: "text-sm",
   sm: "text-xs",
   default: "text-sm",
   lg: "text-sm",
@@ -27,8 +28,8 @@ export function Identity({ name, avatarUrl, initials, size = "default", classNam
   const displayInitials = initials ?? deriveInitials(name);
 
   return (
-    <span className={cn("inline-flex items-center gap-1.5", size === "lg" && "gap-2", className)}>
-      <Avatar size={size}>
+    <span className={cn("inline-flex gap-1.5", size === "xs" ? "items-baseline gap-1" : "items-center", size === "lg" && "gap-2", className)}>
+      <Avatar size={size} className={size === "xs" ? "relative top-[2px]" : undefined}>
         {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
         <AvatarFallback>{displayInitials}</AvatarFallback>
       </Avatar>

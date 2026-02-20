@@ -716,26 +716,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         </div>
       )}
 
-      {/* ---- Runtime (edit only) ---- */}
-      {!isCreate && (
-        <div className="border-b border-border">
-          <div className="px-4 py-2 text-xs font-medium text-muted-foreground">Runtime</div>
-          <div className="px-4 pb-3 space-y-3">
-            <Field label="Monthly budget (cents)" hint={help.budgetMonthlyCents}>
-              <DraftNumberInput
-                value={eff(
-                  "runtime",
-                  "budgetMonthlyCents",
-                  props.agent.budgetMonthlyCents,
-                )}
-                onCommit={(v) => mark("runtime", "budgetMonthlyCents", v)}
-                immediate
-                className={inputClass}
-              />
-            </Field>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
