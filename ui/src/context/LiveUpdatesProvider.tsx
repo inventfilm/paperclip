@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import type { LiveEvent } from "@paperclip/shared";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import type { Agent, LiveEvent } from "@paperclip/shared";
 import { useCompany } from "./CompanyContext";
 import type { ToastInput } from "./ToastContext";
 import { useToast } from "./ToastContext";
@@ -23,29 +23,63 @@ function shortId(value: string) {
   return value.slice(0, 8);
 }
 
+function resolveAgentName(
+  queryClient: QueryClient,
+  companyId: string,
+  agentId: string,
+): string | null {
+  const agents = queryClient.getQueryData<Agent[]>(queryKeys.agents.list(companyId));
+  if (!agents) return null;
+  const agent = agents.find((a) => a.id === agentId);
+  return agent?.name ?? null;
+}
+
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text;
+  return text.slice(0, max - 1) + "\u2026";
+}
+
 const ISSUE_TOAST_ACTIONS = new Set(["issue.created", "issue.updated", "issue.comment_added"]);
 const AGENT_TOAST_STATUSES = new Set(["running", "idle", "error"]);
 const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "timed_out", "cancelled"]);
 
-function buildActivityToast(payload: Record<string, unknown>): ToastInput | null {
+function describeIssueUpdate(details: Record<string, unknown> | null): string | null {
+  if (!details) return null;
+  const changes: string[] = [];
+  if (typeof details.status === "string") changes.push(`status \u2192 ${details.status}`);
+  if (typeof details.priority === "string") changes.push(`priority \u2192 ${details.priority}`);
+  if (typeof details.assigneeAgentId === "string") changes.push("reassigned");
+  else if (details.assigneeAgentId === null) changes.push("unassigned");
+  if (changes.length > 0) return changes.join(", ");
+  return null;
+}
+
+function buildActivityToast(
+  payload: Record<string, unknown>,
+  nameOf: (id: string) => string | null,
+): ToastInput | null {
   const entityType = readString(payload.entityType);
   const entityId = readString(payload.entityId);
   const action = readString(payload.action);
   const details = readRecord(payload.details);
+  const actorId = readString(payload.actorId);
+  const actorType = readString(payload.actorType);
 
   if (entityType !== "issue" || !entityId || !action || !ISSUE_TOAST_ACTIONS.has(action)) {
     return null;
   }
 
   const issueHref = `/issues/${entityId}`;
-  const issueLabel = details?.title && typeof details.title === "string"
-    ? details.title
-    : `Issue ${shortId(entityId)}`;
+  const issueTitle = details?.title && typeof details.title === "string"
+    ? truncate(details.title, 60)
+    : null;
+  const actorName = actorType === "agent" && actorId ? nameOf(actorId) : null;
+  const byLine = actorName ? ` by ${actorName}` : "";
 
   if (action === "issue.created") {
     return {
-      title: "Issue created",
-      body: issueLabel,
+      title: `Issue created${byLine}`,
+      body: issueTitle ?? `Issue ${shortId(entityId)}`,
       tone: "success",
       action: { label: "Open issue", href: issueHref },
       dedupeKey: `activity:${action}:${entityId}`,
@@ -53,9 +87,12 @@ function buildActivityToast(payload: Record<string, unknown>): ToastInput | null
   }
 
   if (action === "issue.updated") {
+    const changeDesc = describeIssueUpdate(details);
+    const label = issueTitle ?? `Issue ${shortId(entityId)}`;
+    const body = changeDesc ? `${label} \u2014 ${changeDesc}` : label;
     return {
-      title: "Issue updated",
-      body: issueLabel,
+      title: `Issue updated${byLine}`,
+      body: truncate(body, 100),
       tone: "info",
       action: { label: "Open issue", href: issueHref },
       dedupeKey: `activity:${action}:${entityId}`,
@@ -63,8 +100,9 @@ function buildActivityToast(payload: Record<string, unknown>): ToastInput | null
   }
 
   const commentId = readString(details?.commentId);
+  const issueLabel = issueTitle ?? `Issue ${shortId(entityId)}`;
   return {
-    title: "Issue comment added",
+    title: `New comment${byLine}`,
     body: issueLabel,
     tone: "info",
     action: { label: "Open issue", href: issueHref },
@@ -72,48 +110,55 @@ function buildActivityToast(payload: Record<string, unknown>): ToastInput | null
   };
 }
 
-function buildAgentStatusToast(payload: Record<string, unknown>): ToastInput | null {
+function buildAgentStatusToast(
+  payload: Record<string, unknown>,
+  nameOf: (id: string) => string | null,
+): ToastInput | null {
   const agentId = readString(payload.agentId);
   const status = readString(payload.status);
   if (!agentId || !status || !AGENT_TOAST_STATUSES.has(status)) return null;
 
   const tone = status === "error" ? "error" : status === "idle" ? "success" : "info";
+  const name = nameOf(agentId) ?? `Agent ${shortId(agentId)}`;
   const title =
     status === "running"
-      ? "Agent started"
+      ? `${name} started`
       : status === "idle"
-        ? "Agent is idle"
-        : "Agent error";
+        ? `${name} is idle`
+        : `${name} errored`;
 
   return {
     title,
-    body: `Agent ${shortId(agentId)}`,
     tone,
     action: { label: "View agent", href: `/agents/${agentId}` },
     dedupeKey: `agent-status:${agentId}:${status}`,
   };
 }
 
-function buildRunStatusToast(payload: Record<string, unknown>): ToastInput | null {
+function buildRunStatusToast(
+  payload: Record<string, unknown>,
+  nameOf: (id: string) => string | null,
+): ToastInput | null {
   const runId = readString(payload.runId);
   const agentId = readString(payload.agentId);
   const status = readString(payload.status);
   if (!runId || !agentId || !status || !TERMINAL_RUN_STATUSES.has(status)) return null;
 
   const error = readString(payload.error);
+  const name = nameOf(agentId) ?? `Agent ${shortId(agentId)}`;
   const tone = status === "succeeded" ? "success" : status === "cancelled" ? "warn" : "error";
   const title =
     status === "succeeded"
-      ? "Run succeeded"
+      ? `${name} run succeeded`
       : status === "failed"
-        ? "Run failed"
+        ? `${name} run failed`
         : status === "timed_out"
-          ? "Run timed out"
-          : "Run cancelled";
+          ? `${name} run timed out`
+          : `${name} run cancelled`;
 
   return {
     title,
-    body: error ?? `Agent ${shortId(agentId)} · Run ${shortId(runId)}`,
+    body: error ? truncate(error, 100) : undefined,
     tone,
     ttlMs: status === "succeeded" ? 5000 : 7000,
     action: { label: "View run", href: `/agents/${agentId}/runs/${runId}` },
@@ -238,7 +283,7 @@ function gatedPushToast(
 }
 
 function handleLiveEvent(
-  queryClient: ReturnType<typeof useQueryClient>,
+  queryClient: QueryClient,
   expectedCompanyId: string,
   event: LiveEvent,
   pushToast: (toast: ToastInput) => string | null,
@@ -246,6 +291,7 @@ function handleLiveEvent(
 ) {
   if (event.companyId !== expectedCompanyId) return;
 
+  const nameOf = (id: string) => resolveAgentName(queryClient, expectedCompanyId, id);
   const payload = event.payload ?? {};
   if (event.type === "heartbeat.run.log") {
     return;
@@ -254,7 +300,7 @@ function handleLiveEvent(
   if (event.type === "heartbeat.run.queued" || event.type === "heartbeat.run.status") {
     invalidateHeartbeatQueries(queryClient, expectedCompanyId, payload);
     if (event.type === "heartbeat.run.status") {
-      const toast = buildRunStatusToast(payload);
+      const toast = buildRunStatusToast(payload, nameOf);
       if (toast) gatedPushToast(gate, pushToast, "run-status", toast);
     }
     return;
@@ -270,7 +316,7 @@ function handleLiveEvent(
     queryClient.invalidateQueries({ queryKey: queryKeys.org(expectedCompanyId) });
     const agentId = readString(payload.agentId);
     if (agentId) queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId) });
-    const toast = buildAgentStatusToast(payload);
+    const toast = buildAgentStatusToast(payload, nameOf);
     if (toast) gatedPushToast(gate, pushToast, "agent-status", toast);
     return;
   }
@@ -278,7 +324,7 @@ function handleLiveEvent(
   if (event.type === "activity.logged") {
     invalidateActivityQueries(queryClient, expectedCompanyId, payload);
     const action = readString(payload.action);
-    const toast = buildActivityToast(payload);
+    const toast = buildActivityToast(payload, nameOf);
     if (toast) gatedPushToast(gate, pushToast, `activity:${action ?? "unknown"}`, toast);
   }
 }

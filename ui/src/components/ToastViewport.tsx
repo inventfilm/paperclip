@@ -1,13 +1,14 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { X } from "lucide-react";
-import { useToast, type ToastTone } from "../context/ToastContext";
+import { useToast, type ToastItem, type ToastTone } from "../context/ToastContext";
 import { cn } from "../lib/utils";
 
 const toneClasses: Record<ToastTone, string> = {
-  info: "border-border bg-card text-card-foreground",
-  success: "border-emerald-500/40 bg-emerald-50 text-emerald-950 dark:bg-emerald-900/30 dark:text-emerald-100",
-  warn: "border-amber-500/40 bg-amber-50 text-amber-950 dark:bg-amber-900/30 dark:text-amber-100",
-  error: "border-red-500/45 bg-red-50 text-red-950 dark:bg-red-900/35 dark:text-red-100",
+  info: "border-sky-500/25 bg-sky-950/60 text-sky-100",
+  success: "border-emerald-500/25 bg-emerald-950/60 text-emerald-100",
+  warn: "border-amber-500/25 bg-amber-950/60 text-amber-100",
+  error: "border-red-500/30 bg-red-950/60 text-red-100",
 };
 
 const toneDotClasses: Record<ToastTone, string> = {
@@ -16,6 +17,62 @@ const toneDotClasses: Record<ToastTone, string> = {
   warn: "bg-amber-400",
   error: "bg-red-400",
 };
+
+function AnimatedToast({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastItem;
+  onDismiss: (id: string) => void;
+}) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setVisible(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  return (
+    <li
+      className={cn(
+        "pointer-events-auto rounded-lg border shadow-lg backdrop-blur-xl transition-all duration-300 ease-out",
+        visible
+          ? "translate-y-0 opacity-100"
+          : "translate-y-3 opacity-0",
+        toneClasses[toast.tone],
+      )}
+    >
+      <div className="flex items-start gap-3 px-3 py-2.5">
+        <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full", toneDotClasses[toast.tone])} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold leading-5">{toast.title}</p>
+          {toast.body && (
+            <p className="mt-1 text-xs leading-4 opacity-70">
+              {toast.body}
+            </p>
+          )}
+          {toast.action && (
+            <Link
+              to={toast.action.href}
+              onClick={() => onDismiss(toast.id)}
+              className="mt-2 inline-flex text-xs font-medium underline underline-offset-4 hover:opacity-90"
+            >
+              {toast.action.label}
+            </Link>
+          )}
+        </div>
+        <button
+          type="button"
+          aria-label="Dismiss notification"
+          onClick={() => onDismiss(toast.id)}
+          className="mt-0.5 shrink-0 rounded p-1 opacity-50 hover:bg-white/10 hover:opacity-100"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </li>
+  );
+}
 
 export function ToastViewport() {
   const { toasts, dismissToast } = useToast();
@@ -26,46 +83,15 @@ export function ToastViewport() {
     <aside
       aria-live="polite"
       aria-atomic="false"
-      className="pointer-events-none fixed inset-x-0 top-3 z-[120] flex justify-center px-3 sm:inset-auto sm:right-4 sm:top-4 sm:w-full sm:max-w-sm"
+      className="pointer-events-none fixed bottom-3 left-3 z-[120] w-full max-w-sm px-1"
     >
-      <ol className="flex w-full flex-col gap-2">
+      <ol className="flex w-full flex-col-reverse gap-2">
         {toasts.map((toast) => (
-          <li
+          <AnimatedToast
             key={toast.id}
-            className={cn(
-              "pointer-events-auto rounded-lg border shadow-lg backdrop-blur-sm",
-              toneClasses[toast.tone],
-            )}
-          >
-            <div className="flex items-start gap-3 px-3 py-2.5">
-              <span className={cn("mt-1 h-2 w-2 shrink-0 rounded-full", toneDotClasses[toast.tone])} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold leading-5">{toast.title}</p>
-                {toast.body && (
-                  <p className="mt-1 text-xs leading-4 text-muted-foreground dark:text-foreground/70">
-                    {toast.body}
-                  </p>
-                )}
-                {toast.action && (
-                  <Link
-                    to={toast.action.href}
-                    onClick={() => dismissToast(toast.id)}
-                    className="mt-2 inline-flex text-xs font-medium underline underline-offset-4 hover:opacity-90"
-                  >
-                    {toast.action.label}
-                  </Link>
-                )}
-              </div>
-              <button
-                type="button"
-                aria-label="Dismiss notification"
-                onClick={() => dismissToast(toast.id)}
-                className="mt-0.5 shrink-0 rounded p-1 text-muted-foreground hover:bg-black/10 hover:text-foreground dark:hover:bg-white/10"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </li>
+            toast={toast}
+            onDismiss={dismissToast}
+          />
         ))}
       </ol>
     </aside>
