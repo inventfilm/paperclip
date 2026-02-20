@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Markdown from "react-markdown";
 import type { IssueComment, Agent } from "@paperclip/shared";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Identity } from "./Identity";
+import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { formatDate } from "../lib/utils";
 
 interface CommentWithRunMeta extends IssueComment {
@@ -25,6 +25,7 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
   const [body, setBody] = useState("");
   const [reopen, setReopen] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const editorRef = useRef<MarkdownEditorRef>(null);
 
   const isClosed = issueStatus ? CLOSED_STATUSES.has(issueStatus) : false;
 
@@ -34,8 +35,16 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
     [comments],
   );
 
-  async function handleSubmit(e?: React.FormEvent) {
-    e?.preventDefault();
+  // Build mention options from agent map
+  const mentions = useMemo<MentionOption[]>(() => {
+    if (!agentMap) return [];
+    return Array.from(agentMap.values()).map((a) => ({
+      id: a.id,
+      name: a.name,
+    }));
+  }, [agentMap]);
+
+  async function handleSubmit() {
     const trimmed = body.trim();
     if (!trimmed) return;
 
@@ -90,18 +99,15 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
         ))}
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-2">
-        <Textarea
-          placeholder="Leave a comment..."
+      <div className="space-y-2">
+        <MarkdownEditor
+          ref={editorRef}
           value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              handleSubmit();
-            }
-          }}
-          rows={3}
+          onChange={setBody}
+          placeholder="Leave a comment..."
+          mentions={mentions}
+          onSubmit={handleSubmit}
+          contentClassName="min-h-[60px] text-sm"
         />
         <div className="flex items-center justify-end gap-3">
           {isClosed && (
@@ -115,11 +121,11 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
               Re-open
             </label>
           )}
-          <Button type="submit" size="sm" disabled={!body.trim() || submitting}>
+          <Button size="sm" disabled={!body.trim() || submitting} onClick={handleSubmit}>
             {submitting ? "Posting..." : "Comment"}
           </Button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

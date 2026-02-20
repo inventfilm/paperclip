@@ -1,4 +1,13 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
 import {
   MDXEditor,
   type MDXEditorMethods,
@@ -14,6 +23,15 @@ import {
 } from "@mdxeditor/editor";
 import { cn } from "../lib/utils";
 
+/* ---- Mention types ---- */
+
+export interface MentionOption {
+  id: string;
+  name: string;
+}
+
+/* ---- Editor props ---- */
+
 interface MarkdownEditorProps {
   value: string;
   onChange: (value: string) => void;
@@ -23,11 +41,87 @@ interface MarkdownEditorProps {
   onBlur?: () => void;
   imageUploadHandler?: (file: File) => Promise<string>;
   bordered?: boolean;
+  /** List of mentionable users/agents. Enables @-mention autocomplete. */
+  mentions?: MentionOption[];
+  /** Called on Cmd/Ctrl+Enter */
+  onSubmit?: () => void;
 }
 
 export interface MarkdownEditorRef {
   focus: () => void;
 }
+
+/* ---- Mention detection helpers ---- */
+
+interface MentionState {
+  query: string;
+  top: number;
+  left: number;
+  textNode: Text;
+  atPos: number;
+  endPos: number;
+}
+
+function detectMention(container: HTMLElement): MentionState | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null;
+
+  const range = sel.getRangeAt(0);
+  const textNode = range.startContainer;
+  if (textNode.nodeType !== Node.TEXT_NODE) return null;
+  if (!container.contains(textNode)) return null;
+
+  const text = textNode.textContent ?? "";
+  const offset = range.startOffset;
+
+  // Walk backwards from cursor to find @
+  let atPos = -1;
+  for (let i = offset - 1; i >= 0; i--) {
+    const ch = text[i];
+    if (ch === "@") {
+      if (i === 0 || /\s/.test(text[i - 1])) {
+        atPos = i;
+      }
+      break;
+    }
+    if (/\s/.test(ch)) break;
+  }
+
+  if (atPos === -1) return null;
+
+  const query = text.slice(atPos + 1, offset);
+
+  // Get position relative to container
+  const tempRange = document.createRange();
+  tempRange.setStart(textNode, atPos);
+  tempRange.setEnd(textNode, atPos + 1);
+  const rect = tempRange.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+
+  return {
+    query,
+    top: rect.bottom - containerRect.top,
+    left: rect.left - containerRect.left,
+    textNode: textNode as Text,
+    atPos,
+    endPos: offset,
+  };
+}
+
+function insertMention(state: MentionState, option: MentionOption) {
+  const range = document.createRange();
+  range.setStart(state.textNode, state.atPos);
+  range.setEnd(state.textNode, state.endPos);
+
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+
+  // insertText preserves undo stack and triggers editor onChange
+  document.execCommand("insertText", false, `@${option.name} `);
+}
+
+/* ---- Component ---- */
 
 export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>(function MarkdownEditor({
   value,
@@ -38,6 +132,8 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   onBlur,
   imageUploadHandler,
   bordered = true,
+  mentions,
+  onSubmit,
 }: MarkdownEditorProps, forwardedRef) {
   const containerRef = useRef<HTMLDivElement>(null);
   const ref = useRef<MDXEditorMethods>(null);
@@ -45,6 +141,17 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const dragDepthRef = useRef(0);
+
+  // Mention state
+  const [mentionState, setMentionState] = useState<MentionState | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionActive = mentionState !== null && mentions && mentions.length > 0;
+
+  const filteredMentions = useMemo(() => {
+    if (!mentionState || !mentions) return [];
+    const q = mentionState.query.toLowerCase();
+    return mentions.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [mentionState?.query, mentions]);
 
   useImperativeHandle(forwardedRef, () => ({
     focus: () => {
@@ -66,7 +173,6 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           }
         }
       : undefined;
-    const withImage = Boolean(imageHandler);
     const all: RealmPlugin[] = [
       headingsPlugin(),
       listsPlugin(),
@@ -89,6 +195,37 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     }
   }, [value]);
 
+  // Mention detection: listen for selection changes and input events
+  const checkMention = useCallback(() => {
+    if (!mentions || mentions.length === 0 || !containerRef.current) {
+      setMentionState(null);
+      return;
+    }
+    const result = detectMention(containerRef.current);
+    if (result) {
+      setMentionState(result);
+      setMentionIndex(0);
+    } else {
+      setMentionState(null);
+    }
+  }, [mentions]);
+
+  useEffect(() => {
+    if (!mentions || mentions.length === 0) return;
+
+    document.addEventListener("selectionchange", checkMention);
+    return () => document.removeEventListener("selectionchange", checkMention);
+  }, [checkMention, mentions]);
+
+  const selectMention = useCallback(
+    (option: MentionOption) => {
+      if (!mentionState) return;
+      insertMention(mentionState, option);
+      setMentionState(null);
+    },
+    [mentionState],
+  );
+
   function hasFilePayload(evt: DragEvent<HTMLDivElement>) {
     return Array.from(evt.dataTransfer?.types ?? []).includes("Files");
   }
@@ -104,6 +241,43 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         isDragOver && "ring-1 ring-primary/60 bg-accent/20",
         className,
       )}
+      onKeyDownCapture={(e) => {
+        // Cmd/Ctrl+Enter to submit
+        if (onSubmit && e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+          e.preventDefault();
+          e.stopPropagation();
+          onSubmit();
+          return;
+        }
+
+        // Mention keyboard navigation
+        if (mentionActive && filteredMentions.length > 0) {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            e.stopPropagation();
+            setMentionIndex((prev) => Math.min(prev + 1, filteredMentions.length - 1));
+            return;
+          }
+          if (e.key === "ArrowUp") {
+            e.preventDefault();
+            e.stopPropagation();
+            setMentionIndex((prev) => Math.max(prev - 1, 0));
+            return;
+          }
+          if (e.key === "Enter" || e.key === "Tab") {
+            e.preventDefault();
+            e.stopPropagation();
+            selectMention(filteredMentions[mentionIndex]);
+            return;
+          }
+          if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            setMentionState(null);
+            return;
+          }
+        }
+      }}
       onDragEnter={(evt) => {
         if (!canDropImage || !hasFilePayload(evt)) return;
         dragDepthRef.current += 1;
@@ -114,7 +288,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         evt.preventDefault();
         evt.dataTransfer.dropEffect = "copy";
       }}
-      onDragLeave={(evt) => {
+      onDragLeave={() => {
         if (!canDropImage) return;
         dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
         if (dragDepthRef.current === 0) setIsDragOver(false);
@@ -141,6 +315,33 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
         overlayContainer={containerRef.current}
         plugins={plugins}
       />
+
+      {/* Mention dropdown */}
+      {mentionActive && filteredMentions.length > 0 && (
+        <div
+          className="absolute z-50 min-w-[180px] max-h-[200px] overflow-y-auto rounded-md border border-border bg-popover shadow-md"
+          style={{ top: mentionState.top + 4, left: mentionState.left }}
+        >
+          {filteredMentions.map((option, i) => (
+            <button
+              key={option.id}
+              className={cn(
+                "flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-accent/50 transition-colors",
+                i === mentionIndex && "bg-accent",
+              )}
+              onMouseDown={(e) => {
+                e.preventDefault(); // prevent blur
+                selectMention(option);
+              }}
+              onMouseEnter={() => setMentionIndex(i)}
+            >
+              <span className="text-muted-foreground">@</span>
+              <span>{option.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {isDragOver && canDropImage && (
         <div
           className={cn(
