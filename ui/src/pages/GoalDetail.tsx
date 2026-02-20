@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
+import { assetsApi } from "../api/assets";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -51,6 +52,13 @@ export function GoalDetail() {
     },
   });
 
+  const uploadImage = useMutation({
+    mutationFn: async (file: File) => {
+      if (!selectedCompanyId) throw new Error("No company selected");
+      return assetsApi.uploadImage(selectedCompanyId, file, `goals/${goalId ?? "draft"}`);
+    },
+  });
+
   const childGoals = (allGoals ?? []).filter((g) => g.parentId === goalId);
   const linkedProjects = (allProjects ?? []).filter((p) => p.goalId === goalId);
 
@@ -96,6 +104,10 @@ export function GoalDetail() {
           className="text-sm text-muted-foreground"
           placeholder="Add a description..."
           multiline
+          imageUploadHandler={async (file) => {
+            const asset = await uploadImage.mutateAsync(file);
+            return asset.contentPath;
+          }}
         />
       </div>
 

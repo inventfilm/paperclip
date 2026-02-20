@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { projectsApi } from "../api/projects";
 import { goalsApi } from "../api/goals";
+import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
@@ -22,6 +23,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
 import type { Goal } from "@paperclip/shared";
 
@@ -46,6 +48,7 @@ export function NewProjectDialog() {
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
+  const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
   const { data: goals } = useQuery({
     queryKey: queryKeys.goals.list(selectedCompanyId!),
@@ -60,6 +63,13 @@ export function NewProjectDialog() {
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId!) });
       reset();
       closeNewProject();
+    },
+  });
+
+  const uploadDescriptionImage = useMutation({
+    mutationFn: async (file: File) => {
+      if (!selectedCompanyId) throw new Error("No company selected");
+      return assetsApi.uploadImage(selectedCompanyId, file, "projects/drafts");
     },
   });
 
@@ -145,20 +155,29 @@ export function NewProjectDialog() {
             placeholder="Project name"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Tab" && !e.shiftKey) {
+                e.preventDefault();
+                descriptionEditorRef.current?.focus();
+              }
+            }}
             autoFocus
           />
         </div>
 
         {/* Description */}
         <div className="px-4 pb-2">
-          <textarea
-            className={cn(
-              "w-full bg-transparent outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/40 resize-none",
-              expanded ? "min-h-[160px]" : "min-h-[48px]"
-            )}
-            placeholder="Add description..."
+          <MarkdownEditor
+            ref={descriptionEditorRef}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={setDescription}
+            placeholder="Add description..."
+            bordered={false}
+            contentClassName={cn("text-sm text-muted-foreground", expanded ? "min-h-[220px]" : "min-h-[120px]")}
+            imageUploadHandler={async (file) => {
+              const asset = await uploadDescriptionImage.mutateAsync(file);
+              return asset.contentPath;
+            }}
           />
         </div>
 

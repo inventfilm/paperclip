@@ -19,6 +19,7 @@ import { activityRoutes } from "./routes/activity.js";
 import { dashboardRoutes } from "./routes/dashboard.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
 import { llmRoutes } from "./routes/llms.js";
+import { assetRoutes } from "./routes/assets.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 
@@ -35,6 +36,7 @@ export async function createApp(db: Db, opts: { uiMode: UiMode; storageService: 
   api.use("/health", healthRoutes());
   api.use("/companies", companyRoutes(db));
   api.use(agentRoutes(db));
+  api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
   api.use(issueRoutes(db, opts.storageService));
   api.use(goalRoutes(db));

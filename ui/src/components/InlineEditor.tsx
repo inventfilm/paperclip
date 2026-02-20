@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import Markdown from "react-markdown";
 import { cn } from "../lib/utils";
+import { Button } from "@/components/ui/button";
+import { MarkdownEditor } from "./MarkdownEditor";
 
 interface InlineEditorProps {
   value: string;
@@ -9,6 +11,7 @@ interface InlineEditorProps {
   className?: string;
   placeholder?: string;
   multiline?: boolean;
+  imageUploadHandler?: (file: File) => Promise<string>;
 }
 
 /** Shared padding so display and edit modes occupy the exact same box. */
@@ -21,6 +24,7 @@ export function InlineEditor({
   className,
   placeholder = "Click to edit...",
   multiline = false,
+  imageUploadHandler,
 }: InlineEditorProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -68,6 +72,35 @@ export function InlineEditor({
   }
 
   if (editing) {
+    if (multiline) {
+      return (
+        <div className={cn("space-y-2", pad)}>
+          <MarkdownEditor
+            value={draft}
+            onChange={setDraft}
+            placeholder={placeholder}
+            contentClassName={className}
+            imageUploadHandler={imageUploadHandler}
+          />
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setDraft(value);
+                setEditing(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button size="sm" onClick={commit}>
+              Save
+            </Button>
+          </div>
+        </div>
+      );
+    }
+
     const sharedProps = {
       ref: inputRef as any,
       value: draft,
@@ -80,21 +113,6 @@ export function InlineEditor({
       onBlur: commit,
       onKeyDown: handleKeyDown,
     };
-
-    if (multiline) {
-      return (
-        <textarea
-          {...sharedProps}
-          rows={1}
-          className={cn(
-            "w-full resize-none bg-accent/30 rounded outline-none",
-            pad,
-            "py-0.5",
-            className
-          )}
-        />
-      );
-    }
 
     return (
       <input

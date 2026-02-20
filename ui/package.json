@@ -10,6 +10,7 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
+    "@mdxeditor/editor": "^3.52.4",
     "@paperclip/adapter-claude-local": "workspace:*",
     "@paperclip/adapter-codex-local": "workspace:*",
     "@paperclip/adapter-utils": "workspace:*",

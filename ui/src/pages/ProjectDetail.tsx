@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { projectsApi } from "../api/projects";
 import { issuesApi } from "../api/issues";
+import { assetsApi } from "../api/assets";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -48,6 +49,13 @@ export function ProjectDetail() {
     onSuccess: invalidateProject,
   });
 
+  const uploadImage = useMutation({
+    mutationFn: async (file: File) => {
+      if (!selectedCompanyId) throw new Error("No company selected");
+      return assetsApi.uploadImage(selectedCompanyId, file, `projects/${projectId ?? "draft"}`);
+    },
+  });
+
   useEffect(() => {
     setBreadcrumbs([
       { label: "Projects", href: "/projects" },
@@ -83,6 +91,10 @@ export function ProjectDetail() {
           className="text-sm text-muted-foreground"
           placeholder="Add a description..."
           multiline
+          imageUploadHandler={async (file) => {
+            const asset = await uploadImage.mutateAsync(file);
+            return asset.contentPath;
+          }}
         />
       </div>
 

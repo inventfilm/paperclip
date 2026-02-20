@@ -5,6 +5,7 @@ import { useCompany } from "../context/CompanyContext";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
+import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
@@ -31,6 +32,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import type { Project, Agent } from "@paperclip/shared";
 
 const DRAFT_KEY = "paperclip:issue-draft";
@@ -98,6 +100,7 @@ export function NewIssueDialog() {
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [projectOpen, setProjectOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -120,6 +123,13 @@ export function NewIssueDialog() {
       clearDraft();
       reset();
       closeNewIssue();
+    },
+  });
+
+  const uploadDescriptionImage = useMutation({
+    mutationFn: async (file: File) => {
+      if (!selectedCompanyId) throw new Error("No company selected");
+      return assetsApi.uploadImage(selectedCompanyId, file, "issues/drafts");
     },
   });
 
@@ -263,20 +273,29 @@ export function NewIssueDialog() {
             placeholder="Issue title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Tab" && !e.shiftKey) {
+                e.preventDefault();
+                descriptionEditorRef.current?.focus();
+              }
+            }}
             autoFocus
           />
         </div>
 
         {/* Description */}
         <div className={cn("px-4 pb-2", expanded ? "flex-1 min-h-0" : "")}>
-          <textarea
-            className={cn(
-              "w-full bg-transparent outline-none text-sm text-muted-foreground placeholder:text-muted-foreground/40 resize-none",
-              expanded ? "h-full" : "min-h-[60px]"
-            )}
-            placeholder="Add description..."
+          <MarkdownEditor
+            ref={descriptionEditorRef}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={setDescription}
+            placeholder="Add description..."
+            bordered={false}
+            contentClassName={cn("text-sm text-muted-foreground", expanded ? "min-h-[220px]" : "min-h-[120px]")}
+            imageUploadHandler={async (file) => {
+              const asset = await uploadDescriptionImage.mutateAsync(file);
+              return asset.contentPath;
+            }}
           />
         </div>
 

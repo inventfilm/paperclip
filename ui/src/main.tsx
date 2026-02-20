@@ -10,6 +10,7 @@ import { PanelProvider } from "./context/PanelContext";
 import { SidebarProvider } from "./context/SidebarContext";
 import { DialogProvider } from "./context/DialogContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import "@mdxeditor/editor/style.css";
 import "./index.css";
 
 const queryClient = new QueryClient({

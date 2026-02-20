@@ -454,6 +454,10 @@ export function IssueDetail() {
           className="text-sm text-muted-foreground"
           placeholder="Add a description..."
           multiline
+          imageUploadHandler={async (file) => {
+            const attachment = await uploadAttachment.mutateAsync(file);
+            return attachment.contentPath;
+          }}
         />
       </div>
 
