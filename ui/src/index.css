@@ -237,12 +237,12 @@
 
 .paperclip-mdxeditor .mdxeditor-root-contenteditable {
   min-height: 2.5rem;
-  padding: 0.375rem 0.625rem;
+  padding: 0;
   line-height: 1.5;
 }
 
-.paperclip-mdxeditor--borderless .mdxeditor-root-contenteditable {
-  padding: 0;
+.paperclip-mdxeditor [class*="_contentEditable_"] {
+  padding: 0.375rem 0.625rem !important;
 }
 
 .paperclip-mdxeditor--borderless [class*="_contentEditable_"] {
@@ -250,15 +250,10 @@
 }
 
 .paperclip-mdxeditor [class*="_placeholder_"] {
-  padding: 0.375rem 0.625rem;
   font-family: inherit;
   font-size: 0.875rem;
   line-height: 1.5;
   color: var(--muted-foreground);
-}
-
-.paperclip-mdxeditor--borderless [class*="_placeholder_"] {
-  padding: 0;
 }
 
 .paperclip-mdxeditor-content {
