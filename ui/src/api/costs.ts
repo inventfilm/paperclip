@@ -1,9 +1,9 @@
 import type { CostSummary, CostByAgent } from "@paperclip/shared";
 import { api } from "./client";
 
-export interface CostByEntity {
-  agentId?: string | null;
-  projectId?: string | null;
+export interface CostByProject {
+  projectId: string | null;
+  projectName: string | null;
   costCents: number;
   inputTokens: number;
   outputTokens: number;
@@ -23,5 +23,5 @@ export const costsApi = {
   byAgent: (companyId: string, from?: string, to?: string) =>
     api.get<CostByAgent[]>(`/companies/${companyId}/costs/by-agent${dateParams(from, to)}`),
   byProject: (companyId: string, from?: string, to?: string) =>
-    api.get<CostByEntity[]>(`/companies/${companyId}/costs/by-project${dateParams(from, to)}`),
+    api.get<CostByProject[]>(`/companies/${companyId}/costs/by-project${dateParams(from, to)}`),
 };

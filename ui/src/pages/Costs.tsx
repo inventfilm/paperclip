@@ -202,16 +202,16 @@ export function Costs() {
               <CardContent className="p-4">
                 <h3 className="text-sm font-semibold mb-3">By Project</h3>
                 {data.byProject.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No project-attributed costs yet.</p>
+                  <p className="text-sm text-muted-foreground">No project-attributed run costs yet.</p>
                 ) : (
                   <div className="space-y-2">
-                    {data.byProject.map((row, idx) => (
+                    {data.byProject.map((row) => (
                       <div
-                        key={`${row.projectId ?? "na"}-${idx}`}
+                        key={row.projectId ?? "na"}
                         className="flex items-center justify-between text-sm"
                       >
-                        <span className="font-mono text-xs truncate">
-                          {row.projectId ?? "Unattributed"}
+                        <span className="truncate">
+                          {row.projectName ?? row.projectId ?? "Unattributed"}
                         </span>
                         <span className="font-medium">{formatCents(row.costCents)}</span>
                       </div>

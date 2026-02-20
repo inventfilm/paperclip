@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
-import { agents, companies, costEvents } from "@paperclip/db";
+import { activityLog, agents, companies, costEvents, heartbeatRuns, issues, projects } from "@paperclip/db";
 import { notFound, unprocessable } from "../errors.js";
 
 export interface CostDateRange {
@@ -122,24 +122,51 @@ export function costService(db: Db) {
     },
 
     byProject: async (companyId: string, range?: CostDateRange) => {
-      const conditions: ReturnType<typeof eq>[] = [
-        eq(costEvents.companyId, companyId),
-        isNotNull(costEvents.projectId),
-      ];
-      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
-      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+      const issueIdAsText = sql<string>`${issues.id}::text`;
+      const runProjectLinks = db
+        .selectDistinctOn([activityLog.runId, issues.projectId], {
+          runId: sql<string>`${activityLog.runId}`,
+          projectId: sql<string>`${issues.projectId}`,
+        })
+        .from(activityLog)
+        .innerJoin(
+          issues,
+          and(
+            eq(activityLog.entityType, "issue"),
+            eq(activityLog.entityId, issueIdAsText),
+          ),
+        )
+        .where(
+          and(
+            eq(activityLog.companyId, companyId),
+            eq(issues.companyId, companyId),
+            isNotNull(activityLog.runId),
+            isNotNull(issues.projectId),
+          ),
+        )
+        .orderBy(activityLog.runId, issues.projectId, desc(activityLog.createdAt))
+        .as("run_project_links");
+
+      const conditions: ReturnType<typeof eq>[] = [eq(heartbeatRuns.companyId, companyId)];
+      if (range?.from) conditions.push(gte(heartbeatRuns.finishedAt, range.from));
+      if (range?.to) conditions.push(lte(heartbeatRuns.finishedAt, range.to));
+
+      const costCentsExpr = sql<number>`coalesce(sum(round(coalesce((${heartbeatRuns.usageJson} ->> 'costUsd')::numeric, 0) * 100)), 0)::int`;
 
       return db
         .select({
-          projectId: costEvents.projectId,
-          costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
-          inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)::int`,
-          outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)::int`,
+          projectId: runProjectLinks.projectId,
+          projectName: projects.name,
+          costCents: costCentsExpr,
+          inputTokens: sql<number>`coalesce(sum(coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0)), 0)::int`,
+          outputTokens: sql<number>`coalesce(sum(coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0)), 0)::int`,
         })
-        .from(costEvents)
+        .from(runProjectLinks)
+        .innerJoin(heartbeatRuns, eq(runProjectLinks.runId, heartbeatRuns.id))
+        .innerJoin(projects, eq(runProjectLinks.projectId, projects.id))
         .where(and(...conditions))
-        .groupBy(costEvents.projectId)
-        .orderBy(desc(sql`coalesce(sum(${costEvents.costCents}), 0)::int`));
+        .groupBy(runProjectLinks.projectId, projects.name)
+        .orderBy(desc(costCentsExpr));
     },
   };
 }
