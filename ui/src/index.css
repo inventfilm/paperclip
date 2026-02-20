@@ -242,7 +242,11 @@
 }
 
 .paperclip-mdxeditor--borderless .mdxeditor-root-contenteditable {
-  padding: 0.2rem 0;
+  padding: 0;
+}
+
+.paperclip-mdxeditor--borderless [class*="_contentEditable_"] {
+  padding: 0 !important;
 }
 
 .paperclip-mdxeditor [class*="_placeholder_"] {
@@ -254,7 +258,7 @@
 }
 
 .paperclip-mdxeditor--borderless [class*="_placeholder_"] {
-  padding: 0.2rem 0;
+  padding: 0;
 }
 
 .paperclip-mdxeditor-content {

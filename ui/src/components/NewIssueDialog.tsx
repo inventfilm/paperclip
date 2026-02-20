@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { useToast } from "../context/ToastContext";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
@@ -83,6 +84,7 @@ const priorities = [
 export function NewIssueDialog() {
   const { newIssueOpen, newIssueDefaults, closeNewIssue } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
+  const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -117,12 +119,19 @@ export function NewIssueDialog() {
   const createIssue = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       issuesApi.create(selectedCompanyId!, data),
-    onSuccess: () => {
+    onSuccess: (issue) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
       if (draftTimer.current) clearTimeout(draftTimer.current);
       clearDraft();
       reset();
       closeNewIssue();
+      pushToast({
+        dedupeKey: `issue-created-${issue.id}`,
+        title: `${issue.identifier ?? "Issue"} created`,
+        body: issue.title,
+        tone: "success",
+        action: { label: "View issue", href: `/issues/${issue.id}` },
+      });
     },
   });
 

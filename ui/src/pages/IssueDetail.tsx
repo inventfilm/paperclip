@@ -6,6 +6,7 @@ import { activityApi } from "../api/activity";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
+import { useToast } from "../context/ToastContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -110,6 +111,7 @@ function ActorIdentity({ evt, agentMap }: { evt: ActivityEvent; agentMap: Map<st
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
+  const { pushToast } = useToast();
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
@@ -253,7 +255,14 @@ export function IssueDetail() {
 
   const updateIssue = useMutation({
     mutationFn: (data: Record<string, unknown>) => issuesApi.update(issueId!, data),
-    onSuccess: invalidateIssue,
+    onSuccess: (updated) => {
+      invalidateIssue();
+      pushToast({
+        dedupeKey: `issue-updated-${updated.id}`,
+        title: "Issue updated",
+        tone: "success",
+      });
+    },
   });
 
   const addComment = useMutation({
@@ -262,6 +271,11 @@ export function IssueDetail() {
     onSuccess: () => {
       invalidateIssue();
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+      pushToast({
+        dedupeKey: `issue-comment-${issueId}`,
+        title: "Comment posted",
+        tone: "success",
+      });
     },
   });
 

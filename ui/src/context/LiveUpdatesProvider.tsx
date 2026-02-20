@@ -2,10 +2,119 @@ import { useEffect, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { LiveEvent } from "@paperclip/shared";
 import { useCompany } from "./CompanyContext";
+import type { ToastInput } from "./ToastContext";
+import { useToast } from "./ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function shortId(value: string) {
+  return value.slice(0, 8);
+}
+
+const ISSUE_TOAST_ACTIONS = new Set(["issue.created", "issue.updated", "issue.comment_added"]);
+const AGENT_TOAST_STATUSES = new Set(["running", "idle", "error"]);
+const TERMINAL_RUN_STATUSES = new Set(["succeeded", "failed", "timed_out", "cancelled"]);
+
+function buildActivityToast(payload: Record<string, unknown>): ToastInput | null {
+  const entityType = readString(payload.entityType);
+  const entityId = readString(payload.entityId);
+  const action = readString(payload.action);
+  const details = readRecord(payload.details);
+
+  if (entityType !== "issue" || !entityId || !action || !ISSUE_TOAST_ACTIONS.has(action)) {
+    return null;
+  }
+
+  const issueHref = `/issues/${entityId}`;
+  const issueLabel = details?.title && typeof details.title === "string"
+    ? details.title
+    : `Issue ${shortId(entityId)}`;
+
+  if (action === "issue.created") {
+    return {
+      title: "Issue created",
+      body: issueLabel,
+      tone: "success",
+      action: { label: "Open issue", href: issueHref },
+      dedupeKey: `activity:${action}:${entityId}`,
+    };
+  }
+
+  if (action === "issue.updated") {
+    return {
+      title: "Issue updated",
+      body: issueLabel,
+      tone: "info",
+      action: { label: "Open issue", href: issueHref },
+      dedupeKey: `activity:${action}:${entityId}`,
+    };
+  }
+
+  const commentId = readString(details?.commentId);
+  return {
+    title: "Issue comment added",
+    body: issueLabel,
+    tone: "info",
+    action: { label: "Open issue", href: issueHref },
+    dedupeKey: `activity:${action}:${entityId}:${commentId ?? "na"}`,
+  };
+}
+
+function buildAgentStatusToast(payload: Record<string, unknown>): ToastInput | null {
+  const agentId = readString(payload.agentId);
+  const status = readString(payload.status);
+  if (!agentId || !status || !AGENT_TOAST_STATUSES.has(status)) return null;
+
+  const tone = status === "error" ? "error" : status === "idle" ? "success" : "info";
+  const title =
+    status === "running"
+      ? "Agent started"
+      : status === "idle"
+        ? "Agent is idle"
+        : "Agent error";
+
+  return {
+    title,
+    body: `Agent ${shortId(agentId)}`,
+    tone,
+    action: { label: "View agent", href: `/agents/${agentId}` },
+    dedupeKey: `agent-status:${agentId}:${status}`,
+  };
+}
+
+function buildRunStatusToast(payload: Record<string, unknown>): ToastInput | null {
+  const runId = readString(payload.runId);
+  const agentId = readString(payload.agentId);
+  const status = readString(payload.status);
+  if (!runId || !agentId || !status || !TERMINAL_RUN_STATUSES.has(status)) return null;
+
+  const error = readString(payload.error);
+  const tone = status === "succeeded" ? "success" : status === "cancelled" ? "warn" : "error";
+  const title =
+    status === "succeeded"
+      ? "Run succeeded"
+      : status === "failed"
+        ? "Run failed"
+        : status === "timed_out"
+          ? "Run timed out"
+          : "Run cancelled";
+
+  return {
+    title,
+    body: error ?? `Agent ${shortId(agentId)} · Run ${shortId(runId)}`,
+    tone,
+    ttlMs: status === "succeeded" ? 5000 : 7000,
+    action: { label: "View run", href: `/agents/${agentId}/runs/${runId}` },
+    dedupeKey: `run-status:${runId}:${status}`,
+  };
 }
 
 function invalidateHeartbeatQueries(
@@ -93,6 +202,7 @@ function handleLiveEvent(
   queryClient: ReturnType<typeof useQueryClient>,
   expectedCompanyId: string,
   event: LiveEvent,
+  pushToast: (toast: ToastInput) => string | null,
 ) {
   if (event.companyId !== expectedCompanyId) return;
 
@@ -103,6 +213,10 @@ function handleLiveEvent(
 
   if (event.type === "heartbeat.run.queued" || event.type === "heartbeat.run.status") {
     invalidateHeartbeatQueries(queryClient, expectedCompanyId, payload);
+    if (event.type === "heartbeat.run.status") {
+      const toast = buildRunStatusToast(payload);
+      if (toast) pushToast(toast);
+    }
     return;
   }
 
@@ -116,17 +230,22 @@ function handleLiveEvent(
     queryClient.invalidateQueries({ queryKey: queryKeys.org(expectedCompanyId) });
     const agentId = readString(payload.agentId);
     if (agentId) queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId) });
+    const toast = buildAgentStatusToast(payload);
+    if (toast) pushToast(toast);
     return;
   }
 
   if (event.type === "activity.logged") {
     invalidateActivityQueries(queryClient, expectedCompanyId, payload);
+    const toast = buildActivityToast(payload);
+    if (toast) pushToast(toast);
   }
 }
 
 export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
+  const { pushToast } = useToast();
 
   useEffect(() => {
     if (!selectedCompanyId) return;
@@ -169,7 +288,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
 
         try {
           const parsed = JSON.parse(raw) as LiveEvent;
-          handleLiveEvent(queryClient, selectedCompanyId, parsed);
+          handleLiveEvent(queryClient, selectedCompanyId, parsed, pushToast);
         } catch {
           // Ignore non-JSON payloads.
         }
@@ -198,7 +317,7 @@ export function LiveUpdatesProvider({ children }: { children: ReactNode }) {
         socket.close(1000, "provider_unmount");
       }
     };
-  }, [queryClient, selectedCompanyId]);
+  }, [queryClient, selectedCompanyId, pushToast]);
 
   return <>{children}</>;
 }

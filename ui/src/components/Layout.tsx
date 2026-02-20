@@ -9,6 +9,7 @@ import { NewProjectDialog } from "./NewProjectDialog";
 import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { OnboardingWizard } from "./OnboardingWizard";
+import { ToastViewport } from "./ToastViewport";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
@@ -88,6 +89,7 @@ export function Layout() {
       <NewGoalDialog />
       <NewAgentDialog />
       <OnboardingWizard />
+      <ToastViewport />
     </div>
   );
 }
