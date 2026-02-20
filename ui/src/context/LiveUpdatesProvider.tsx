@@ -173,9 +173,14 @@ function buildActivityToast(
   }
 
   const commentId = readString(details?.commentId);
+  const bodySnippet = readString(details?.bodySnippet);
   return {
-    title: `${actor} posted a comment on ${issue.ref}`,
-    body: issue.title ? truncate(issue.title, 96) : undefined,
+    title: `${actor} commented on ${issue.ref}`,
+    body: bodySnippet
+      ? truncate(bodySnippet.replace(/^#+\s*/m, "").replace(/\n/g, " "), 96)
+      : issue.title
+        ? truncate(issue.title, 96)
+        : undefined,
     tone: "info",
     action: { label: `View ${issue.ref}`, href: issue.href },
     dedupeKey: `activity:${action}:${entityId}:${commentId ?? "na"}`,
@@ -185,6 +190,8 @@ function buildActivityToast(
 function buildAgentStatusToast(
   payload: Record<string, unknown>,
   nameOf: (id: string) => string | null,
+  queryClient: QueryClient,
+  companyId: string,
 ): ToastInput | null {
   const agentId = readString(payload.agentId);
   const status = readString(payload.status);
@@ -199,8 +206,13 @@ function buildAgentStatusToast(
         ? `${name} is idle`
         : `${name} errored`;
 
+  const agents = queryClient.getQueryData<Agent[]>(queryKeys.agents.list(companyId));
+  const agent = agents?.find((a) => a.id === agentId);
+  const body = agent?.title ?? undefined;
+
   return {
     title,
+    body,
     tone,
     action: { label: "View agent", href: `/agents/${agentId}` },
     dedupeKey: `agent-status:${agentId}:${status}`,
@@ -217,20 +229,26 @@ function buildRunStatusToast(
   if (!runId || !agentId || !status || !TERMINAL_RUN_STATUSES.has(status)) return null;
 
   const error = readString(payload.error);
+  const triggerDetail = readString(payload.triggerDetail);
   const name = nameOf(agentId) ?? `Agent ${shortId(agentId)}`;
   const tone = status === "succeeded" ? "success" : status === "cancelled" ? "warn" : "error";
-  const title =
-    status === "succeeded"
-      ? `${name} run succeeded`
-      : status === "failed"
-        ? `${name} run failed`
-        : status === "timed_out"
-          ? `${name} run timed out`
-          : `${name} run cancelled`;
+  const statusLabel =
+    status === "succeeded" ? "succeeded"
+      : status === "failed" ? "failed"
+        : status === "timed_out" ? "timed out"
+          : "cancelled";
+  const title = `${name} run ${statusLabel}`;
+
+  let body: string | undefined;
+  if (error) {
+    body = truncate(error, 100);
+  } else if (triggerDetail) {
+    body = `Trigger: ${triggerDetail}`;
+  }
 
   return {
     title,
-    body: error ? truncate(error, 100) : undefined,
+    body,
     tone,
     ttlMs: status === "succeeded" ? 5000 : 7000,
     action: { label: "View run", href: `/agents/${agentId}/runs/${runId}` },
@@ -388,7 +406,7 @@ function handleLiveEvent(
     queryClient.invalidateQueries({ queryKey: queryKeys.org(expectedCompanyId) });
     const agentId = readString(payload.agentId);
     if (agentId) queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId) });
-    const toast = buildAgentStatusToast(payload, nameOf);
+    const toast = buildAgentStatusToast(payload, nameOf, queryClient, expectedCompanyId);
     if (toast) gatedPushToast(gate, pushToast, "agent-status", toast);
     return;
   }

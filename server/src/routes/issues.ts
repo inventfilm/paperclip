@@ -302,7 +302,12 @@ export function issueRoutes(db: Db, storage: StorageService) {
         action: "issue.comment_added",
         entityType: "issue",
         entityId: issue.id,
-        details: { commentId: comment.id },
+        details: {
+          commentId: comment.id,
+          bodySnippet: comment.body.slice(0, 120),
+          identifier: issue.identifier,
+          issueTitle: issue.title,
+        },
       });
 
     }
@@ -557,7 +562,12 @@ export function issueRoutes(db: Db, storage: StorageService) {
       action: "issue.comment_added",
       entityType: "issue",
       entityId: currentIssue.id,
-      details: { commentId: comment.id },
+      details: {
+        commentId: comment.id,
+        bodySnippet: comment.body.slice(0, 120),
+        identifier: currentIssue.identifier,
+        issueTitle: currentIssue.title,
+      },
     });
 
     // Merge all wakeups from this comment into one enqueue per agent to avoid duplicate runs.
