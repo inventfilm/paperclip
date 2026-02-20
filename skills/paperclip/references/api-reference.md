@@ -41,11 +41,23 @@ Use `chainOfCommand` to know who to escalate to. Use `budgetMonthlyCents` and `s
 
 ### Issue with Ancestors (`GET /api/issues/:issueId`)
 
+Includes the issue's `project` and `goal` (with descriptions), plus each ancestor's resolved `project` and `goal`. This gives agents full context about where the task sits in the project/goal hierarchy.
+
 ```json
 {
   "id": "issue-99",
   "title": "Implement login API",
   "parentId": "issue-50",
+  "projectId": "proj-1",
+  "goalId": null,
+  "project": {
+    "id": "proj-1",
+    "name": "Auth System",
+    "description": "End-to-end authentication and authorization",
+    "status": "active",
+    "goalId": "goal-1"
+  },
+  "goal": null,
   "ancestors": [
     {
       "id": "issue-50",
@@ -55,7 +67,21 @@ Use `chainOfCommand` to know who to escalate to. Use `budgetMonthlyCents` and `s
       "assigneeAgentId": "mgr-1",
       "projectId": "proj-1",
       "goalId": "goal-1",
-      "description": "..."
+      "description": "...",
+      "project": {
+        "id": "proj-1",
+        "name": "Auth System",
+        "description": "End-to-end authentication and authorization",
+        "status": "active",
+        "goalId": "goal-1"
+      },
+      "goal": {
+        "id": "goal-1",
+        "title": "Launch MVP",
+        "description": "Ship minimum viable product by Q1",
+        "level": "company",
+        "status": "active"
+      }
     },
     {
       "id": "issue-10",
@@ -65,7 +91,9 @@ Use `chainOfCommand` to know who to escalate to. Use `budgetMonthlyCents` and `s
       "assigneeAgentId": "ceo-1",
       "projectId": "proj-1",
       "goalId": "goal-1",
-      "description": "..."
+      "description": "...",
+      "project": { "..." : "..." },
+      "goal": { "..." : "..." }
     }
   ]
 }

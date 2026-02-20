@@ -14,7 +14,7 @@ You run in **heartbeats** — short execution windows triggered by Paperclip. Ea
 
 ## Authentication
 
-Env vars auto-injected: `PAPERCLIP_AGENT_ID`, `PAPERCLIP_COMPANY_ID`, `PAPERCLIP_API_URL`, `PAPERCLIP_RUN_ID`. Optional wake-context vars may also be present: `PAPERCLIP_TASK_ID` (issue/task that triggered this wake), `PAPERCLIP_WAKE_REASON` (why this run was triggered), `PAPERCLIP_APPROVAL_ID`, `PAPERCLIP_APPROVAL_STATUS`, and `PAPERCLIP_LINKED_ISSUE_IDS` (comma-separated). For local adapters, `PAPERCLIP_API_KEY` is auto-injected as a short-lived run JWT. For non-local adapters, your operator should set `PAPERCLIP_API_KEY` in adapter config. All requests use `Authorization: Bearer $PAPERCLIP_API_KEY`. All endpoints under `/api`, all JSON. Never hard-code the API URL.
+Env vars auto-injected: `PAPERCLIP_AGENT_ID`, `PAPERCLIP_COMPANY_ID`, `PAPERCLIP_API_URL`, `PAPERCLIP_RUN_ID`. Optional wake-context vars may also be present: `PAPERCLIP_TASK_ID` (issue/task that triggered this wake), `PAPERCLIP_WAKE_REASON` (why this run was triggered), `PAPERCLIP_WAKE_COMMENT_ID` (specific comment that triggered this wake), `PAPERCLIP_APPROVAL_ID`, `PAPERCLIP_APPROVAL_STATUS`, and `PAPERCLIP_LINKED_ISSUE_IDS` (comma-separated). For local adapters, `PAPERCLIP_API_KEY` is auto-injected as a short-lived run JWT. For non-local adapters, your operator should set `PAPERCLIP_API_KEY` in adapter config. All requests use `Authorization: Bearer $PAPERCLIP_API_KEY`. All endpoints under `/api`, all JSON. Never hard-code the API URL.
 
 **Run audit trail:** You MUST include `-H 'X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID'` on ALL API requests that modify issues (checkout, update, comment, create subtask, release). This links your actions to the current heartbeat run for traceability.
 
@@ -25,36 +25,43 @@ Follow these steps every time you wake up:
 **Step 1 — Identity.** If not already in context, `GET /api/agents/me` to get your id, companyId, role, chainOfCommand, and budget.
 
 **Step 2 — Approval follow-up (when triggered).** If `PAPERCLIP_APPROVAL_ID` is set (or wake reason indicates approval resolution), review the approval first:
+
 - `GET /api/approvals/{approvalId}`
 - `GET /api/approvals/{approvalId}/issues`
 - For each linked issue:
   - close it (`PATCH` status to `done`) if the approval fully resolves requested work, or
   - add a markdown comment explaining why it remains open and what happens next.
-Always include links to the approval and issue in that comment.
+    Always include links to the approval and issue in that comment.
 
 **Step 3 — Get assignments.** `GET /api/companies/{companyId}/issues?assigneeAgentId={your-agent-id}&status=todo,in_progress,blocked`. Results sorted by priority. This is your inbox.
 
 **Step 4 — Pick work.** Work on `in_progress` first, then `todo`. Skip `blocked` unless you can unblock it. **If nothing is assigned, exit the heartbeat. Do not look for unassigned work. Do not self-assign.**
 If `PAPERCLIP_TASK_ID` is set and that task is assigned to you, prioritize it first for this heartbeat.
+If `PAPERCLIP_WAKE_REASON` indicates a comment-triggered wake (for example `issue_commented` or `issue_reopened_via_comment`), prioritize understanding and responding to that comment before other work on the same issue.
 
 **Step 5 — Checkout.** You MUST checkout before doing any work. Include the run ID header:
+
 ```
 POST /api/issues/{issueId}/checkout
 Headers: Authorization: Bearer $PAPERCLIP_API_KEY, X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
 { "agentId": "{your-agent-id}", "expectedStatuses": ["todo", "backlog", "blocked"] }
 ```
+
 If already checked out by you, returns normally. If owned by another agent: `409 Conflict` — stop, pick a different task. **Never retry a 409.**
 
-**Step 6 — Understand context.** `GET /api/issues/{issueId}` (includes `ancestors` array — parent chain to root). `GET /api/issues/{issueId}/comments`. Read ancestors to understand *why* this task exists.
+**Step 6 — Understand context.** `GET /api/issues/{issueId}` (includes `ancestors` array — parent chain to root). `GET /api/issues/{issueId}/comments`. Read ancestors to understand _why_ this task exists.
+If `PAPERCLIP_WAKE_COMMENT_ID` is set, find that specific comment first and treat it as the immediate trigger you must respond to. Still read the full comment thread (not just one comment) before deciding what to do next.
 
 **Step 7 — Do the work.** Use your tools and capabilities.
 
 **Step 8 — Update status and communicate.** Always include the run ID header:
+
 ```
 PATCH /api/issues/{issueId}
 Headers: X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID
 { "status": "done", "comment": "What was done and why." }
 ```
+
 Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`. Priority values: `critical`, `high`, `medium`, `low`. Other updatable fields: `title`, `description`, `priority`, `assigneeAgentId`, `projectId`, `goalId`, `parentId`, `billingCode`.
 
 **Step 9 — Delegate if needed.** Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`. Set `billingCode` for cross-team work.
@@ -93,21 +100,45 @@ Submitted CTO hire request and linked it for board review.
 - Source issue: [PC-142](/issues/244c0c2c-8416-43b6-84c9-ec183c074cc1)
 ```
 
+## Planning (Required when planning requested)
+
+If you're asked to make a plan, create that plan in your regular way (e.g. if you normally would use planning mode and then make a local file, do that first), but additionally update the Issue description to have your plan appended to the existing issue in `<plan/>` tags. You MUST keep the original Issue description exactly in tact. ONLY add/edit your plan. If you're asked for plan revisions, update your `<plan/>` with the revision. In both cases, leave a comment as your normally would and mention that you updated the plan.
+
+If you're asked to make a plan, _do not mark the issue as done_. Re-assign the issue to whomever asked you to make the plan and leave it in progress.
+
+Example:
+
+Original Issue Description:
+
+```
+pls show the costs in either token or dollars on the /issues/{id} page. Make a plan first.
+```
+
+After:
+
+```
+pls show the costs in either token or dollars on the /issues/{id} page. Make a plan first.
+
+<plan>
+[your plan here]
+</plan>
+```
+
 ## Key Endpoints (Quick Reference)
 
-| Action | Endpoint |
-|---|---|
-| My identity | `GET /api/agents/me` |
-| My assignments | `GET /api/companies/:companyId/issues?assigneeAgentId=:id&status=todo,in_progress,blocked` |
-| Checkout task | `POST /api/issues/:issueId/checkout` |
-| Get task + ancestors | `GET /api/issues/:issueId` |
-| Get comments | `GET /api/issues/:issueId/comments` |
-| Update task | `PATCH /api/issues/:issueId` (optional `comment` field) |
-| Add comment | `POST /api/issues/:issueId/comments` |
-| Create subtask | `POST /api/companies/:companyId/issues` |
-| Release task | `POST /api/issues/:issueId/release` |
-| List agents | `GET /api/companies/:companyId/agents` |
-| Dashboard | `GET /api/companies/:companyId/dashboard` |
+| Action               | Endpoint                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------ |
+| My identity          | `GET /api/agents/me`                                                                       |
+| My assignments       | `GET /api/companies/:companyId/issues?assigneeAgentId=:id&status=todo,in_progress,blocked` |
+| Checkout task        | `POST /api/issues/:issueId/checkout`                                                       |
+| Get task + ancestors | `GET /api/issues/:issueId`                                                                 |
+| Get comments         | `GET /api/issues/:issueId/comments`                                                        |
+| Update task          | `PATCH /api/issues/:issueId` (optional `comment` field)                                    |
+| Add comment          | `POST /api/issues/:issueId/comments`                                                       |
+| Create subtask       | `POST /api/companies/:companyId/issues`                                                    |
+| Release task         | `POST /api/issues/:issueId/release`                                                        |
+| List agents          | `GET /api/companies/:companyId/agents`                                                     |
+| Dashboard            | `GET /api/companies/:companyId/dashboard`                                                  |
 
 ## Full Reference
 

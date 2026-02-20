@@ -223,7 +223,7 @@ This is the most important file. It receives an `AdapterExecutionContext` and mu
 **Required behavior:**
 
 1. **Read config** — extract typed values from `ctx.config` using helpers (`asString`, `asNumber`, `asBoolean`, `asStringArray`, `parseObject` from `@paperclip/adapter-utils/server-utils`)
-2. **Build environment** — call `buildPaperclipEnv(agent)` then layer in `PAPERCLIP_RUN_ID`, context vars (`PAPERCLIP_TASK_ID`, `PAPERCLIP_WAKE_REASON`, `PAPERCLIP_APPROVAL_ID`, `PAPERCLIP_APPROVAL_STATUS`, `PAPERCLIP_LINKED_ISSUE_IDS`), user env overrides, and auth token
+2. **Build environment** — call `buildPaperclipEnv(agent)` then layer in `PAPERCLIP_RUN_ID`, context vars (`PAPERCLIP_TASK_ID`, `PAPERCLIP_WAKE_REASON`, `PAPERCLIP_WAKE_COMMENT_ID`, `PAPERCLIP_APPROVAL_ID`, `PAPERCLIP_APPROVAL_STATUS`, `PAPERCLIP_LINKED_ISSUE_IDS`), user env overrides, and auth token
 3. **Resolve session** — check `runtime.sessionParams` / `runtime.sessionId` for an existing session; validate it's compatible (e.g. same cwd); decide whether to resume or start fresh
 4. **Render prompt** — use `renderTemplate(template, data)` with the template variables: `agentId`, `companyId`, `runId`, `company`, `agent`, `run`, `context`
 5. **Call onMeta** — emit adapter invocation metadata before spawning the process
@@ -242,6 +242,7 @@ This is the most important file. It receives an `AdapterExecutionContext` and mu
 | `PAPERCLIP_RUN_ID` | Current run id |
 | `PAPERCLIP_TASK_ID` | `context.taskId` or `context.issueId` |
 | `PAPERCLIP_WAKE_REASON` | `context.wakeReason` |
+| `PAPERCLIP_WAKE_COMMENT_ID` | `context.wakeCommentId` or `context.commentId` |
 | `PAPERCLIP_APPROVAL_ID` | `context.approvalId` |
 | `PAPERCLIP_APPROVAL_STATUS` | `context.approvalStatus` |
 | `PAPERCLIP_LINKED_ISSUE_IDS` | `context.issueIds` (comma-separated) |
