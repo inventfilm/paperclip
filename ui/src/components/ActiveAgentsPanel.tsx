@@ -140,14 +140,8 @@ interface ActiveAgentsPanelProps {
   companyId: string;
 }
 
-interface AgentRunGroup {
-  agentId: string;
-  agentName: string;
-  runs: LiveRunForIssue[];
-}
-
 export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
-  const [feedByAgent, setFeedByAgent] = useState<Map<string, FeedItem[]>>(new Map());
+  const [feedByRun, setFeedByRun] = useState<Map<string, FeedItem[]>>(new Map());
   const seenKeysRef = useRef(new Set<string>());
   const pendingByRunRef = useRef(new Map<string, string>());
   const nextIdRef = useRef(1);
@@ -160,19 +154,6 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
   const runs = liveRuns ?? [];
   const runById = useMemo(() => new Map(runs.map((r) => [r.id, r])), [runs]);
   const activeRunIds = useMemo(() => new Set(runs.map((r) => r.id)), [runs]);
-
-  const agentGroups = useMemo(() => {
-    const map = new Map<string, AgentRunGroup>();
-    for (const run of runs) {
-      let group = map.get(run.agentId);
-      if (!group) {
-        group = { agentId: run.agentId, agentName: run.agentName, runs: [] };
-        map.set(run.agentId, group);
-      }
-      group.runs.push(run);
-    }
-    return Array.from(map.values());
-  }, [runs]);
 
   // Clean up pending buffers for runs that ended
   useEffect(() => {
@@ -196,12 +177,12 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
     let reconnectTimer: number | null = null;
     let socket: WebSocket | null = null;
 
-    const appendItems = (agentId: string, items: FeedItem[]) => {
+    const appendItems = (runId: string, items: FeedItem[]) => {
       if (items.length === 0) return;
-      setFeedByAgent((prev) => {
+      setFeedByRun((prev) => {
         const next = new Map(prev);
-        const existing = next.get(agentId) ?? [];
-        next.set(agentId, [...existing, ...items].slice(-MAX_FEED_ITEMS));
+        const existing = next.get(runId) ?? [];
+        next.set(runId, [...existing, ...items].slice(-MAX_FEED_ITEMS));
         return next;
       });
     };
@@ -246,7 +227,7 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
           if (seenKeysRef.current.size > 2000) seenKeysRef.current.clear();
           const tone = eventType === "error" ? "error" : eventType === "lifecycle" ? "warn" : "info";
           const item = createFeedItem(run, event.createdAt, messageText, tone, nextIdRef.current++);
-          if (item) appendItems(run.agentId, [item]);
+          if (item) appendItems(run.id, [item]);
           return;
         }
 
@@ -258,7 +239,7 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
           if (seenKeysRef.current.size > 2000) seenKeysRef.current.clear();
           const tone = status === "failed" || status === "timed_out" ? "error" : "warn";
           const item = createFeedItem(run, event.createdAt, `run ${status}`, tone, nextIdRef.current++);
-          if (item) appendItems(run.agentId, [item]);
+          if (item) appendItems(run.id, [item]);
           return;
         }
 
@@ -267,10 +248,10 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
           if (!chunk) return;
           const stream = readString(payload["stream"]) === "stderr" ? "stderr" : "stdout";
           if (stream === "stderr") {
-            appendItems(run.agentId, parseStderrChunk(run, chunk, event.createdAt, pendingByRunRef.current, nextIdRef));
+            appendItems(run.id, parseStderrChunk(run, chunk, event.createdAt, pendingByRunRef.current, nextIdRef));
             return;
           }
-          appendItems(run.agentId, parseStdoutChunk(run, chunk, event.createdAt, pendingByRunRef.current, nextIdRef));
+          appendItems(run.id, parseStdoutChunk(run, chunk, event.createdAt, pendingByRunRef.current, nextIdRef));
         }
       };
 
@@ -297,7 +278,7 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
     };
   }, [activeRunIds, companyId, runById]);
 
-  if (agentGroups.length === 0) return null;
+  if (runs.length === 0) return null;
 
   return (
     <div>
@@ -305,11 +286,11 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
         Active Agents
       </h3>
       <div className="grid md:grid-cols-2 gap-4">
-        {agentGroups.map((group) => (
+        {runs.map((run) => (
           <AgentRunCard
-            key={group.agentId}
-            group={group}
-            feed={feedByAgent.get(group.agentId) ?? []}
+            key={run.id}
+            run={run}
+            feed={feedByRun.get(run.id) ?? []}
           />
         ))}
       </div>
@@ -317,10 +298,9 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
   );
 }
 
-function AgentRunCard({ group, feed }: { group: AgentRunGroup; feed: FeedItem[] }) {
+function AgentRunCard({ run, feed }: { run: LiveRunForIssue; feed: FeedItem[] }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const recent = feed.slice(-20);
-  const primaryRun = group.runs[0];
 
   useEffect(() => {
     const body = bodyRef.current;
@@ -336,23 +316,19 @@ function AgentRunCard({ group, feed }: { group: AgentRunGroup; feed: FeedItem[] 
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
           </span>
-          <Identity name={group.agentName} size="sm" />
+          <Identity name={run.agentName} size="sm" />
           <span className="text-[11px] font-medium text-blue-400">Live</span>
-          {group.runs.length > 1 && (
-            <span className="text-[10px] text-muted-foreground">
-              ({group.runs.length} runs)
-            </span>
-          )}
+          <span className="text-[10px] text-muted-foreground font-mono">
+            {run.id.slice(0, 8)}
+          </span>
         </div>
-        {primaryRun && (
-          <Link
-            to={`/agents/${primaryRun.agentId}/runs/${primaryRun.id}`}
-            className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
-          >
-            Open run
-            <ExternalLink className="h-2.5 w-2.5" />
-          </Link>
-        )}
+        <Link
+          to={`/agents/${run.agentId}/runs/${run.id}`}
+          className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
+        >
+          Open run
+          <ExternalLink className="h-2.5 w-2.5" />
+        </Link>
       </div>
 
       <div ref={bodyRef} className="max-h-[180px] overflow-y-auto p-2 font-mono text-[11px] space-y-1">
@@ -381,21 +357,6 @@ function AgentRunCard({ group, feed }: { group: AgentRunGroup; feed: FeedItem[] 
           </div>
         ))}
       </div>
-
-      {group.runs.length > 1 && (
-        <div className="border-t border-border/50 px-3 py-1.5 flex flex-wrap gap-2">
-          {group.runs.map((run) => (
-            <Link
-              key={run.id}
-              to={`/agents/${run.agentId}/runs/${run.id}`}
-              className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
-            >
-              {run.id.slice(0, 8)}
-              <ExternalLink className="h-2.5 w-2.5" />
-            </Link>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

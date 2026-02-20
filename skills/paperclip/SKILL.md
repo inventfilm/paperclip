@@ -125,9 +125,13 @@ After:
 pls show the costs in either token or dollars on the /issues/{id} page. Make a plan first.
 
 <plan>
+
 [your plan here]
+
 </plan>
 ```
+
+\*make sure to have a newline after/before your <plan/> tags
 
 ## Key Endpoints (Quick Reference)
 
