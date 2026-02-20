@@ -43,6 +43,11 @@ export type {
   AgentPermissions,
   AgentKeyCreated,
   AgentConfigRevision,
+  AdapterEnvironmentCheckLevel,
+  AdapterEnvironmentTestStatus,
+  AdapterEnvironmentCheck,
+  AdapterEnvironmentTestResult,
+  AssetImage,
   Project,
   Issue,
   IssueComment,
@@ -79,6 +84,7 @@ export {
   createAgentKeySchema,
   wakeAgentSchema,
   resetAgentSessionSchema,
+  testAdapterEnvironmentSchema,
   agentPermissionsSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
@@ -87,6 +93,7 @@ export {
   type CreateAgentKey,
   type WakeAgent,
   type ResetAgentSession,
+  type TestAdapterEnvironment,
   type UpdateAgentPermissions,
   createProjectSchema,
   updateProjectSchema,
@@ -130,8 +137,10 @@ export {
   type UpdateSecret,
   createCostEventSchema,
   updateBudgetSchema,
+  createAssetImageMetadataSchema,
   type CreateCostEvent,
   type UpdateBudget,
+  type CreateAssetImageMetadata,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";

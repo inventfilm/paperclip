@@ -95,6 +95,7 @@ interface AdapterSessionCodec {
 interface ServerAdapterModule {
   type: string;
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
+  testEnvironment(ctx: AdapterEnvironmentTestContext): Promise<AdapterEnvironmentTestResult>;
   sessionCodec?: AdapterSessionCodec;
   supportsLocalAgentJwt?: boolean;
   models?: { id: string; label: string }[];
@@ -116,6 +117,48 @@ interface CLIAdapterModule {
   formatStdoutEvent: (line: string, debug: boolean) => void;
 }
 ```
+
+---
+
+## 2.1 Adapter Environment Test Contract
+
+Every server adapter must implement `testEnvironment(...)`. This powers the board UI "Test environment" button in agent configuration.
+
+```ts
+type AdapterEnvironmentCheckLevel = "info" | "warn" | "error";
+type AdapterEnvironmentTestStatus = "pass" | "warn" | "fail";
+
+interface AdapterEnvironmentCheck {
+  code: string;
+  level: AdapterEnvironmentCheckLevel;
+  message: string;
+  detail?: string | null;
+  hint?: string | null;
+}
+
+interface AdapterEnvironmentTestResult {
+  adapterType: string;
+  status: AdapterEnvironmentTestStatus;
+  checks: AdapterEnvironmentCheck[];
+  testedAt: string; // ISO timestamp
+}
+
+interface AdapterEnvironmentTestContext {
+  companyId: string;
+  adapterType: string;
+  config: Record<string, unknown>; // runtime-resolved adapterConfig
+}
+```
+
+Guidelines:
+
+- Return structured diagnostics, never throw for expected findings.
+- Use `error` for invalid/unusable runtime setup (bad cwd, missing command, invalid URL).
+- Use `warn` for non-blocking but important situations.
+- Use `info` for successful checks and context.
+
+Severity policy is product-critical: warnings are not save blockers.  
+Example: for `claude_local`, detected `ANTHROPIC_API_KEY` must be a `warn`, not an `error`, because Claude can still run (it just uses API-key auth instead of subscription auth).
 
 ---
 
@@ -269,6 +312,7 @@ Parse the agent's stdout format into structured data. Must handle:
 
 ```ts
 export { execute } from "./execute.js";
+export { testEnvironment } from "./test.js";
 export { parseMyAgentOutput, isMyAgentUnknownSessionError } from "./parse.js";
 
 // Session codec — required for session persistence
@@ -278,6 +322,22 @@ export const sessionCodec: AdapterSessionCodec = {
   getDisplayId(params) { /* -> human-readable session id string */ },
 };
 ```
+
+#### `server/test.ts` — Environment Diagnostics
+
+Implement adapter-specific preflight checks used by the UI test button.
+
+Minimum expectations:
+
+1. Validate required config primitives (paths, commands, URLs, auth assumptions)
+2. Return check objects with deterministic `code` values
+3. Map severity consistently (`info` / `warn` / `error`)
+4. Compute final status:
+   - `fail` if any `error`
+   - `warn` if no errors and at least one warning
+   - `pass` otherwise
+
+This operation should be lightweight and side-effect free.
 
 ### 3.4 UI Module
 
@@ -643,8 +703,9 @@ Create tests in `server/src/__tests__/<adapter-name>-adapter.test.ts`. Test:
 - [ ] `packages/adapters/<name>/package.json` with four exports (`.`, `./server`, `./ui`, `./cli`)
 - [ ] Root `index.ts` with `type`, `label`, `models`, `agentConfigurationDoc`
 - [ ] `server/execute.ts` implementing `AdapterExecutionContext -> AdapterExecutionResult`
+- [ ] `server/test.ts` implementing `AdapterEnvironmentTestContext -> AdapterEnvironmentTestResult`
 - [ ] `server/parse.ts` with output parser and unknown-session detector
-- [ ] `server/index.ts` exporting `execute`, `sessionCodec`, parse helpers
+- [ ] `server/index.ts` exporting `execute`, `testEnvironment`, `sessionCodec`, parse helpers
 - [ ] `ui/parse-stdout.ts` with `StdoutLineParser` for the run viewer
 - [ ] `ui/build-config.ts` with `CreateConfigValues -> adapterConfig` builder
 - [ ] `ui/src/adapters/<name>/config-fields.tsx` React component for agent form

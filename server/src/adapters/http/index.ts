@@ -1,9 +1,11 @@
 import type { ServerAdapterModule } from "../types.js";
 import { execute } from "./execute.js";
+import { testEnvironment } from "./test.js";
 
 export const httpAdapter: ServerAdapterModule = {
   type: "http",
   execute,
+  testEnvironment,
   models: [],
   agentConfigurationDoc: `# http agent configuration
 

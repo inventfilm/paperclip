@@ -1,7 +1,15 @@
 import type { ServerAdapterModule } from "./types.js";
-import { execute as claudeExecute, sessionCodec as claudeSessionCodec } from "@paperclip/adapter-claude-local/server";
+import {
+  execute as claudeExecute,
+  testEnvironment as claudeTestEnvironment,
+  sessionCodec as claudeSessionCodec,
+} from "@paperclip/adapter-claude-local/server";
 import { agentConfigurationDoc as claudeAgentConfigurationDoc, models as claudeModels } from "@paperclip/adapter-claude-local";
-import { execute as codexExecute, sessionCodec as codexSessionCodec } from "@paperclip/adapter-codex-local/server";
+import {
+  execute as codexExecute,
+  testEnvironment as codexTestEnvironment,
+  sessionCodec as codexSessionCodec,
+} from "@paperclip/adapter-codex-local/server";
 import { agentConfigurationDoc as codexAgentConfigurationDoc, models as codexModels } from "@paperclip/adapter-codex-local";
 import { listCodexModels } from "./codex-models.js";
 import { processAdapter } from "./process/index.js";
@@ -10,6 +18,7 @@ import { httpAdapter } from "./http/index.js";
 const claudeLocalAdapter: ServerAdapterModule = {
   type: "claude_local",
   execute: claudeExecute,
+  testEnvironment: claudeTestEnvironment,
   sessionCodec: claudeSessionCodec,
   models: claudeModels,
   supportsLocalAgentJwt: true,
@@ -19,6 +28,7 @@ const claudeLocalAdapter: ServerAdapterModule = {
 const codexLocalAdapter: ServerAdapterModule = {
   type: "codex_local",
   execute: codexExecute,
+  testEnvironment: codexTestEnvironment,
   sessionCodec: codexSessionCodec,
   models: codexModels,
   listModels: listCodexModels,
@@ -51,4 +61,8 @@ export async function listAdapterModels(type: string): Promise<{ id: string; lab
 
 export function listServerAdapters(): ServerAdapterModule[] {
   return Array.from(adaptersByType.values());
+}
+
+export function findServerAdapter(type: string): ServerAdapterModule | null {
+  return adaptersByType.get(type) ?? null;
 }

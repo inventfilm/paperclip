@@ -1,5 +1,15 @@
 export type { Company } from "./company.js";
-export type { Agent, AgentPermissions, AgentKeyCreated, AgentConfigRevision } from "./agent.js";
+export type {
+  Agent,
+  AgentPermissions,
+  AgentKeyCreated,
+  AgentConfigRevision,
+  AdapterEnvironmentCheckLevel,
+  AdapterEnvironmentTestStatus,
+  AdapterEnvironmentCheck,
+  AdapterEnvironmentTestResult,
+} from "./agent.js";
+export type { AssetImage } from "./asset.js";
 export type { Project } from "./project.js";
 export type {
   Issue,

@@ -79,6 +79,12 @@ export const resetAgentSessionSchema = z.object({
 
 export type ResetAgentSession = z.infer<typeof resetAgentSessionSchema>;
 
+export const testAdapterEnvironmentSchema = z.object({
+  adapterConfig: adapterConfigSchema.optional().default({}),
+});
+
+export type TestAdapterEnvironment = z.infer<typeof testAdapterEnvironmentSchema>;
+
 export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),
 });

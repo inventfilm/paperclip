@@ -12,6 +12,7 @@ export {
   createAgentKeySchema,
   wakeAgentSchema,
   resetAgentSessionSchema,
+  testAdapterEnvironmentSchema,
   agentPermissionsSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
@@ -20,6 +21,7 @@ export {
   type CreateAgentKey,
   type WakeAgent,
   type ResetAgentSession,
+  type TestAdapterEnvironment,
   type UpdateAgentPermissions,
 } from "./agent.js";
 
@@ -84,3 +86,8 @@ export {
   type CreateCostEvent,
   type UpdateBudget,
 } from "./cost.js";
+
+export {
+  createAssetImageMetadataSchema,
+  type CreateAssetImageMetadata,
+} from "./asset.js";

@@ -33,6 +33,7 @@ Follows the existing `NewIssueDialog` / `NewProjectDialog` pattern: a `Dialog` c
 | Field | Control | Default | Notes |
 |-------|---------|---------|-------|
 | Adapter Type | Chip popover (select) | `claude_local` | `claude_local`, `codex_local`, `process`, `http` |
+| Test environment | Button | -- | Runs adapter-specific diagnostics and returns pass/warn/fail checks for current unsaved config |
 | CWD | Text input | -- | Working directory for local adapters |
 | Prompt Template | Textarea | -- | Supports `{{ agent.id }}`, `{{ agent.name }}` etc. |
 | Bootstrap Prompt | Textarea | -- | Optional, used for first run (no existing session) |

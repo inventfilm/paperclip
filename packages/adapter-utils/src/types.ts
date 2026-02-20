@@ -82,9 +82,35 @@ export interface AdapterModel {
   label: string;
 }
 
+export type AdapterEnvironmentCheckLevel = "info" | "warn" | "error";
+
+export interface AdapterEnvironmentCheck {
+  code: string;
+  level: AdapterEnvironmentCheckLevel;
+  message: string;
+  detail?: string | null;
+  hint?: string | null;
+}
+
+export type AdapterEnvironmentTestStatus = "pass" | "warn" | "fail";
+
+export interface AdapterEnvironmentTestResult {
+  adapterType: string;
+  status: AdapterEnvironmentTestStatus;
+  checks: AdapterEnvironmentCheck[];
+  testedAt: string;
+}
+
+export interface AdapterEnvironmentTestContext {
+  companyId: string;
+  adapterType: string;
+  config: Record<string, unknown>;
+}
+
 export interface ServerAdapterModule {
   type: string;
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
+  testEnvironment(ctx: AdapterEnvironmentTestContext): Promise<AdapterEnvironmentTestResult>;
   sessionCodec?: AdapterSessionCodec;
   supportsLocalAgentJwt?: boolean;
   models?: AdapterModel[];

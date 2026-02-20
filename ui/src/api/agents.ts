@@ -1,5 +1,6 @@
 import type {
   Agent,
+  AdapterEnvironmentTestResult,
   AgentKeyCreated,
   AgentRuntimeState,
   AgentTaskSession,
@@ -66,6 +67,15 @@ export const agentsApi = {
   resetSession: (id: string, taskKey?: string | null) =>
     api.post<void>(`/agents/${id}/runtime-state/reset-session`, { taskKey: taskKey ?? null }),
   adapterModels: (type: string) => api.get<AdapterModel[]>(`/adapters/${type}/models`),
+  testEnvironment: (
+    companyId: string,
+    type: string,
+    data: { adapterConfig: Record<string, unknown> },
+  ) =>
+    api.post<AdapterEnvironmentTestResult>(
+      `/companies/${companyId}/adapters/${type}/test-environment`,
+      data,
+    ),
   invoke: (id: string) => api.post<HeartbeatRun>(`/agents/${id}/heartbeat/invoke`, {}),
   wakeup: (
     id: string,

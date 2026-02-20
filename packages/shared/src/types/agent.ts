@@ -49,3 +49,21 @@ export interface AgentConfigRevision {
   afterConfig: Record<string, unknown>;
   createdAt: Date;
 }
+
+export type AdapterEnvironmentCheckLevel = "info" | "warn" | "error";
+export type AdapterEnvironmentTestStatus = "pass" | "warn" | "fail";
+
+export interface AdapterEnvironmentCheck {
+  code: string;
+  level: AdapterEnvironmentCheckLevel;
+  message: string;
+  detail?: string | null;
+  hint?: string | null;
+}
+
+export interface AdapterEnvironmentTestResult {
+  adapterType: string;
+  status: AdapterEnvironmentTestStatus;
+  checks: AdapterEnvironmentCheck[];
+  testedAt: string;
+}

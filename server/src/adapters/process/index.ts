@@ -1,9 +1,11 @@
 import type { ServerAdapterModule } from "../types.js";
 import { execute } from "./execute.js";
+import { testEnvironment } from "./test.js";
 
 export const processAdapter: ServerAdapterModule = {
   type: "process",
   execute,
+  testEnvironment,
   models: [],
   agentConfigurationDoc: `# process agent configuration
 

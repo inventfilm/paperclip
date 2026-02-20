@@ -59,6 +59,7 @@ For local adapters, set:
 - `timeoutSec` (max runtime per heartbeat)
 - `graceSec` (time before force-kill after timeout/cancel)
 - optional env vars and extra CLI args
+- use **Test environment** in agent configuration to run adapter-specific diagnostics before saving
 
 ## 3.4 Prompt templates
 
@@ -147,6 +148,10 @@ Typical failure causes:
 - malformed adapter args/env
 - prompt too broad or missing constraints
 - process timeout
+
+Claude-specific note:
+
+- If `ANTHROPIC_API_KEY` is set in adapter env or host environment, Claude uses API-key auth instead of subscription login. Paperclip surfaces this as a warning in environment tests, not a hard error.
 
 ## 9. Security and risk notes
 
