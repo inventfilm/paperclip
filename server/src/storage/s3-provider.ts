@@ -40,7 +40,15 @@ async function toReadableStream(body: unknown): Promise<Readable> {
   };
 
   if (typeof candidate.transformToWebStream === "function") {
-    return Readable.fromWeb(candidate.transformToWebStream() as globalThis.ReadableStream<any>);
+    const webStream = candidate.transformToWebStream();
+    const reader = webStream.getReader();
+    return Readable.from((async function* () {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) yield value;
+      }
+    })());
   }
 
   if (typeof candidate.arrayBuffer === "function") {

@@ -1,4 +1,4 @@
-import type { Approval, Issue, IssueComment } from "@paperclip/shared";
+import type { Approval, Issue, IssueAttachment, IssueComment } from "@paperclip/shared";
 import { api } from "./client";
 
 export const issuesApi = {
@@ -17,6 +17,21 @@ export const issuesApi = {
   listComments: (id: string) => api.get<IssueComment[]>(`/issues/${id}/comments`),
   addComment: (id: string, body: string, reopen?: boolean) =>
     api.post<IssueComment>(`/issues/${id}/comments`, reopen === undefined ? { body } : { body, reopen }),
+  listAttachments: (id: string) => api.get<IssueAttachment[]>(`/issues/${id}/attachments`),
+  uploadAttachment: (
+    companyId: string,
+    issueId: string,
+    file: File,
+    issueCommentId?: string | null,
+  ) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (issueCommentId) {
+      form.append("issueCommentId", issueCommentId);
+    }
+    return api.postForm<IssueAttachment>(`/companies/${companyId}/issues/${issueId}/attachments`, form);
+  },
+  deleteAttachment: (id: string) => api.delete<{ ok: true }>(`/attachments/${id}`),
   listApprovals: (id: string) => api.get<Approval[]>(`/issues/${id}/approvals`),
   linkApproval: (id: string, approvalId: string) =>
     api.post<Approval[]>(`/issues/${id}/approvals`, { approvalId }),
