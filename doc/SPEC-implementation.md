@@ -95,6 +95,9 @@ V1 implementation extends this baseline into a company-centric, governance-aware
 - Local default: embedded PostgreSQL at `~/.paperclip/instances/default/db`
 - Optional local prod-like: Docker Postgres
 - Optional hosted: Supabase/Postgres-compatible
+- File/object storage:
+  - local default: `~/.paperclip/instances/default/data/storage` (`local_disk`)
+  - cloud: S3-compatible object storage (`s3`)
 
 ## 6.3 Background Processing
 
@@ -302,8 +305,31 @@ Operational policy:
 - `heartbeat_runs(company_id, agent_id, started_at desc)`
 - `approvals(company_id, status, type)`
 - `activity_log(company_id, created_at desc)`
+- `assets(company_id, created_at desc)`
+- `assets(company_id, object_key)` unique
+- `issue_attachments(company_id, issue_id)`
 - `company_secrets(company_id, name)` unique
 - `company_secret_versions(secret_id, version)` unique
+
+## 7.14 `assets` + `issue_attachments`
+
+- `assets` stores provider-backed object metadata (not inline bytes):
+  - `id` uuid pk
+  - `company_id` uuid fk not null
+  - `provider` enum/text (`local_disk | s3`)
+  - `object_key` text not null
+  - `content_type` text not null
+  - `byte_size` int not null
+  - `sha256` text not null
+  - `original_filename` text null
+  - `created_by_agent_id` uuid fk null
+  - `created_by_user_id` uuid/text fk null
+- `issue_attachments` links assets to issues/comments:
+  - `id` uuid pk
+  - `company_id` uuid fk not null
+  - `issue_id` uuid fk not null
+  - `asset_id` uuid fk not null
+  - `issue_comment_id` uuid fk null
 
 ## 8. State Machines
 
@@ -420,6 +446,10 @@ All endpoints are under `/api` and return JSON.
 - `POST /issues/:issueId/release`
 - `POST /issues/:issueId/comments`
 - `GET /issues/:issueId/comments`
+- `POST /companies/:companyId/issues/:issueId/attachments` (multipart upload)
+- `GET /issues/:issueId/attachments`
+- `GET /attachments/:attachmentId/content`
+- `DELETE /attachments/:attachmentId`
 
 ### 10.4.1 Atomic Checkout Contract
 
