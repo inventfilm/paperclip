@@ -5,7 +5,7 @@ import type { IssueComment, Agent } from "@paperclip/shared";
 import { Button } from "@/components/ui/button";
 import { Identity } from "./Identity";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
-import { formatDate } from "../lib/utils";
+import { formatDateTime } from "../lib/utils";
 
 interface CommentWithRunMeta extends IssueComment {
   runId?: string | null;
@@ -79,7 +79,7 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
                 size="sm"
               />
               <span className="text-xs text-muted-foreground">
-                {formatDate(comment.createdAt)}
+                {formatDateTime(comment.createdAt)}
               </span>
             </div>
             <div className="text-sm prose prose-sm prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-headings:my-2 prose-headings:text-sm">
