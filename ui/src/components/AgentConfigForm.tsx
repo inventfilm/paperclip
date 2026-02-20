@@ -271,6 +271,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
   // Section toggle state — advanced always starts collapsed
   const [adapterAdvancedOpen, setAdapterAdvancedOpen] = useState(false);
+  const [runPolicyAdvancedOpen, setRunPolicyAdvancedOpen] = useState(false);
   const [heartbeatOpen, setHeartbeatOpen] = useState(!isCreate);
   const [cwdPickerNotice, setCwdPickerNotice] = useState<string | null>(null);
 
@@ -380,35 +381,34 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 }}
               />
             </Field>
+            {isLocal && (
+              <Field label="Prompt Template" hint={help.promptTemplate}>
+                <MarkdownEditor
+                  value={eff(
+                    "adapterConfig",
+                    "promptTemplate",
+                    String(config.promptTemplate ?? ""),
+                  )}
+                  onChange={(v) => mark("adapterConfig", "promptTemplate", v || undefined)}
+                  placeholder="You are agent {{ agent.name }}. Your role is {{ agent.role }}..."
+                  contentClassName="min-h-[88px] text-sm font-mono"
+                  imageUploadHandler={async (file) => {
+                    const namespace = `agents/${props.agent.id}/prompt-template`;
+                    const asset = await uploadMarkdownImage.mutateAsync({ file, namespace });
+                    return asset.contentPath;
+                  }}
+                />
+              </Field>
+            )}
           </div>
         </div>
       )}
 
-      {/* ---- Adapter type ---- */}
-      <div className={cn("px-4 py-2.5", isCreate ? "border-t border-border" : "border-b border-border")}>
-        <Field label="Adapter" hint={help.adapterType}>
-          <AdapterTypeDropdown
-            value={adapterType}
-            onChange={(t) => {
-              if (isCreate) {
-                set!({ adapterType: t, model: "", thinkingEffort: "" });
-              } else {
-                setOverlay((prev) => ({
-                  ...prev,
-                  adapterType: t,
-                  adapterConfig: {}, // clear adapter config when type changes
-                }));
-              }
-            }}
-          />
-        </Field>
-      </div>
-
-      {/* ---- Adapter Configuration ---- */}
+      {/* ---- Adapter ---- */}
       <div className={cn(isCreate ? "border-t border-border" : "border-b border-border")}>
         <div className="px-4 py-2 flex items-center justify-between gap-2">
           <span className="text-xs font-medium text-muted-foreground">
-            Adapter Configuration
+            Adapter
           </span>
           <Button
             type="button"
@@ -422,6 +422,23 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           </Button>
         </div>
         <div className="px-4 pb-3 space-y-3">
+          <Field label="Adapter type" hint={help.adapterType}>
+            <AdapterTypeDropdown
+              value={adapterType}
+              onChange={(t) => {
+                if (isCreate) {
+                  set!({ adapterType: t, model: "", thinkingEffort: "" });
+                } else {
+                  setOverlay((prev) => ({
+                    ...prev,
+                    adapterType: t,
+                    adapterConfig: {}, // clear adapter config when type changes
+                  }));
+                }
+              }}
+            />
+          </Field>
+
           {testEnvironment.error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
               {testEnvironment.error instanceof Error
@@ -491,30 +508,16 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             </Field>
           )}
 
-          {/* Prompt template */}
-          {isLocal && (
-            <Field label="Prompt template" hint={help.promptTemplate}>
+          {/* Prompt template (create mode only — edit mode shows this in Identity) */}
+          {isLocal && isCreate && (
+            <Field label="Prompt Template" hint={help.promptTemplate}>
               <MarkdownEditor
-                value={
-                  isCreate
-                    ? val!.promptTemplate
-                    : eff(
-                        "adapterConfig",
-                        "promptTemplate",
-                        String(config.promptTemplate ?? ""),
-                      )
-                }
-                onChange={(v) =>
-                  isCreate
-                    ? set!({ promptTemplate: v })
-                    : mark("adapterConfig", "promptTemplate", v || undefined)
-                }
+                value={val!.promptTemplate}
+                onChange={(v) => set!({ promptTemplate: v })}
                 placeholder="You are agent {{ agent.name }}. Your role is {{ agent.role }}..."
                 contentClassName="min-h-[88px] text-sm font-mono"
                 imageUploadHandler={async (file) => {
-                  const namespace = isCreate
-                    ? "agents/drafts/prompt-template"
-                    : `agents/${props.agent.id}/prompt-template`;
+                  const namespace = "agents/drafts/prompt-template";
                   const asset = await uploadMarkdownImage.mutateAsync({ file, namespace });
                   return asset.contentPath;
                 }}
@@ -686,10 +689,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         )}
       </div>
 
-      {/* ---- Heartbeat Policy ---- */}
+      {/* ---- Run Policy ---- */}
       {isCreate ? (
         <CollapsibleSection
-          title="Heartbeat Policy"
+          title="Run Policy"
           icon={<Heart className="h-3 w-3" />}
           open={heartbeatOpen}
           onToggle={() => setHeartbeatOpen(!heartbeatOpen)}
@@ -714,7 +717,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         <div className="border-b border-border">
           <div className="px-4 py-2 text-xs font-medium text-muted-foreground flex items-center gap-2">
             <Heart className="h-3 w-3" />
-            Heartbeat Policy
+            Run Policy
           </div>
           <div className="px-4 pb-3 space-y-3">
             <ToggleWithNumber
@@ -729,12 +732,13 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               numberHint={help.intervalSec}
               showNumber={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
             />
-
-            {/* Edit-only: wake-on-* and cooldown */}
-            <div className="space-y-3 pt-2 border-t border-border/50">
-              <div className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wider">
-                Advanced
-              </div>
+          </div>
+          <CollapsibleSection
+            title="Advanced Run Policy"
+            open={runPolicyAdvancedOpen}
+            onToggle={() => setRunPolicyAdvancedOpen(!runPolicyAdvancedOpen)}
+          >
+            <div className="space-y-3">
               <ToggleField
                 label="Wake on demand"
                 hint={help.wakeOnDemand}
@@ -770,7 +774,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 />
               </Field>
             </div>
-          </div>
+          </CollapsibleSection>
         </div>
       )}
 
