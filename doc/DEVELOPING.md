@@ -50,6 +50,18 @@ PAPERCLIP_HOME=/custom/path PAPERCLIP_INSTANCE_ID=dev pnpm paperclip run
 
 No Docker or external database is required for this mode.
 
+## Storage in Dev (Auto-Handled)
+
+For local development, the default storage provider is `local_disk`, which persists uploaded images/attachments at:
+
+- `~/.paperclip/instances/default/data/storage`
+
+Configure storage provider/settings:
+
+```sh
+pnpm paperclip configure --section storage
+```
+
 ## Quick Health Checks
 
 In another terminal:
