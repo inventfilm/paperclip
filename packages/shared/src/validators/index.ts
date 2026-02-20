@@ -36,11 +36,13 @@ export {
   checkoutIssueSchema,
   addIssueCommentSchema,
   linkIssueApprovalSchema,
+  createIssueAttachmentMetadataSchema,
   type CreateIssue,
   type UpdateIssue,
   type CheckoutIssue,
   type AddIssueComment,
   type LinkIssueApproval,
+  type CreateIssueAttachmentMetadata,
 } from "./issue.js";
 
 export {

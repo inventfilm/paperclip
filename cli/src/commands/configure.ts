@@ -7,6 +7,7 @@ import { promptDatabase } from "../prompts/database.js";
 import { promptLlm } from "../prompts/llm.js";
 import { promptLogging } from "../prompts/logging.js";
 import { defaultSecretsConfig, promptSecrets } from "../prompts/secrets.js";
+import { defaultStorageConfig, promptStorage } from "../prompts/storage.js";
 import { promptServer } from "../prompts/server.js";
 import {
   resolveDefaultEmbeddedPostgresDir,
@@ -14,13 +15,14 @@ import {
   resolvePaperclipInstanceId,
 } from "../config/home.js";
 
-type Section = "llm" | "database" | "logging" | "server" | "secrets";
+type Section = "llm" | "database" | "logging" | "server" | "storage" | "secrets";
 
 const SECTION_LABELS: Record<Section, string> = {
   llm: "LLM Provider",
   database: "Database",
   logging: "Logging",
   server: "Server",
+  storage: "Storage",
   secrets: "Secrets",
 };
 
@@ -45,6 +47,7 @@ function defaultConfig(): PaperclipConfig {
       port: 3100,
       serveUi: true,
     },
+    storage: defaultStorageConfig(),
     secrets: defaultSecretsConfig(),
   };
 }
@@ -122,6 +125,9 @@ export async function configure(opts: {
         break;
       case "server":
         config.server = await promptServer();
+        break;
+      case "storage":
+        config.storage = await promptStorage(config.storage);
         break;
       case "secrets":
         config.secrets = await promptSecrets(config.secrets);

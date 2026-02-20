@@ -44,6 +44,10 @@ export function resolveDefaultSecretsKeyFilePath(): string {
   return path.resolve(resolvePaperclipInstanceRoot(), "secrets", "master.key");
 }
 
+export function resolveDefaultStorageDir(): string {
+  return path.resolve(resolvePaperclipInstanceRoot(), "data", "storage");
+}
+
 export function resolveHomeAwarePath(value: string): string {
   return path.resolve(expandHomePrefix(value));
 }

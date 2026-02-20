@@ -1,5 +1,21 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
 
+export interface IssueAncestorProject {
+  id: string;
+  name: string;
+  description: string | null;
+  status: string;
+  goalId: string | null;
+}
+
+export interface IssueAncestorGoal {
+  id: string;
+  title: string;
+  description: string | null;
+  level: string;
+  status: string;
+}
+
 export interface IssueAncestor {
   id: string;
   title: string;
@@ -9,6 +25,8 @@ export interface IssueAncestor {
   assigneeAgentId: string | null;
   projectId: string | null;
   goalId: string | null;
+  project: IssueAncestorProject | null;
+  goal: IssueAncestorGoal | null;
 }
 
 export interface Issue {
@@ -46,4 +64,23 @@ export interface IssueComment {
   body: string;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface IssueAttachment {
+  id: string;
+  companyId: string;
+  issueId: string;
+  issueCommentId: string | null;
+  assetId: string;
+  provider: string;
+  objectKey: string;
+  contentType: string;
+  byteSize: number;
+  sha256: string;
+  originalFilename: string | null;
+  createdByAgentId: string | null;
+  createdByUserId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  contentPath: string;
 }

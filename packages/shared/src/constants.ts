@@ -79,6 +79,9 @@ export const SECRET_PROVIDERS = [
 ] as const;
 export type SecretProvider = (typeof SECRET_PROVIDERS)[number];
 
+export const STORAGE_PROVIDERS = ["local_disk", "s3"] as const;
+export type StorageProvider = (typeof STORAGE_PROVIDERS)[number];
+
 export const HEARTBEAT_INVOCATION_SOURCES = [
   "timer",
   "assignment",

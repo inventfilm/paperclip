@@ -1,6 +1,15 @@
 import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
-import { agents, companies, issues, issueComments } from "@paperclip/db";
+import {
+  agents,
+  assets,
+  companies,
+  goals,
+  issueAttachments,
+  issueComments,
+  issues,
+  projects,
+} from "@paperclip/db";
 import { conflict, notFound, unprocessable } from "../errors.js";
 
 const ALL_ISSUE_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"];
@@ -162,11 +171,26 @@ export function issueService(db: Db) {
     },
 
     remove: (id: string) =>
-      db
-        .delete(issues)
-        .where(eq(issues.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null),
+      db.transaction(async (tx) => {
+        const attachmentAssetIds = await tx
+          .select({ assetId: issueAttachments.assetId })
+          .from(issueAttachments)
+          .where(eq(issueAttachments.issueId, id));
+
+        const removedIssue = await tx
+          .delete(issues)
+          .where(eq(issues.id, id))
+          .returning()
+          .then((rows) => rows[0] ?? null);
+
+        if (removedIssue && attachmentAssetIds.length > 0) {
+          await tx
+            .delete(assets)
+            .where(inArray(assets.id, attachmentAssetIds.map((row) => row.assetId)));
+        }
+
+        return removedIssue;
+      }),
 
     checkout: async (id: string, agentId: string, expectedStatuses: string[]) => {
       const issueCompany = await db
@@ -275,6 +299,162 @@ export function issueService(db: Db) {
         .then((rows) => rows[0]);
     },
 
+    createAttachment: async (input: {
+      issueId: string;
+      issueCommentId?: string | null;
+      provider: string;
+      objectKey: string;
+      contentType: string;
+      byteSize: number;
+      sha256: string;
+      originalFilename?: string | null;
+      createdByAgentId?: string | null;
+      createdByUserId?: string | null;
+    }) => {
+      const issue = await db
+        .select({ id: issues.id, companyId: issues.companyId })
+        .from(issues)
+        .where(eq(issues.id, input.issueId))
+        .then((rows) => rows[0] ?? null);
+      if (!issue) throw notFound("Issue not found");
+
+      if (input.issueCommentId) {
+        const comment = await db
+          .select({ id: issueComments.id, companyId: issueComments.companyId, issueId: issueComments.issueId })
+          .from(issueComments)
+          .where(eq(issueComments.id, input.issueCommentId))
+          .then((rows) => rows[0] ?? null);
+        if (!comment) throw notFound("Issue comment not found");
+        if (comment.companyId !== issue.companyId || comment.issueId !== issue.id) {
+          throw unprocessable("Attachment comment must belong to same issue and company");
+        }
+      }
+
+      return db.transaction(async (tx) => {
+        const [asset] = await tx
+          .insert(assets)
+          .values({
+            companyId: issue.companyId,
+            provider: input.provider,
+            objectKey: input.objectKey,
+            contentType: input.contentType,
+            byteSize: input.byteSize,
+            sha256: input.sha256,
+            originalFilename: input.originalFilename ?? null,
+            createdByAgentId: input.createdByAgentId ?? null,
+            createdByUserId: input.createdByUserId ?? null,
+          })
+          .returning();
+
+        const [attachment] = await tx
+          .insert(issueAttachments)
+          .values({
+            companyId: issue.companyId,
+            issueId: issue.id,
+            assetId: asset.id,
+            issueCommentId: input.issueCommentId ?? null,
+          })
+          .returning();
+
+        return {
+          id: attachment.id,
+          companyId: attachment.companyId,
+          issueId: attachment.issueId,
+          issueCommentId: attachment.issueCommentId,
+          assetId: attachment.assetId,
+          provider: asset.provider,
+          objectKey: asset.objectKey,
+          contentType: asset.contentType,
+          byteSize: asset.byteSize,
+          sha256: asset.sha256,
+          originalFilename: asset.originalFilename,
+          createdByAgentId: asset.createdByAgentId,
+          createdByUserId: asset.createdByUserId,
+          createdAt: attachment.createdAt,
+          updatedAt: attachment.updatedAt,
+        };
+      });
+    },
+
+    listAttachments: async (issueId: string) =>
+      db
+        .select({
+          id: issueAttachments.id,
+          companyId: issueAttachments.companyId,
+          issueId: issueAttachments.issueId,
+          issueCommentId: issueAttachments.issueCommentId,
+          assetId: issueAttachments.assetId,
+          provider: assets.provider,
+          objectKey: assets.objectKey,
+          contentType: assets.contentType,
+          byteSize: assets.byteSize,
+          sha256: assets.sha256,
+          originalFilename: assets.originalFilename,
+          createdByAgentId: assets.createdByAgentId,
+          createdByUserId: assets.createdByUserId,
+          createdAt: issueAttachments.createdAt,
+          updatedAt: issueAttachments.updatedAt,
+        })
+        .from(issueAttachments)
+        .innerJoin(assets, eq(issueAttachments.assetId, assets.id))
+        .where(eq(issueAttachments.issueId, issueId))
+        .orderBy(desc(issueAttachments.createdAt)),
+
+    getAttachmentById: async (id: string) =>
+      db
+        .select({
+          id: issueAttachments.id,
+          companyId: issueAttachments.companyId,
+          issueId: issueAttachments.issueId,
+          issueCommentId: issueAttachments.issueCommentId,
+          assetId: issueAttachments.assetId,
+          provider: assets.provider,
+          objectKey: assets.objectKey,
+          contentType: assets.contentType,
+          byteSize: assets.byteSize,
+          sha256: assets.sha256,
+          originalFilename: assets.originalFilename,
+          createdByAgentId: assets.createdByAgentId,
+          createdByUserId: assets.createdByUserId,
+          createdAt: issueAttachments.createdAt,
+          updatedAt: issueAttachments.updatedAt,
+        })
+        .from(issueAttachments)
+        .innerJoin(assets, eq(issueAttachments.assetId, assets.id))
+        .where(eq(issueAttachments.id, id))
+        .then((rows) => rows[0] ?? null),
+
+    removeAttachment: async (id: string) =>
+      db.transaction(async (tx) => {
+        const existing = await tx
+          .select({
+            id: issueAttachments.id,
+            companyId: issueAttachments.companyId,
+            issueId: issueAttachments.issueId,
+            issueCommentId: issueAttachments.issueCommentId,
+            assetId: issueAttachments.assetId,
+            provider: assets.provider,
+            objectKey: assets.objectKey,
+            contentType: assets.contentType,
+            byteSize: assets.byteSize,
+            sha256: assets.sha256,
+            originalFilename: assets.originalFilename,
+            createdByAgentId: assets.createdByAgentId,
+            createdByUserId: assets.createdByUserId,
+            createdAt: issueAttachments.createdAt,
+            updatedAt: issueAttachments.updatedAt,
+          })
+          .from(issueAttachments)
+          .innerJoin(assets, eq(issueAttachments.assetId, assets.id))
+          .where(eq(issueAttachments.id, id))
+          .then((rows) => rows[0] ?? null);
+        if (!existing) return null;
+
+        await tx.delete(issueAttachments).where(eq(issueAttachments.id, id));
+        await tx.delete(assets).where(eq(assets.id, existing.assetId));
+        return existing;
+      }),
+
     findMentionedAgents: async (companyId: string, body: string) => {
       const re = /\B@([^\s@,!?.]+)/g;
       const tokens = new Set<string>();
@@ -287,7 +467,7 @@ export function issueService(db: Db) {
     },
 
     getAncestors: async (issueId: string) => {
-      const ancestors: Array<{
+      const raw: Array<{
         id: string; title: string; description: string | null;
         status: string; priority: string;
         assigneeAgentId: string | null; projectId: string | null; goalId: string | null;
@@ -295,7 +475,7 @@ export function issueService(db: Db) {
       const visited = new Set<string>([issueId]);
       const start = await db.select().from(issues).where(eq(issues.id, issueId)).then(r => r[0] ?? null);
       let currentId = start?.parentId ?? null;
-      while (currentId && !visited.has(currentId) && ancestors.length < 50) {
+      while (currentId && !visited.has(currentId) && raw.length < 50) {
         visited.add(currentId);
         const parent = await db.select({
           id: issues.id, title: issues.title, description: issues.description,
@@ -304,7 +484,7 @@ export function issueService(db: Db) {
           goalId: issues.goalId, parentId: issues.parentId,
         }).from(issues).where(eq(issues.id, currentId)).then(r => r[0] ?? null);
         if (!parent) break;
-        ancestors.push({
+        raw.push({
           id: parent.id, title: parent.title, description: parent.description ?? null,
           status: parent.status, priority: parent.priority,
           assigneeAgentId: parent.assigneeAgentId ?? null,
@@ -312,7 +492,39 @@ export function issueService(db: Db) {
         });
         currentId = parent.parentId ?? null;
       }
-      return ancestors;
+
+      // Batch-fetch referenced projects and goals
+      const projectIds = [...new Set(raw.map(a => a.projectId).filter((id): id is string => id != null))];
+      const goalIds = [...new Set(raw.map(a => a.goalId).filter((id): id is string => id != null))];
+
+      const projectMap = new Map<string, { id: string; name: string; description: string | null; status: string; goalId: string | null }>();
+      const goalMap = new Map<string, { id: string; title: string; description: string | null; level: string; status: string }>();
+
+      if (projectIds.length > 0) {
+        const rows = await db.select({
+          id: projects.id, name: projects.name, description: projects.description,
+          status: projects.status, goalId: projects.goalId,
+        }).from(projects).where(inArray(projects.id, projectIds));
+        for (const r of rows) {
+          projectMap.set(r.id, r);
+          // Also collect goalIds from projects
+          if (r.goalId && !goalIds.includes(r.goalId)) goalIds.push(r.goalId);
+        }
+      }
+
+      if (goalIds.length > 0) {
+        const rows = await db.select({
+          id: goals.id, title: goals.title, description: goals.description,
+          level: goals.level, status: goals.status,
+        }).from(goals).where(inArray(goals.id, goalIds));
+        for (const r of rows) goalMap.set(r.id, r);
+      }
+
+      return raw.map(a => ({
+        ...a,
+        project: a.projectId ? projectMap.get(a.projectId) ?? null : null,
+        goal: a.goalId ? goalMap.get(a.goalId) ?? null : null,
+      }));
     },
 
     staleCount: async (companyId: string, minutes = 60) => {

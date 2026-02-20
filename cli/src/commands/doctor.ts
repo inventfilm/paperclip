@@ -10,6 +10,7 @@ import {
   logCheck,
   portCheck,
   secretsCheck,
+  storageCheck,
   type CheckResult,
 } from "../checks/index.js";
 
@@ -66,24 +67,30 @@ export async function doctor(opts: {
   printResult(secretsResult);
   await maybeRepair(secretsResult, opts);
 
-  // 4. Database check
+  // 4. Storage check
+  const storageResult = storageCheck(config, configPath);
+  results.push(storageResult);
+  printResult(storageResult);
+  await maybeRepair(storageResult, opts);
+
+  // 5. Database check
   const dbResult = await databaseCheck(config, configPath);
   results.push(dbResult);
   printResult(dbResult);
   await maybeRepair(dbResult, opts);
 
-  // 5. LLM check
+  // 6. LLM check
   const llmResult = await llmCheck(config);
   results.push(llmResult);
   printResult(llmResult);
 
-  // 6. Log directory check
+  // 7. Log directory check
   const logResult = logCheck(config, configPath);
   results.push(logResult);
   printResult(logResult);
   await maybeRepair(logResult, opts);
 
-  // 7. Port check
+  // 8. Port check
   const portResult = await portCheck(config);
   results.push(portResult);
   printResult(portResult);

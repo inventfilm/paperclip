@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclip/db";
+import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { healthRoutes } from "./routes/health.js";
@@ -21,7 +22,7 @@ import { llmRoutes } from "./routes/llms.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 
-export async function createApp(db: Db, opts: { uiMode: UiMode }) {
+export async function createApp(db: Db, opts: { uiMode: UiMode; storageService: StorageService }) {
   const app = express();
 
   app.use(express.json());
@@ -35,7 +36,7 @@ export async function createApp(db: Db, opts: { uiMode: UiMode }) {
   api.use("/companies", companyRoutes(db));
   api.use(agentRoutes(db));
   api.use(projectRoutes(db));
-  api.use(issueRoutes(db));
+  api.use(issueRoutes(db, opts.storageService));
   api.use(goalRoutes(db));
   api.use(approvalRoutes(db));
   api.use(secretRoutes(db));

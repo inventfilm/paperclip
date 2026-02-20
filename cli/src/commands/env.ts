@@ -9,6 +9,7 @@ import {
 } from "../config/env.js";
 import {
   resolveDefaultSecretsKeyFilePath,
+  resolveDefaultStorageDir,
   resolvePaperclipInstanceId,
 } from "../config/home.js";
 
@@ -27,8 +28,12 @@ const DEFAULT_AGENT_JWT_ISSUER = "paperclip";
 const DEFAULT_AGENT_JWT_AUDIENCE = "paperclip-api";
 const DEFAULT_HEARTBEAT_SCHEDULER_INTERVAL_MS = "30000";
 const DEFAULT_SECRETS_PROVIDER = "local_encrypted";
+const DEFAULT_STORAGE_PROVIDER = "local_disk";
 function defaultSecretsKeyFilePath(): string {
   return resolveDefaultSecretsKeyFilePath(resolvePaperclipInstanceId());
+}
+function defaultStorageBaseDir(): string {
+  return resolveDefaultStorageDir(resolvePaperclipInstanceId());
 }
 
 export async function envCommand(opts: { config?: string }): Promise<void> {
@@ -127,6 +132,33 @@ function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: st
     process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE ??
     config?.secrets?.localEncrypted?.keyFilePath ??
     defaultSecretsKeyFilePath();
+  const storageProvider =
+    process.env.PAPERCLIP_STORAGE_PROVIDER ??
+    config?.storage?.provider ??
+    DEFAULT_STORAGE_PROVIDER;
+  const storageLocalDir =
+    process.env.PAPERCLIP_STORAGE_LOCAL_DIR ??
+    config?.storage?.localDisk?.baseDir ??
+    defaultStorageBaseDir();
+  const storageS3Bucket =
+    process.env.PAPERCLIP_STORAGE_S3_BUCKET ??
+    config?.storage?.s3?.bucket ??
+    "paperclip";
+  const storageS3Region =
+    process.env.PAPERCLIP_STORAGE_S3_REGION ??
+    config?.storage?.s3?.region ??
+    "us-east-1";
+  const storageS3Endpoint =
+    process.env.PAPERCLIP_STORAGE_S3_ENDPOINT ??
+    config?.storage?.s3?.endpoint ??
+    "";
+  const storageS3Prefix =
+    process.env.PAPERCLIP_STORAGE_S3_PREFIX ??
+    config?.storage?.s3?.prefix ??
+    "";
+  const storageS3ForcePathStyle =
+    process.env.PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE ??
+    String(config?.storage?.s3?.forcePathStyle ?? false);
 
   const rows: EnvVarRow[] = [
     {
@@ -227,6 +259,83 @@ function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: st
           : "default",
       required: false,
       note: "Path to local encrypted secrets key file",
+    },
+    {
+      key: "PAPERCLIP_STORAGE_PROVIDER",
+      value: storageProvider,
+      source: process.env.PAPERCLIP_STORAGE_PROVIDER
+        ? "env"
+        : config?.storage?.provider
+          ? "config"
+          : "default",
+      required: false,
+      note: "Storage provider (local_disk or s3)",
+    },
+    {
+      key: "PAPERCLIP_STORAGE_LOCAL_DIR",
+      value: storageLocalDir,
+      source: process.env.PAPERCLIP_STORAGE_LOCAL_DIR
+        ? "env"
+        : config?.storage?.localDisk?.baseDir
+          ? "config"
+          : "default",
+      required: false,
+      note: "Local storage base directory for local_disk provider",
+    },
+    {
+      key: "PAPERCLIP_STORAGE_S3_BUCKET",
+      value: storageS3Bucket,
+      source: process.env.PAPERCLIP_STORAGE_S3_BUCKET
+        ? "env"
+        : config?.storage?.s3?.bucket
+          ? "config"
+          : "default",
+      required: false,
+      note: "S3 bucket name for s3 provider",
+    },
+    {
+      key: "PAPERCLIP_STORAGE_S3_REGION",
+      value: storageS3Region,
+      source: process.env.PAPERCLIP_STORAGE_S3_REGION
+        ? "env"
+        : config?.storage?.s3?.region
+          ? "config"
+          : "default",
+      required: false,
+      note: "S3 region for s3 provider",
+    },
+    {
+      key: "PAPERCLIP_STORAGE_S3_ENDPOINT",
+      value: storageS3Endpoint,
+      source: process.env.PAPERCLIP_STORAGE_S3_ENDPOINT
+        ? "env"
+        : config?.storage?.s3?.endpoint
+          ? "config"
+          : "default",
+      required: false,
+      note: "Optional custom endpoint for S3-compatible providers",
+    },
+    {
+      key: "PAPERCLIP_STORAGE_S3_PREFIX",
+      value: storageS3Prefix,
+      source: process.env.PAPERCLIP_STORAGE_S3_PREFIX
+        ? "env"
+        : config?.storage?.s3?.prefix
+          ? "config"
+          : "default",
+      required: false,
+      note: "Optional object key prefix",
+    },
+    {
+      key: "PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE",
+      value: storageS3ForcePathStyle,
+      source: process.env.PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE
+        ? "env"
+        : config?.storage?.s3?.forcePathStyle !== undefined
+          ? "config"
+          : "default",
+      required: false,
+      note: "Set true for path-style access on compatible providers",
     },
   ];
 

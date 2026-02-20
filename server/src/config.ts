@@ -2,10 +2,11 @@ import { readConfigFile } from "./config-file.js";
 import { existsSync } from "node:fs";
 import { config as loadDotenv } from "dotenv";
 import { resolvePaperclipEnvPath } from "./paths.js";
-import { SECRET_PROVIDERS, type SecretProvider } from "@paperclip/shared";
+import { SECRET_PROVIDERS, STORAGE_PROVIDERS, type SecretProvider, type StorageProvider } from "@paperclip/shared";
 import {
   resolveDefaultEmbeddedPostgresDir,
   resolveDefaultSecretsKeyFilePath,
+  resolveDefaultStorageDir,
   resolveHomeAwarePath,
 } from "./home-paths.js";
 
@@ -27,6 +28,13 @@ export interface Config {
   secretsProvider: SecretProvider;
   secretsStrictMode: boolean;
   secretsMasterKeyFilePath: string;
+  storageProvider: StorageProvider;
+  storageLocalDiskBaseDir: string;
+  storageS3Bucket: string;
+  storageS3Region: string;
+  storageS3Endpoint: string | undefined;
+  storageS3Prefix: string;
+  storageS3ForcePathStyle: boolean;
   heartbeatSchedulerEnabled: boolean;
   heartbeatSchedulerIntervalMs: number;
 }
@@ -41,6 +49,7 @@ export function loadConfig(): Config {
       ? fileConfig?.database.connectionString
       : undefined;
   const fileSecrets = fileConfig?.secrets;
+  const fileStorage = fileConfig?.storage;
   const strictModeFromEnv = process.env.PAPERCLIP_SECRETS_STRICT_MODE;
   const secretsStrictMode =
     strictModeFromEnv !== undefined
@@ -54,6 +63,26 @@ export function loadConfig(): Config {
       : null;
   const providerFromFile = fileSecrets?.provider;
   const secretsProvider: SecretProvider = providerFromEnv ?? providerFromFile ?? "local_encrypted";
+
+  const storageProviderFromEnvRaw = process.env.PAPERCLIP_STORAGE_PROVIDER;
+  const storageProviderFromEnv =
+    storageProviderFromEnvRaw && STORAGE_PROVIDERS.includes(storageProviderFromEnvRaw as StorageProvider)
+      ? (storageProviderFromEnvRaw as StorageProvider)
+      : null;
+  const storageProvider: StorageProvider = storageProviderFromEnv ?? fileStorage?.provider ?? "local_disk";
+  const storageLocalDiskBaseDir = resolveHomeAwarePath(
+    process.env.PAPERCLIP_STORAGE_LOCAL_DIR ??
+      fileStorage?.localDisk?.baseDir ??
+      resolveDefaultStorageDir(),
+  );
+  const storageS3Bucket = process.env.PAPERCLIP_STORAGE_S3_BUCKET ?? fileStorage?.s3?.bucket ?? "paperclip";
+  const storageS3Region = process.env.PAPERCLIP_STORAGE_S3_REGION ?? fileStorage?.s3?.region ?? "us-east-1";
+  const storageS3Endpoint = process.env.PAPERCLIP_STORAGE_S3_ENDPOINT ?? fileStorage?.s3?.endpoint ?? undefined;
+  const storageS3Prefix = process.env.PAPERCLIP_STORAGE_S3_PREFIX ?? fileStorage?.s3?.prefix ?? "";
+  const storageS3ForcePathStyle =
+    process.env.PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE !== undefined
+      ? process.env.PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE === "true"
+      : (fileStorage?.s3?.forcePathStyle ?? false);
 
   return {
     port: Number(process.env.PORT) || fileConfig?.server.port || 3100,
@@ -76,6 +105,13 @@ export function loadConfig(): Config {
           fileSecrets?.localEncrypted.keyFilePath ??
           resolveDefaultSecretsKeyFilePath(),
       ),
+    storageProvider,
+    storageLocalDiskBaseDir,
+    storageS3Bucket,
+    storageS3Region,
+    storageS3Endpoint,
+    storageS3Prefix,
+    storageS3ForcePathStyle,
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
   };

@@ -1,7 +1,14 @@
 export type { Company } from "./company.js";
 export type { Agent, AgentPermissions, AgentKeyCreated, AgentConfigRevision } from "./agent.js";
 export type { Project } from "./project.js";
-export type { Issue, IssueComment, IssueAncestor } from "./issue.js";
+export type {
+  Issue,
+  IssueComment,
+  IssueAncestor,
+  IssueAncestorProject,
+  IssueAncestorGoal,
+  IssueAttachment,
+} from "./issue.js";
 export type { Goal } from "./goal.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {

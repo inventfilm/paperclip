@@ -48,7 +48,7 @@ program
   .command("configure")
   .description("Update configuration sections")
   .option("-c, --config <path>", "Path to config file")
-  .option("-s, --section <section>", "Section to configure (llm, database, logging, server, secrets)")
+  .option("-s, --section <section>", "Section to configure (llm, database, logging, server, storage, secrets)")
   .action(configure);
 
 program

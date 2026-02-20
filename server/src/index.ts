@@ -16,6 +16,7 @@ import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { heartbeatService } from "./services/index.js";
+import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 
 type EmbeddedPostgresInstance = {
@@ -217,7 +218,8 @@ if (config.databaseUrl) {
 }
 
 const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
-const app = await createApp(db as any, { uiMode });
+const storageService = createStorageServiceFromConfig(config);
+const app = await createApp(db as any, { uiMode, storageService });
 const server = createServer(app);
 const listenPort = await detectPort(config.port);
 

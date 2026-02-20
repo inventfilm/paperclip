@@ -45,6 +45,10 @@ export function resolveDefaultSecretsKeyFilePath(instanceId?: string): string {
   return path.resolve(resolvePaperclipInstanceRoot(instanceId), "secrets", "master.key");
 }
 
+export function resolveDefaultStorageDir(instanceId?: string): string {
+  return path.resolve(resolvePaperclipInstanceRoot(instanceId), "data", "storage");
+}
+
 export function expandHomePrefix(value: string): string {
   if (value === "~") return os.homedir();
   if (value.startsWith("~/")) return path.resolve(os.homedir(), value.slice(2));
@@ -62,5 +66,6 @@ export function describeLocalInstancePaths(instanceId?: string) {
     embeddedPostgresDataDir: resolveDefaultEmbeddedPostgresDir(resolvedInstanceId),
     logDir: resolveDefaultLogsDir(resolvedInstanceId),
     secretsKeyFilePath: resolveDefaultSecretsKeyFilePath(resolvedInstanceId),
+    storageDir: resolveDefaultStorageDir(resolvedInstanceId),
   };
 }

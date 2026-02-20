@@ -8,6 +8,7 @@ import { promptDatabase } from "../prompts/database.js";
 import { promptLlm } from "../prompts/llm.js";
 import { promptLogging } from "../prompts/logging.js";
 import { defaultSecretsConfig } from "../prompts/secrets.js";
+import { defaultStorageConfig, promptStorage } from "../prompts/storage.js";
 import { promptServer } from "../prompts/server.js";
 import { describeLocalInstancePaths, resolvePaperclipInstanceId } from "../config/home.js";
 
@@ -107,6 +108,10 @@ export async function onboard(opts: { config?: string }): Promise<void> {
   p.log.step(pc.bold("Server"));
   const server = await promptServer();
 
+  // Storage
+  p.log.step(pc.bold("Storage"));
+  const storage = await promptStorage(defaultStorageConfig());
+
   // Secrets
   p.log.step(pc.bold("Secrets"));
   const secrets = defaultSecretsConfig();
@@ -137,6 +142,7 @@ export async function onboard(opts: { config?: string }): Promise<void> {
     database,
     logging,
     server,
+    storage,
     secrets,
   };
 
@@ -155,6 +161,7 @@ export async function onboard(opts: { config?: string }): Promise<void> {
       llm ? `LLM: ${llm.provider}` : "LLM: not configured",
       `Logging: ${logging.mode} → ${logging.logDir}`,
       `Server: port ${server.port}`,
+      `Storage: ${storage.provider}`,
       `Secrets: ${secrets.provider} (strict mode ${secrets.strictMode ? "on" : "off"})`,
       `Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured`,
     ].join("\n"),
