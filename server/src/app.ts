@@ -6,6 +6,7 @@ import type { Db } from "@paperclip/db";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
+import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
 import { agentRoutes } from "./routes/agents.js";
@@ -33,6 +34,7 @@ export async function createApp(db: Db, opts: { uiMode: UiMode; storageService: 
 
   // Mount API routes
   const api = Router();
+  api.use(boardMutationGuard());
   api.use("/health", healthRoutes());
   api.use("/companies", companyRoutes(db));
   api.use(agentRoutes(db));
