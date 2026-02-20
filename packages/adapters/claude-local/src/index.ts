@@ -14,6 +14,7 @@ Adapter: claude_local
 Core fields:
 - cwd (string, required): absolute working directory for the agent process
 - model (string, optional): Claude model id
+- effort (string, optional): reasoning effort passed via --effort (low|medium|high)
 - promptTemplate (string, optional): run prompt template
 - bootstrapPromptTemplate (string, optional): first-run prompt template
 - maxTurnsPerRun (number, optional): max turns for one run

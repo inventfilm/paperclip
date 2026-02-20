@@ -189,9 +189,9 @@ export function agentRoutes(db: Db) {
     };
   }
 
-  router.get("/adapters/:type/models", (req, res) => {
+  router.get("/adapters/:type/models", async (req, res) => {
     const type = req.params.type as string;
-    const models = listAdapterModels(type);
+    const models = await listAdapterModels(type);
     res.json(models);
   });
 
@@ -888,6 +888,36 @@ export function agentRoutes(db: Db) {
     const agentId = req.query.agentId as string | undefined;
     const runs = await heartbeat.list(companyId, agentId);
     res.json(runs);
+  });
+
+  router.get("/companies/:companyId/live-runs", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+
+    const liveRuns = await db
+      .select({
+        id: heartbeatRuns.id,
+        status: heartbeatRuns.status,
+        invocationSource: heartbeatRuns.invocationSource,
+        triggerDetail: heartbeatRuns.triggerDetail,
+        startedAt: heartbeatRuns.startedAt,
+        finishedAt: heartbeatRuns.finishedAt,
+        createdAt: heartbeatRuns.createdAt,
+        agentId: heartbeatRuns.agentId,
+        agentName: agentsTable.name,
+        adapterType: agentsTable.adapterType,
+      })
+      .from(heartbeatRuns)
+      .innerJoin(agentsTable, eq(heartbeatRuns.agentId, agentsTable.id))
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          inArray(heartbeatRuns.status, ["queued", "running"]),
+        ),
+      )
+      .orderBy(desc(heartbeatRuns.createdAt));
+
+    res.json(liveRuns);
   });
 
   router.post("/heartbeat-runs/:runId/cancel", async (req, res) => {

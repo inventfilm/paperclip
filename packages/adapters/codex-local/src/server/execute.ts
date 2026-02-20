@@ -98,6 +98,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const bootstrapTemplate = asString(config.bootstrapPromptTemplate, promptTemplate);
   const command = asString(config.command, "codex");
   const model = asString(config.model, "");
+  const modelReasoningEffort = asString(
+    config.modelReasoningEffort,
+    asString(config.reasoningEffort, ""),
+  );
   const search = asBoolean(config.search, false);
   const bypass = asBoolean(config.dangerouslyBypassApprovalsAndSandbox, false);
 
@@ -117,6 +121,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0
       ? context.wakeReason.trim()
       : null;
+  const wakeCommentId =
+    (typeof context.wakeCommentId === "string" && context.wakeCommentId.trim().length > 0 && context.wakeCommentId.trim()) ||
+    (typeof context.commentId === "string" && context.commentId.trim().length > 0 && context.commentId.trim()) ||
+    null;
   const approvalId =
     typeof context.approvalId === "string" && context.approvalId.trim().length > 0
       ? context.approvalId.trim()
@@ -133,6 +141,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   if (wakeReason) {
     env.PAPERCLIP_WAKE_REASON = wakeReason;
+  }
+  if (wakeCommentId) {
+    env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
   }
   if (approvalId) {
     env.PAPERCLIP_APPROVAL_ID = approvalId;
@@ -152,7 +163,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
-  const timeoutSec = asNumber(config.timeoutSec, 1800);
+  const timeoutSec = asNumber(config.timeoutSec, 0);
   const graceSec = asNumber(config.graceSec, 20);
   const extraArgs = (() => {
     const fromExtraArgs = asStringArray(config.extraArgs);
@@ -189,6 +200,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (search) args.unshift("--search");
     if (bypass) args.push("--dangerously-bypass-approvals-and-sandbox");
     if (model) args.push("--model", model);
+    if (modelReasoningEffort) args.push("-c", `model_reasoning_effort=${JSON.stringify(modelReasoningEffort)}`);
     if (extraArgs.length > 0) args.push(...extraArgs);
     if (resumeSessionId) args.push("resume", resumeSessionId, "-");
     else args.push("-");

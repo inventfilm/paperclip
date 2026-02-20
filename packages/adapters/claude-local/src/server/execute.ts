@@ -57,6 +57,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const bootstrapTemplate = asString(config.bootstrapPromptTemplate, promptTemplate);
   const command = asString(config.command, "claude");
   const model = asString(config.model, "");
+  const effort = asString(config.effort, "");
   const maxTurns = asNumber(config.maxTurnsPerRun, 0);
   const dangerouslySkipPermissions = asBoolean(config.dangerouslySkipPermissions, false);
 
@@ -75,6 +76,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     typeof context.wakeReason === "string" && context.wakeReason.trim().length > 0
       ? context.wakeReason.trim()
       : null;
+  const wakeCommentId =
+    (typeof context.wakeCommentId === "string" && context.wakeCommentId.trim().length > 0 && context.wakeCommentId.trim()) ||
+    (typeof context.commentId === "string" && context.commentId.trim().length > 0 && context.commentId.trim()) ||
+    null;
   const approvalId =
     typeof context.approvalId === "string" && context.approvalId.trim().length > 0
       ? context.approvalId.trim()
@@ -91,6 +96,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   if (wakeReason) {
     env.PAPERCLIP_WAKE_REASON = wakeReason;
+  }
+  if (wakeCommentId) {
+    env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
   }
   if (approvalId) {
     env.PAPERCLIP_APPROVAL_ID = approvalId;
@@ -110,7 +118,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
-  const timeoutSec = asNumber(config.timeoutSec, 1800);
+  const timeoutSec = asNumber(config.timeoutSec, 0);
   const graceSec = asNumber(config.graceSec, 20);
   const extraArgs = (() => {
     const fromExtraArgs = asStringArray(config.extraArgs);
@@ -148,6 +156,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (resumeSessionId) args.push("--resume", resumeSessionId);
     if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
     if (model) args.push("--model", model);
+    if (effort) args.push("--effort", effort);
     if (maxTurns > 0) args.push("--max-turns", String(maxTurns));
     args.push("--add-dir", skillsDir);
     if (extraArgs.length > 0) args.push(...extraArgs);

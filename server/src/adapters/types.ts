@@ -9,5 +9,6 @@ export type {
   AdapterInvocationMeta,
   AdapterExecutionContext,
   AdapterSessionCodec,
+  AdapterModel,
   ServerAdapterModule,
 } from "@paperclip/adapter-utils";

@@ -77,12 +77,18 @@ export interface AdapterExecutionContext {
   authToken?: string;
 }
 
+export interface AdapterModel {
+  id: string;
+  label: string;
+}
+
 export interface ServerAdapterModule {
   type: string;
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
   sessionCodec?: AdapterSessionCodec;
   supportsLocalAgentJwt?: boolean;
-  models?: { id: string; label: string }[];
+  models?: AdapterModel[];
+  listModels?: () => Promise<AdapterModel[]>;
   agentConfigurationDoc?: string;
 }
 
@@ -122,6 +128,7 @@ export interface CreateConfigValues {
   cwd: string;
   promptTemplate: string;
   model: string;
+  thinkingEffort: string;
   dangerouslySkipPermissions: boolean;
   search: boolean;
   dangerouslyBypassSandbox: boolean;

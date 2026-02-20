@@ -3,6 +3,7 @@ import { execute as claudeExecute, sessionCodec as claudeSessionCodec } from "@p
 import { agentConfigurationDoc as claudeAgentConfigurationDoc, models as claudeModels } from "@paperclip/adapter-claude-local";
 import { execute as codexExecute, sessionCodec as codexSessionCodec } from "@paperclip/adapter-codex-local/server";
 import { agentConfigurationDoc as codexAgentConfigurationDoc, models as codexModels } from "@paperclip/adapter-codex-local";
+import { listCodexModels } from "./codex-models.js";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
 
@@ -20,6 +21,7 @@ const codexLocalAdapter: ServerAdapterModule = {
   execute: codexExecute,
   sessionCodec: codexSessionCodec,
   models: codexModels,
+  listModels: listCodexModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: codexAgentConfigurationDoc,
 };
@@ -37,8 +39,14 @@ export function getServerAdapter(type: string): ServerAdapterModule {
   return adapter;
 }
 
-export function listAdapterModels(type: string): { id: string; label: string }[] {
-  return adaptersByType.get(type)?.models ?? [];
+export async function listAdapterModels(type: string): Promise<{ id: string; label: string }[]> {
+  const adapter = adaptersByType.get(type);
+  if (!adapter) return [];
+  if (adapter.listModels) {
+    const discovered = await adapter.listModels();
+    if (discovered.length > 0) return discovered;
+  }
+  return adapter.models ?? [];
 }
 
 export function listServerAdapters(): ServerAdapterModule[] {

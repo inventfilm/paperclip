@@ -2,9 +2,14 @@ export const type = "codex_local";
 export const label = "Codex (local)";
 
 export const models = [
+  { id: "gpt-5.3-codex", label: "gpt-5.3-codex" },
+  { id: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark" },
   { id: "gpt-5", label: "gpt-5" },
-  { id: "o4-mini", label: "o4-mini" },
   { id: "o3", label: "o3" },
+  { id: "o4-mini", label: "o4-mini" },
+  { id: "gpt-5-mini", label: "gpt-5-mini" },
+  { id: "gpt-5-nano", label: "gpt-5-nano" },
+  { id: "o3-mini", label: "o3-mini" },
   { id: "codex-mini-latest", label: "Codex Mini" },
 ];
 
@@ -15,6 +20,7 @@ Adapter: codex_local
 Core fields:
 - cwd (string, required): absolute working directory for the agent process
 - model (string, optional): Codex model id
+- modelReasoningEffort (string, optional): reasoning effort override (minimal|low|medium|high) passed via -c model_reasoning_effort=...
 - promptTemplate (string, optional): run prompt template
 - bootstrapPromptTemplate (string, optional): first-run prompt template
 - search (boolean, optional): run codex with --search
@@ -30,4 +36,5 @@ Operational fields:
 Notes:
 - Prompts are piped via stdin (Codex receives "-" prompt argument).
 - Paperclip auto-injects local skills into Codex personal skills dir ("$CODEX_HOME/skills" or "~/.codex/skills") when missing, so Codex can discover "$paperclip" and related skills.
+- Some model/tool combinations reject certain effort levels (for example minimal with web search enabled).
 `;

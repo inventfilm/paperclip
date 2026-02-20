@@ -201,15 +201,18 @@ export async function runChildProcess(
     let stderr = "";
     let logChain: Promise<void> = Promise.resolve();
 
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-      setTimeout(() => {
-        if (!child.killed) {
-          child.kill("SIGKILL");
-        }
-      }, Math.max(1, opts.graceSec) * 1000);
-    }, Math.max(1, opts.timeoutSec) * 1000);
+    const timeout =
+      opts.timeoutSec > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            child.kill("SIGTERM");
+            setTimeout(() => {
+              if (!child.killed) {
+                child.kill("SIGKILL");
+              }
+            }, Math.max(1, opts.graceSec) * 1000);
+          }, opts.timeoutSec * 1000)
+        : null;
 
     child.stdout?.on("data", (chunk) => {
       const text = String(chunk);
@@ -228,7 +231,7 @@ export async function runChildProcess(
     });
 
     child.on("error", (err) => {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       runningProcesses.delete(runId);
       const errno = (err as NodeJS.ErrnoException).code;
       const pathValue = mergedEnv.PATH ?? mergedEnv.Path ?? "";
@@ -240,7 +243,7 @@ export async function runChildProcess(
     });
 
     child.on("close", (code, signal) => {
-      clearTimeout(timeout);
+      if (timeout) clearTimeout(timeout);
       runningProcesses.delete(runId);
       void logChain.finally(() => {
         resolve({
