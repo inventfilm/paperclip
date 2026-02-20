@@ -18,6 +18,7 @@ export interface LiveRunForIssue {
   agentId: string;
   agentName: string;
   adapterType: string;
+  issueId?: string | null;
 }
 
 export const heartbeatsApi = {
