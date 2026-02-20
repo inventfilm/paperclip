@@ -42,6 +42,7 @@ export function App() {
         <Route path="issues/active" element={<Issues />} />
         <Route path="issues/backlog" element={<Issues />} />
         <Route path="issues/done" element={<Issues />} />
+        <Route path="issues/recent" element={<Issues />} />
         <Route path="issues/:issueId" element={<IssueDetail />} />
         <Route path="goals" element={<Goals />} />
         <Route path="goals/:goalId" element={<GoalDetail />} />

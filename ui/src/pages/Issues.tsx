@@ -27,17 +27,18 @@ function statusLabel(status: string): string {
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-type TabFilter = "all" | "active" | "backlog" | "done";
+type TabFilter = "all" | "active" | "backlog" | "done" | "recent";
 
 const issueTabItems = [
   { value: "all", label: "All Issues" },
   { value: "active", label: "Active" },
   { value: "backlog", label: "Backlog" },
   { value: "done", label: "Done" },
+  { value: "recent", label: "Recent" },
 ] as const;
 
 function parseIssueTab(value: string | null): TabFilter {
-  if (value === "all" || value === "active" || value === "backlog" || value === "done") return value;
+  if (value === "all" || value === "active" || value === "backlog" || value === "done" || value === "recent") return value;
   return "active";
 }
 
@@ -113,6 +114,9 @@ export function Issues() {
   }
 
   const filtered = filterIssues(issues ?? [], tab);
+  const recentSorted = tab === "recent"
+    ? [...filtered].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    : null;
   const grouped = groupBy(filtered, (i) => i.status);
   const orderedGroups = statusOrder
     .filter((s) => grouped[s]?.length)
@@ -146,70 +150,118 @@ export function Issues() {
         />
       )}
 
-      {orderedGroups.map(({ status, items }) => (
-        <div key={status}>
-          <div className="flex items-center gap-2 px-4 py-2 bg-muted/50">
-            <StatusIcon status={status} />
-            <span className="text-xs font-semibold uppercase tracking-wide">
-              {statusLabel(status)}
-            </span>
-            <span className="text-xs text-muted-foreground">{items.length}</span>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className="ml-auto text-muted-foreground"
-              onClick={() => openNewIssue({ status })}
-            >
-              <Plus className="h-3 w-3" />
-            </Button>
-          </div>
-          <div className="border border-border">
-            {items.map((issue) => (
-              <EntityRow
-                key={issue.id}
-                identifier={issue.identifier ?? issue.id.slice(0, 8)}
-                title={issue.title}
-                onClick={() => navigate(`/issues/${issue.id}`)}
-                leading={
-                  // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <PriorityIcon
-                      priority={issue.priority}
-                      onChange={(p) => updateIssue.mutate({ id: issue.id, data: { priority: p } })}
-                    />
-                    <StatusIcon
-                      status={issue.status}
-                      onChange={(s) => updateIssue.mutate({ id: issue.id, data: { status: s } })}
-                    />
-                  </div>
-                }
-                trailing={
-                  <div className="flex items-center gap-3">
-                    {liveIssueIds.has(issue.id) && (
-                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10">
-                        <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-                        </span>
-                        <span className="text-[11px] font-medium text-blue-400">Live</span>
+      {recentSorted ? (
+        <div className="border border-border">
+          {recentSorted.map((issue) => (
+            <EntityRow
+              key={issue.id}
+              identifier={issue.identifier ?? issue.id.slice(0, 8)}
+              title={issue.title}
+              onClick={() => navigate(`/issues/${issue.id}`)}
+              leading={
+                // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <PriorityIcon
+                    priority={issue.priority}
+                    onChange={(p) => updateIssue.mutate({ id: issue.id, data: { priority: p } })}
+                  />
+                  <StatusIcon
+                    status={issue.status}
+                    onChange={(s) => updateIssue.mutate({ id: issue.id, data: { status: s } })}
+                  />
+                </div>
+              }
+              trailing={
+                <div className="flex items-center gap-3">
+                  {liveIssueIds.has(issue.id) && (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
                       </span>
-                    )}
-                    {issue.assigneeAgentId && (() => {
-                      const name = agentName(issue.assigneeAgentId);
-                      return name
-                        ? <Identity name={name} size="sm" />
-                        : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
-                    })()}
-                    <span className="text-xs text-muted-foreground">
-                      {formatDate(issue.createdAt)}
+                      <span className="text-[11px] font-medium text-blue-400">Live</span>
                     </span>
-                  </div>
-                }
-              />
-            ))}
-          </div>
+                  )}
+                  {issue.assigneeAgentId && (() => {
+                    const name = agentName(issue.assigneeAgentId);
+                    return name
+                      ? <Identity name={name} size="sm" />
+                      : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
+                  })()}
+                  <span className="text-xs text-muted-foreground">
+                    {formatDate(issue.updatedAt)}
+                  </span>
+                </div>
+              }
+            />
+          ))}
         </div>
-      ))}
+      ) : (
+        orderedGroups.map(({ status, items }) => (
+          <div key={status}>
+            <div className="flex items-center gap-2 px-4 py-2 bg-muted/50">
+              <StatusIcon status={status} />
+              <span className="text-xs font-semibold uppercase tracking-wide">
+                {statusLabel(status)}
+              </span>
+              <span className="text-xs text-muted-foreground">{items.length}</span>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="ml-auto text-muted-foreground"
+                onClick={() => openNewIssue({ status })}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="border border-border">
+              {items.map((issue) => (
+                <EntityRow
+                  key={issue.id}
+                  identifier={issue.identifier ?? issue.id.slice(0, 8)}
+                  title={issue.title}
+                  onClick={() => navigate(`/issues/${issue.id}`)}
+                  leading={
+                    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <PriorityIcon
+                        priority={issue.priority}
+                        onChange={(p) => updateIssue.mutate({ id: issue.id, data: { priority: p } })}
+                      />
+                      <StatusIcon
+                        status={issue.status}
+                        onChange={(s) => updateIssue.mutate({ id: issue.id, data: { status: s } })}
+                      />
+                    </div>
+                  }
+                  trailing={
+                    <div className="flex items-center gap-3">
+                      {liveIssueIds.has(issue.id) && (
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                          </span>
+                          <span className="text-[11px] font-medium text-blue-400">Live</span>
+                        </span>
+                      )}
+                      {issue.assigneeAgentId && (() => {
+                        const name = agentName(issue.assigneeAgentId);
+                        return name
+                          ? <Identity name={name} size="sm" />
+                          : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
+                      })()}
+                      <span className="text-xs text-muted-foreground">
+                        {formatDate(issue.createdAt)}
+                      </span>
+                    </div>
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        ))
+      )}
     </div>
   );
 }
