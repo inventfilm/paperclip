@@ -7,6 +7,10 @@ import {
   readAgentJwtSecretFromEnvFile,
   resolveAgentJwtEnvFile,
 } from "../config/env.js";
+import {
+  resolveDefaultSecretsKeyFilePath,
+  resolvePaperclipInstanceId,
+} from "../config/home.js";
 
 type EnvSource = "env" | "config" | "file" | "default" | "missing";
 
@@ -23,7 +27,9 @@ const DEFAULT_AGENT_JWT_ISSUER = "paperclip";
 const DEFAULT_AGENT_JWT_AUDIENCE = "paperclip-api";
 const DEFAULT_HEARTBEAT_SCHEDULER_INTERVAL_MS = "30000";
 const DEFAULT_SECRETS_PROVIDER = "local_encrypted";
-const DEFAULT_SECRETS_KEY_FILE_PATH = "./data/secrets/master.key";
+function defaultSecretsKeyFilePath(): string {
+  return resolveDefaultSecretsKeyFilePath(resolvePaperclipInstanceId());
+}
 
 export async function envCommand(opts: { config?: string }): Promise<void> {
   p.intro(pc.bgCyan(pc.black(" paperclip env ")));
@@ -120,7 +126,7 @@ function collectDeploymentEnvRows(config: PaperclipConfig | null, configPath: st
   const secretsKeyFilePath =
     process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE ??
     config?.secrets?.localEncrypted?.keyFilePath ??
-    DEFAULT_SECRETS_KEY_FILE_PATH;
+    defaultSecretsKeyFilePath();
 
   const rows: EnvVarRow[] = [
     {

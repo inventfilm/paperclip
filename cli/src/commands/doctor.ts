@@ -23,7 +23,7 @@ export async function doctor(opts: {
   config?: string;
   repair?: boolean;
   yes?: boolean;
-}): Promise<void> {
+}): Promise<{ passed: number; warned: number; failed: number }> {
   p.intro(pc.bgCyan(pc.black(" paperclip doctor ")));
 
   const configPath = resolveConfigPath(opts.config);
@@ -35,8 +35,7 @@ export async function doctor(opts: {
   printResult(cfgResult);
 
   if (cfgResult.status === "fail") {
-    printSummary(results);
-    return;
+    return printSummary(results);
   }
 
   let config: PaperclipConfig;
@@ -52,8 +51,7 @@ export async function doctor(opts: {
     };
     results.push(readResult);
     printResult(readResult);
-    printSummary(results);
-    return;
+    return printSummary(results);
   }
 
   // 2. Agent JWT check
@@ -91,7 +89,7 @@ export async function doctor(opts: {
   printResult(portResult);
 
   // Summary
-  printSummary(results);
+  return printSummary(results);
 }
 
 function printResult(result: CheckResult): void {
@@ -129,7 +127,7 @@ async function maybeRepair(
   }
 }
 
-function printSummary(results: CheckResult[]): void {
+function printSummary(results: CheckResult[]): { passed: number; warned: number; failed: number } {
   const passed = results.filter((r) => r.status === "pass").length;
   const warned = results.filter((r) => r.status === "warn").length;
   const failed = results.filter((r) => r.status === "fail").length;
@@ -148,4 +146,6 @@ function printSummary(results: CheckResult[]): void {
   } else {
     p.outro(pc.green("All checks passed!"));
   }
+
+  return { passed, warned, failed };
 }

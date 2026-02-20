@@ -92,7 +92,7 @@ V1 implementation extends this baseline into a company-centric, governance-aware
 ## 6.2 Data Stores
 
 - Primary: PostgreSQL
-- Local default: embedded PostgreSQL at `./server/data/embedded-postgres`
+- Local default: embedded PostgreSQL at `~/.paperclip/instances/default/db`
 - Optional local prod-like: Docker Postgres
 - Optional hosted: Supabase/Postgres-compatible
 

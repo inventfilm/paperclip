@@ -1,9 +1,8 @@
 import { setTimeout as delay } from "node:timers/promises";
 import pc from "picocolors";
 import type { Agent, HeartbeatRun, HeartbeatRunEvent, HeartbeatRunStatus } from "@paperclip/shared";
-import type { PaperclipConfig } from "../config/schema.js";
-import { readConfig } from "../config/store.js";
 import { getCLIAdapter } from "../adapters/index.js";
+import { resolveCommandContext } from "./client/common.js";
 
 const HEARTBEAT_SOURCES = ["timer", "assignment", "on_demand", "automation"] as const;
 const HEARTBEAT_TRIGGERS = ["manual", "ping", "callback", "system"] as const;
@@ -19,12 +18,16 @@ interface HeartbeatRunEventRecord extends HeartbeatRunEvent {
 
 interface HeartbeatRunOptions {
   config?: string;
+  context?: string;
+  profile?: string;
   agentId: string;
   apiBase?: string;
+  apiKey?: string;
   source: string;
   trigger: string;
   timeoutMs: string;
   debug?: boolean;
+  json?: boolean;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -63,35 +66,27 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
     ? (opts.trigger as HeartbeatTrigger)
     : "manual";
 
-  let config: PaperclipConfig | null = null;
-  try {
-    config = readConfig(opts.config);
-  } catch (err) {
-    console.error(
-      pc.yellow(
-        `Config warning: ${err instanceof Error ? err.message : String(err)}\nContinuing with API base fallback settings.`,
-      ),
-    );
-  }
-  const apiBase = getApiBase(config, opts.apiBase);
-
-  const agent = await requestJson<Agent>(`${apiBase}/api/agents/${opts.agentId}`, {
-    method: "GET",
+  const ctx = resolveCommandContext({
+    config: opts.config,
+    context: opts.context,
+    profile: opts.profile,
+    apiBase: opts.apiBase,
+    apiKey: opts.apiKey,
+    json: opts.json,
   });
+  const api = ctx.api;
+
+  const agent = await api.get<Agent>(`/api/agents/${opts.agentId}`);
   if (!agent || typeof agent !== "object" || !agent.id) {
     console.error(pc.red(`Agent not found: ${opts.agentId}`));
     return;
   }
 
-  const invokeRes = await requestJson<InvokedHeartbeat>(
-    `${apiBase}/api/agents/${opts.agentId}/wakeup`,
+  const invokeRes = await api.post<InvokedHeartbeat>(
+    `/api/agents/${opts.agentId}/wakeup`,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        source: source,
-        triggerDetail: triggerDetail,
-      }),
+      source: source,
+      triggerDetail: triggerDetail,
     },
   );
   if (!invokeRes) {
@@ -221,16 +216,15 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
   }
 
   while (true) {
-      const events = await requestJson<HeartbeatRunEvent[]>(
-        `${apiBase}/api/heartbeat-runs/${activeRunId}/events?afterSeq=${lastEventSeq}&limit=100`,
-        { method: "GET" },
+      const events = await api.get<HeartbeatRunEvent[]>(
+        `/api/heartbeat-runs/${activeRunId}/events?afterSeq=${lastEventSeq}&limit=100`,
       );
     for (const event of Array.isArray(events) ? (events as HeartbeatRunEventRecord[]) : []) {
       handleEvent(event);
     }
 
-      const runList = (await requestJson<(HeartbeatRun | null)[]>(
-        `${apiBase}/api/companies/${agent.companyId}/heartbeat-runs?agentId=${agent.id}`,
+      const runList = (await api.get<(HeartbeatRun | null)[]>(
+        `/api/companies/${agent.companyId}/heartbeat-runs?agentId=${agent.id}`,
       )) || [];
       const currentRun = runList.find((r) => r && r.id === activeRunId) ?? null;
 
@@ -259,9 +253,8 @@ export async function heartbeatRun(opts: HeartbeatRunOptions): Promise<void> {
       break;
     }
 
-    const logResult = await requestJson<{ content: string; nextOffset?: number }>(
-      `${apiBase}/api/heartbeat-runs/${activeRunId}/log?offset=${logOffset}&limitBytes=16384`,
-      { method: "GET" },
+    const logResult = await api.get<{ content: string; nextOffset?: number }>(
+      `/api/heartbeat-runs/${activeRunId}/log?offset=${logOffset}&limitBytes=16384`,
       { ignoreNotFound: true },
     );
     if (logResult && logResult.content) {
@@ -347,52 +340,5 @@ function safeParseLogLine(line: string): { stream: "stdout" | "stderr" | "system
     return { stream, chunk };
   } catch {
     return null;
-  }
-}
-
-function getApiBase(config: PaperclipConfig | null, apiBaseOverride?: string): string {
-  if (apiBaseOverride?.trim()) return apiBaseOverride.trim();
-  const envBase = process.env.PAPERCLIP_API_URL?.trim();
-  if (envBase) return envBase;
-  const envHost = process.env.PAPERCLIP_SERVER_HOST?.trim() || "localhost";
-  const envPort = Number(process.env.PAPERCLIP_SERVER_PORT || config?.server?.port || 3100);
-  return `http://${envHost}:${Number.isFinite(envPort) && envPort > 0 ? envPort : 3100}`;
-}
-
-async function requestJson<T>(
-  url: string,
-  init?: RequestInit,
-  opts?: { ignoreNotFound?: boolean },
-): Promise<T | null> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      ...init?.headers,
-      accept: "application/json",
-    },
-  });
-
-  if (!res.ok) {
-    if (opts?.ignoreNotFound && res.status === 404) {
-      return null;
-    }
-    const text = await safeReadText(res);
-    console.error(pc.red(`Request failed (${res.status}): ${text || res.statusText}`));
-    return null;
-  }
-
-  return (await res.json()) as T;
-}
-
-async function safeReadText(res: Response): Promise<string> {
-  try {
-    const text = await res.text();
-    if (!text) return "";
-    const trimmed = text.trim();
-    if (!trimmed) return "";
-    if (trimmed[0] === "{" || trimmed[0] === "[") return trimmed;
-    return trimmed;
-  } catch (_err) {
-    return "";
   }
 }

@@ -15,13 +15,13 @@ export const llmConfigSchema = z.object({
 export const databaseConfigSchema = z.object({
   mode: z.enum(["embedded-postgres", "postgres"]).default("embedded-postgres"),
   connectionString: z.string().optional(),
-  embeddedPostgresDataDir: z.string().default("./data/embedded-postgres"),
+  embeddedPostgresDataDir: z.string().default("~/.paperclip/instances/default/db"),
   embeddedPostgresPort: z.number().int().min(1).max(65535).default(54329),
 });
 
 export const loggingConfigSchema = z.object({
   mode: z.enum(["file", "cloud"]),
-  logDir: z.string().default("./data/logs"),
+  logDir: z.string().default("~/.paperclip/instances/default/logs"),
 });
 
 export const serverConfigSchema = z.object({
@@ -30,14 +30,14 @@ export const serverConfigSchema = z.object({
 });
 
 export const secretsLocalEncryptedConfigSchema = z.object({
-  keyFilePath: z.string().default("./data/secrets/master.key"),
+  keyFilePath: z.string().default("~/.paperclip/instances/default/secrets/master.key"),
 });
 
 export const secretsConfigSchema = z.object({
   provider: z.enum(SECRET_PROVIDERS).default("local_encrypted"),
   strictMode: z.boolean().default(false),
   localEncrypted: secretsLocalEncryptedConfigSchema.default({
-    keyFilePath: "./data/secrets/master.key",
+    keyFilePath: "~/.paperclip/instances/default/secrets/master.key",
   }),
 });
 
@@ -51,7 +51,7 @@ export const paperclipConfigSchema = z.object({
     provider: "local_encrypted",
     strictMode: false,
     localEncrypted: {
-      keyFilePath: "./data/secrets/master.key",
+      keyFilePath: "~/.paperclip/instances/default/secrets/master.key",
     },
   }),
 });

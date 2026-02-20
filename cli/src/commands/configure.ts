@@ -8,6 +8,11 @@ import { promptLlm } from "../prompts/llm.js";
 import { promptLogging } from "../prompts/logging.js";
 import { defaultSecretsConfig, promptSecrets } from "../prompts/secrets.js";
 import { promptServer } from "../prompts/server.js";
+import {
+  resolveDefaultEmbeddedPostgresDir,
+  resolveDefaultLogsDir,
+  resolvePaperclipInstanceId,
+} from "../config/home.js";
 
 type Section = "llm" | "database" | "logging" | "server" | "secrets";
 
@@ -20,6 +25,7 @@ const SECTION_LABELS: Record<Section, string> = {
 };
 
 function defaultConfig(): PaperclipConfig {
+  const instanceId = resolvePaperclipInstanceId();
   return {
     $meta: {
       version: 1,
@@ -28,12 +34,12 @@ function defaultConfig(): PaperclipConfig {
     },
     database: {
       mode: "embedded-postgres",
-      embeddedPostgresDataDir: "./data/embedded-postgres",
+      embeddedPostgresDataDir: resolveDefaultEmbeddedPostgresDir(instanceId),
       embeddedPostgresPort: 54329,
     },
     logging: {
       mode: "file",
-      logDir: "./data/logs",
+      logDir: resolveDefaultLogsDir(instanceId),
     },
     server: {
       port: 3100,

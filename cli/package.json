@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "bin": {
-    "paperclip": "./src/index.ts"
+    "paperclip": "./dist/index.js"
   },
   "scripts": {
     "dev": "tsx src/index.ts",
@@ -17,6 +17,7 @@
     "@paperclip/adapter-codex-local": "workspace:*",
     "@paperclip/adapter-utils": "workspace:*",
     "@paperclip/db": "workspace:*",
+    "@paperclip/server": "workspace:*",
     "@paperclip/shared": "workspace:*",
     "dotenv": "^17.0.1",
     "commander": "^13.1.0",

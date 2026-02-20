@@ -3,6 +3,11 @@ import { existsSync } from "node:fs";
 import { config as loadDotenv } from "dotenv";
 import { resolvePaperclipEnvPath } from "./paths.js";
 import { SECRET_PROVIDERS, type SecretProvider } from "@paperclip/shared";
+import {
+  resolveDefaultEmbeddedPostgresDir,
+  resolveDefaultSecretsKeyFilePath,
+  resolveHomeAwarePath,
+} from "./home-paths.js";
 
 const PAPERCLIP_ENV_FILE_PATH = resolvePaperclipEnvPath();
 if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
@@ -54,7 +59,9 @@ export function loadConfig(): Config {
     port: Number(process.env.PORT) || fileConfig?.server.port || 3100,
     databaseMode: fileDatabaseMode,
     databaseUrl: process.env.DATABASE_URL ?? fileDbUrl,
-    embeddedPostgresDataDir: fileConfig?.database.embeddedPostgresDataDir ?? "./data/embedded-postgres",
+    embeddedPostgresDataDir: resolveHomeAwarePath(
+      fileConfig?.database.embeddedPostgresDataDir ?? resolveDefaultEmbeddedPostgresDir(),
+    ),
     embeddedPostgresPort: fileConfig?.database.embeddedPostgresPort ?? 54329,
     serveUi:
       process.env.SERVE_UI !== undefined
@@ -64,9 +71,11 @@ export function loadConfig(): Config {
     secretsProvider,
     secretsStrictMode,
     secretsMasterKeyFilePath:
-      process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE ??
-      fileSecrets?.localEncrypted.keyFilePath ??
-      "./data/secrets/master.key",
+      resolveHomeAwarePath(
+        process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE ??
+          fileSecrets?.localEncrypted.keyFilePath ??
+          resolveDefaultSecretsKeyFilePath(),
+      ),
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
   };

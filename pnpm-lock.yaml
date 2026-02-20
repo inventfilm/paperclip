@@ -32,6 +32,9 @@ importers:
       '@paperclip/db':
         specifier: workspace:*
         version: link:../packages/db
+      '@paperclip/server':
+        specifier: workspace:*
+        version: link:../server
       '@paperclip/shared':
         specifier: workspace:*
         version: link:../packages/shared

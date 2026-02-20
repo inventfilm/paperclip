@@ -9,9 +9,16 @@ import { promptLlm } from "../prompts/llm.js";
 import { promptLogging } from "../prompts/logging.js";
 import { defaultSecretsConfig } from "../prompts/secrets.js";
 import { promptServer } from "../prompts/server.js";
+import { describeLocalInstancePaths, resolvePaperclipInstanceId } from "../config/home.js";
 
 export async function onboard(opts: { config?: string }): Promise<void> {
   p.intro(pc.bgCyan(pc.black(" paperclip onboard ")));
+  const instance = describeLocalInstancePaths(resolvePaperclipInstanceId());
+  p.log.message(
+    pc.dim(
+      `Local home: ${instance.homeDir} | instance: ${instance.instanceId} | config: ${resolveConfigPath(opts.config)}`,
+    ),
+  );
 
   // Check for existing config
   if (configExists(opts.config)) {

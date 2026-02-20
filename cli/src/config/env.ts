@@ -8,8 +8,6 @@ const JWT_SECRET_ENV_KEY = "PAPERCLIP_AGENT_JWT_SECRET";
 function resolveEnvFilePath() {
   return path.resolve(path.dirname(resolveConfigPath()), ".env");
 }
-
-const ENV_FILE_PATH = resolveEnvFilePath();
 const loadedEnvFiles = new Set<string>();
 
 function isNonEmpty(value: unknown): value is string {
@@ -35,10 +33,10 @@ function renderEnvFile(entries: Record<string, string>) {
 }
 
 export function resolveAgentJwtEnvFile(): string {
-  return ENV_FILE_PATH;
+  return resolveEnvFilePath();
 }
 
-export function loadAgentJwtEnvFile(filePath = ENV_FILE_PATH): void {
+export function loadAgentJwtEnvFile(filePath = resolveEnvFilePath()): void {
   if (loadedEnvFiles.has(filePath)) return;
 
   if (!fs.existsSync(filePath)) return;
@@ -52,7 +50,7 @@ export function readAgentJwtSecretFromEnv(): string | null {
   return isNonEmpty(raw) ? raw!.trim() : null;
 }
 
-export function readAgentJwtSecretFromEnvFile(filePath = ENV_FILE_PATH): string | null {
+export function readAgentJwtSecretFromEnvFile(filePath = resolveEnvFilePath()): string | null {
   if (!fs.existsSync(filePath)) return null;
 
   const raw = fs.readFileSync(filePath, "utf-8");
@@ -78,7 +76,7 @@ export function ensureAgentJwtSecret(): { secret: string; created: boolean } {
   return { secret, created };
 }
 
-export function writeAgentJwtEnv(secret: string, filePath = ENV_FILE_PATH): void {
+export function writeAgentJwtEnv(secret: string, filePath = resolveEnvFilePath()): void {
   const dir = path.dirname(filePath);
   fs.mkdirSync(dir, { recursive: true });
 

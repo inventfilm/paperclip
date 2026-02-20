@@ -1,7 +1,10 @@
 import * as p from "@clack/prompts";
 import type { DatabaseConfig } from "../config/schema.js";
+import { resolveDefaultEmbeddedPostgresDir, resolvePaperclipInstanceId } from "../config/home.js";
 
 export async function promptDatabase(): Promise<DatabaseConfig> {
+  const defaultEmbeddedDir = resolveDefaultEmbeddedPostgresDir(resolvePaperclipInstanceId());
+
   const mode = await p.select({
     message: "Database mode",
     options: [
@@ -33,15 +36,15 @@ export async function promptDatabase(): Promise<DatabaseConfig> {
     return {
       mode: "postgres",
       connectionString,
-      embeddedPostgresDataDir: "./data/embedded-postgres",
+      embeddedPostgresDataDir: defaultEmbeddedDir,
       embeddedPostgresPort: 54329,
     };
   }
 
   const embeddedPostgresDataDir = await p.text({
     message: "Embedded PostgreSQL data directory",
-    defaultValue: "./data/embedded-postgres",
-    placeholder: "./data/embedded-postgres",
+    defaultValue: defaultEmbeddedDir,
+    placeholder: defaultEmbeddedDir,
   });
 
   if (p.isCancel(embeddedPostgresDataDir)) {
@@ -66,7 +69,7 @@ export async function promptDatabase(): Promise<DatabaseConfig> {
 
   return {
     mode: "embedded-postgres",
-    embeddedPostgresDataDir: embeddedPostgresDataDir || "./data/embedded-postgres",
+    embeddedPostgresDataDir: embeddedPostgresDataDir || defaultEmbeddedDir,
     embeddedPostgresPort: Number(embeddedPostgresPort || "54329"),
   };
 }

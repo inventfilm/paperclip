@@ -1,15 +1,19 @@
 import * as p from "@clack/prompts";
 import type { SecretProvider } from "@paperclip/shared";
 import type { SecretsConfig } from "../config/schema.js";
+import { resolveDefaultSecretsKeyFilePath, resolvePaperclipInstanceId } from "../config/home.js";
 
-const DEFAULT_KEY_FILE_PATH = "./data/secrets/master.key";
+function defaultKeyFilePath(): string {
+  return resolveDefaultSecretsKeyFilePath(resolvePaperclipInstanceId());
+}
 
 export function defaultSecretsConfig(): SecretsConfig {
+  const keyFilePath = defaultKeyFilePath();
   return {
     provider: "local_encrypted",
     strictMode: false,
     localEncrypted: {
-      keyFilePath: DEFAULT_KEY_FILE_PATH,
+      keyFilePath,
     },
   };
 }
@@ -59,12 +63,13 @@ export async function promptSecrets(current?: SecretsConfig): Promise<SecretsCon
     process.exit(0);
   }
 
-  let keyFilePath = base.localEncrypted.keyFilePath || DEFAULT_KEY_FILE_PATH;
+  const fallbackDefault = defaultKeyFilePath();
+  let keyFilePath = base.localEncrypted.keyFilePath || fallbackDefault;
   if (provider === "local_encrypted") {
     const keyPath = await p.text({
       message: "Local encrypted key file path",
       defaultValue: keyFilePath,
-      placeholder: DEFAULT_KEY_FILE_PATH,
+      placeholder: fallbackDefault,
       validate: (value) => {
         if (!value || value.trim().length === 0) return "Key file path is required";
       },
