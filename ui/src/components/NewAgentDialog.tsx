@@ -24,11 +24,8 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { roleLabels } from "./agent-config-primitives";
-import {
-  AgentConfigForm,
-  defaultCreateValues,
-  type CreateConfigValues,
-} from "./AgentConfigForm";
+import { AgentConfigForm, type CreateConfigValues } from "./AgentConfigForm";
+import { defaultCreateValues } from "./agent-config-defaults";
 import { getUIAdapter } from "../adapters";
 
 export function NewAgentDialog() {

@@ -17,7 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "../lib/utils";
 import { getUIAdapter } from "../adapters";
-import { defaultCreateValues } from "./AgentConfigForm";
+import { defaultCreateValues } from "./agent-config-defaults";
 import {
   Building2,
   Bot,

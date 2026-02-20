@@ -1,10 +1,16 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AGENT_ADAPTER_TYPES } from "@paperclip/shared";
-import type { Agent, CompanySecret, EnvBinding } from "@paperclip/shared";
+import type {
+  Agent,
+  AdapterEnvironmentTestResult,
+  CompanySecret,
+  EnvBinding,
+} from "@paperclip/shared";
 import type { AdapterModel } from "../api/agents";
 import { agentsApi } from "../api/agents";
 import { secretsApi } from "../api/secrets";
+import { assetsApi } from "../api/assets";
 import {
   Popover,
   PopoverContent,
@@ -20,15 +26,14 @@ import {
   ToggleField,
   ToggleWithNumber,
   CollapsibleSection,
-  AutoExpandTextarea,
   DraftInput,
-  DraftTextarea,
   DraftNumberInput,
   help,
   adapterLabels,
 } from "./agent-config-primitives";
 import { getUIAdapter } from "../adapters";
 import { ClaudeLocalAdvancedFields } from "../adapters/claude-local/config-fields";
+import { MarkdownEditor } from "./MarkdownEditor";
 
 /* ---- Create mode values ---- */
 
@@ -36,27 +41,6 @@ import { ClaudeLocalAdvancedFields } from "../adapters/claude-local/config-field
 // so existing imports from this file keep working.
 export type { CreateConfigValues } from "@paperclip/adapter-utils";
 import type { CreateConfigValues } from "@paperclip/adapter-utils";
-
-export const defaultCreateValues: CreateConfigValues = {
-  adapterType: "claude_local",
-  cwd: "",
-  promptTemplate: "",
-  model: "",
-  thinkingEffort: "",
-  dangerouslySkipPermissions: false,
-  search: false,
-  dangerouslyBypassSandbox: false,
-  command: "",
-  args: "",
-  extraArgs: "",
-  envVars: "",
-  envBindings: {},
-  url: "",
-  bootstrapPrompt: "",
-  maxTurnsPerRun: 80,
-  heartbeatEnabled: false,
-  intervalSec: 300,
-};
 
 /* ---- Props ---- */
 
@@ -171,6 +155,13 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     onSuccess: () => {
       if (!selectedCompanyId) return;
       queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(selectedCompanyId) });
+    },
+  });
+
+  const uploadMarkdownImage = useMutation({
+    mutationFn: async ({ file, namespace }: { file: File; namespace: string }) => {
+      if (!selectedCompanyId) throw new Error("Select a company to upload images");
+      return assetsApi.uploadImage(selectedCompanyId, file, namespace);
     },
   });
 
@@ -293,6 +284,25 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     ? (patch: Partial<CreateConfigValues>) => props.onChange(patch)
     : null;
 
+  function buildAdapterConfigForTest(): Record<string, unknown> {
+    if (isCreate) {
+      return uiAdapter.buildAdapterConfig(val!);
+    }
+    const base = config as Record<string, unknown>;
+    return { ...base, ...overlay.adapterConfig };
+  }
+
+  const testEnvironment = useMutation({
+    mutationFn: async () => {
+      if (!selectedCompanyId) {
+        throw new Error("Select a company to test adapter environment");
+      }
+      return agentsApi.testEnvironment(selectedCompanyId, adapterType, {
+        adapterConfig: buildAdapterConfigForTest(),
+      });
+    },
+  });
+
   // Current model for display
   const currentModelId = isCreate
     ? val!.model
@@ -356,12 +366,18 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               />
             </Field>
             <Field label="Capabilities" hint={help.capabilities}>
-              <DraftTextarea
+              <MarkdownEditor
                 value={eff("identity", "capabilities", props.agent.capabilities ?? "")}
-                onCommit={(v) => mark("identity", "capabilities", v || null)}
-                immediate
+                onChange={(v) => mark("identity", "capabilities", v || null)}
                 placeholder="Describe what this agent can do..."
-                minRows={2}
+                contentClassName="min-h-[120px]"
+                imageUploadHandler={async (file) => {
+                  const asset = await uploadMarkdownImage.mutateAsync({
+                    file,
+                    namespace: `agents/${props.agent.id}/capabilities`,
+                  });
+                  return asset.contentPath;
+                }}
               />
             </Field>
           </div>
@@ -390,10 +406,34 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
       {/* ---- Adapter Configuration ---- */}
       <div className={cn(isCreate ? "border-t border-border" : "border-b border-border")}>
-        <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
-          Adapter Configuration
+        <div className="px-4 py-2 flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-muted-foreground">
+            Adapter Configuration
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 px-2.5 text-xs"
+            onClick={() => testEnvironment.mutate()}
+            disabled={testEnvironment.isPending || !selectedCompanyId}
+          >
+            {testEnvironment.isPending ? "Testing..." : "Test environment"}
+          </Button>
         </div>
         <div className="px-4 pb-3 space-y-3">
+          {testEnvironment.error && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {testEnvironment.error instanceof Error
+                ? testEnvironment.error.message
+                : "Environment test failed"}
+            </div>
+          )}
+
+          {testEnvironment.data && (
+            <AdapterEnvironmentResult result={testEnvironment.data} />
+          )}
+
           {/* Working directory */}
           {isLocal && (
             <Field label="Working directory" hint={help.cwd}>
@@ -454,28 +494,31 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           {/* Prompt template */}
           {isLocal && (
             <Field label="Prompt template" hint={help.promptTemplate}>
-              {isCreate ? (
-                <AutoExpandTextarea
-                  placeholder="You are agent {{ agent.name }}. Your role is {{ agent.role }}..."
-                  value={val!.promptTemplate}
-                  onChange={(v) => set!({ promptTemplate: v })}
-                  minRows={4}
-                />
-              ) : (
-                <DraftTextarea
-                  value={eff(
-                    "adapterConfig",
-                    "promptTemplate",
-                    String(config.promptTemplate ?? ""),
-                  )}
-                  onCommit={(v) =>
-                    mark("adapterConfig", "promptTemplate", v || undefined)
-                  }
-                  immediate
-                  placeholder="You are agent {{ agent.name }}. Your role is {{ agent.role }}..."
-                  minRows={4}
-                />
-              )}
+              <MarkdownEditor
+                value={
+                  isCreate
+                    ? val!.promptTemplate
+                    : eff(
+                        "adapterConfig",
+                        "promptTemplate",
+                        String(config.promptTemplate ?? ""),
+                      )
+                }
+                onChange={(v) =>
+                  isCreate
+                    ? set!({ promptTemplate: v })
+                    : mark("adapterConfig", "promptTemplate", v || undefined)
+                }
+                placeholder="You are agent {{ agent.name }}. Your role is {{ agent.role }}..."
+                contentClassName="min-h-[180px]"
+                imageUploadHandler={async (file) => {
+                  const namespace = isCreate
+                    ? "agents/drafts/prompt-template"
+                    : `agents/${props.agent.id}/prompt-template`;
+                  const asset = await uploadMarkdownImage.mutateAsync({ file, namespace });
+                  return asset.contentPath;
+                }}
+              />
             </Field>
           )}
 
@@ -539,28 +582,31 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     </p>
                   )}
                 <Field label="Bootstrap prompt (first run)" hint={help.bootstrapPrompt}>
-                  {isCreate ? (
-                    <AutoExpandTextarea
-                      placeholder="Optional initial setup prompt for the first run"
-                      value={val!.bootstrapPrompt}
-                      onChange={(v) => set!({ bootstrapPrompt: v })}
-                      minRows={2}
-                    />
-                  ) : (
-                    <DraftTextarea
-                      value={eff(
-                        "adapterConfig",
-                        "bootstrapPromptTemplate",
-                        String(config.bootstrapPromptTemplate ?? ""),
-                      )}
-                      onCommit={(v) =>
-                        mark("adapterConfig", "bootstrapPromptTemplate", v || undefined)
-                      }
-                      immediate
-                      placeholder="Optional initial setup prompt for the first run"
-                      minRows={2}
-                    />
-                  )}
+                  <MarkdownEditor
+                    value={
+                      isCreate
+                        ? val!.bootstrapPrompt
+                        : eff(
+                            "adapterConfig",
+                            "bootstrapPromptTemplate",
+                            String(config.bootstrapPromptTemplate ?? ""),
+                          )
+                    }
+                    onChange={(v) =>
+                      isCreate
+                        ? set!({ bootstrapPrompt: v })
+                        : mark("adapterConfig", "bootstrapPromptTemplate", v || undefined)
+                    }
+                    placeholder="Optional initial setup prompt for the first run"
+                    contentClassName="min-h-[120px]"
+                    imageUploadHandler={async (file) => {
+                      const namespace = isCreate
+                        ? "agents/drafts/bootstrap-prompt"
+                        : `agents/${props.agent.id}/bootstrap-prompt`;
+                      const asset = await uploadMarkdownImage.mutateAsync({ file, namespace });
+                      return asset.contentPath;
+                    }}
+                  />
                 </Field>
                 {adapterType === "claude_local" && (
                   <ClaudeLocalAdvancedFields {...adapterFieldProps} />
@@ -716,6 +762,41 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         </div>
       )}
 
+    </div>
+  );
+}
+
+function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestResult }) {
+  const statusLabel =
+    result.status === "pass" ? "Passed" : result.status === "warn" ? "Warnings" : "Failed";
+  const statusClass =
+    result.status === "pass"
+      ? "text-green-300 border-green-500/40 bg-green-500/10"
+      : result.status === "warn"
+        ? "text-amber-300 border-amber-500/40 bg-amber-500/10"
+        : "text-red-300 border-red-500/40 bg-red-500/10";
+
+  return (
+    <div className={`rounded-md border px-3 py-2 text-xs ${statusClass}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium">{statusLabel}</span>
+        <span className="text-[11px] opacity-80">
+          {new Date(result.testedAt).toLocaleTimeString()}
+        </span>
+      </div>
+      <div className="mt-2 space-y-1.5">
+        {result.checks.map((check, idx) => (
+          <div key={`${check.code}-${idx}`} className="text-[11px] leading-relaxed">
+            <span className="font-medium uppercase tracking-wide opacity-80">
+              {check.level}
+            </span>
+            <span className="mx-1 opacity-60">·</span>
+            <span>{check.message}</span>
+            {check.detail && <span className="opacity-75"> ({check.detail})</span>}
+            {check.hint && <span className="opacity-90"> Hint: {check.hint}</span>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

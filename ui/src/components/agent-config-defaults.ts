@@ -1,0 +1,22 @@
+import type { CreateConfigValues } from "@paperclip/adapter-utils";
+
+export const defaultCreateValues: CreateConfigValues = {
+  adapterType: "claude_local",
+  cwd: "",
+  promptTemplate: "",
+  model: "",
+  thinkingEffort: "",
+  dangerouslySkipPermissions: false,
+  search: false,
+  dangerouslyBypassSandbox: false,
+  command: "",
+  args: "",
+  extraArgs: "",
+  envVars: "",
+  envBindings: {},
+  url: "",
+  bootstrapPrompt: "",
+  maxTurnsPerRun: 80,
+  heartbeatEnabled: false,
+  intervalSec: 300,
+};
