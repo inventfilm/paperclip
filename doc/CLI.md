@@ -119,6 +119,7 @@ Default local instance root is `~/.paperclip/instances/default`:
 - config: `~/.paperclip/instances/default/config.json`
 - embedded db: `~/.paperclip/instances/default/db`
 - logs: `~/.paperclip/instances/default/logs`
+- storage: `~/.paperclip/instances/default/data/storage`
 - secrets key: `~/.paperclip/instances/default/secrets/master.key`
 
 Override base home or instance with env vars:
@@ -126,3 +127,16 @@ Override base home or instance with env vars:
 ```sh
 PAPERCLIP_HOME=/custom/home PAPERCLIP_INSTANCE_ID=dev pnpm paperclip run
 ```
+
+## Storage Configuration
+
+Configure storage provider and settings:
+
+```sh
+pnpm paperclip configure --section storage
+```
+
+Supported providers:
+
+- `local_disk` (default; local single-user installs)
+- `s3` (S3-compatible object storage)
