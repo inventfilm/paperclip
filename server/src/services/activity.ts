@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import { activityLog, heartbeatRuns, issues } from "@paperclip/db";
 
@@ -60,10 +60,10 @@ export function activityService(db: Db) {
         )
         .orderBy(desc(activityLog.createdAt)),
 
-    runsForIssue: (issueId: string) =>
+    runsForIssue: (companyId: string, issueId: string) =>
       db
-        .selectDistinctOn([activityLog.runId], {
-          runId: activityLog.runId,
+        .select({
+          runId: heartbeatRuns.id,
           status: heartbeatRuns.status,
           agentId: heartbeatRuns.agentId,
           startedAt: heartbeatRuns.startedAt,
@@ -73,19 +73,37 @@ export function activityService(db: Db) {
           usageJson: heartbeatRuns.usageJson,
           resultJson: heartbeatRuns.resultJson,
         })
-        .from(activityLog)
-        .innerJoin(heartbeatRuns, eq(activityLog.runId, heartbeatRuns.id))
+        .from(heartbeatRuns)
         .where(
           and(
-            eq(activityLog.entityType, "issue"),
-            eq(activityLog.entityId, issueId),
-            isNotNull(activityLog.runId),
+            eq(heartbeatRuns.companyId, companyId),
+            or(
+              sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issueId}`,
+              sql`exists (
+                select 1
+                from ${activityLog}
+                where ${activityLog.companyId} = ${companyId}
+                  and ${activityLog.entityType} = 'issue'
+                  and ${activityLog.entityId} = ${issueId}
+                  and ${activityLog.runId} = ${heartbeatRuns.id}
+              )`,
+            ),
           ),
         )
-        .orderBy(activityLog.runId, desc(heartbeatRuns.createdAt)),
+        .orderBy(desc(heartbeatRuns.createdAt)),
 
-    issuesForRun: (runId: string) =>
-      db
+    issuesForRun: async (runId: string) => {
+      const run = await db
+        .select({
+          companyId: heartbeatRuns.companyId,
+          contextSnapshot: heartbeatRuns.contextSnapshot,
+        })
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, runId))
+        .then((rows) => rows[0] ?? null);
+      if (!run) return [];
+
+      const fromActivity = await db
         .selectDistinctOn([issueIdAsText], {
           issueId: issues.id,
           identifier: issues.identifier,
@@ -97,12 +115,43 @@ export function activityService(db: Db) {
         .innerJoin(issues, eq(activityLog.entityId, issueIdAsText))
         .where(
           and(
+            eq(activityLog.companyId, run.companyId),
             eq(activityLog.runId, runId),
             eq(activityLog.entityType, "issue"),
             isNull(issues.hiddenAt),
           ),
         )
-        .orderBy(issueIdAsText),
+        .orderBy(issueIdAsText);
+
+      const context = run.contextSnapshot;
+      const contextIssueId =
+        context && typeof context === "object" && typeof (context as Record<string, unknown>).issueId === "string"
+          ? ((context as Record<string, unknown>).issueId as string)
+          : null;
+      if (!contextIssueId) return fromActivity;
+      if (fromActivity.some((issue) => issue.issueId === contextIssueId)) return fromActivity;
+
+      const fromContext = await db
+        .select({
+          issueId: issues.id,
+          identifier: issues.identifier,
+          title: issues.title,
+          status: issues.status,
+          priority: issues.priority,
+        })
+        .from(issues)
+        .where(
+          and(
+            eq(issues.companyId, run.companyId),
+            eq(issues.id, contextIssueId),
+            isNull(issues.hiddenAt),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+
+      if (!fromContext) return fromActivity;
+      return [fromContext, ...fromActivity];
+    },
 
     create: (data: typeof activityLog.$inferInsert) =>
       db

@@ -89,7 +89,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
   async function assertAgentRunCheckoutOwnership(
     req: Request,
     res: Response,
-    issue: { id: string; status: string; assigneeAgentId: string | null },
+    issue: { id: string; companyId: string; status: string; assigneeAgentId: string | null },
   ) {
     if (req.actor.type !== "agent") return true;
     const actorAgentId = req.actor.agentId;
@@ -102,7 +102,25 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
     const runId = requireAgentRunId(req, res);
     if (!runId) return false;
-    await svc.assertCheckoutOwner(issue.id, actorAgentId, runId);
+    const ownership = await svc.assertCheckoutOwner(issue.id, actorAgentId, runId);
+    if (ownership.adoptedFromRunId) {
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        action: "issue.checkout_lock_adopted",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          previousCheckoutRunId: ownership.adoptedFromRunId,
+          checkoutRunId: runId,
+          reason: "stale_checkout_run",
+        },
+      });
+    }
     return true;
   }
 
@@ -239,7 +257,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       action: "issue.created",
       entityType: "issue",
       entityId: issue.id,
-      details: { title: issue.title },
+      details: { title: issue.title, identifier: issue.identifier },
     });
 
     if (issue.assigneeAgentId) {
@@ -297,7 +315,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       action: "issue.updated",
       entityType: "issue",
       entityId: issue.id,
-      details: { ...updateFields, _previous: Object.keys(previous).length > 0 ? previous : undefined },
+      details: { ...updateFields, identifier: issue.identifier, _previous: Object.keys(previous).length > 0 ? previous : undefined },
     });
 
     let comment = null;
@@ -477,6 +495,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
     const actorRunId = requireAgentRunId(req, res);
     if (req.actor.type === "agent" && !actorRunId) return;
 
@@ -558,6 +577,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
           reopened: true,
           reopenedFrom: reopenFromStatus,
           source: "comment",
+          identifier: currentIssue.identifier,
         },
       });
     }

@@ -82,7 +82,7 @@ export function activityRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, issue.companyId);
-    const result = await svc.runsForIssue(id);
+    const result = await svc.runsForIssue(issue.companyId, id);
     res.json(result);
   });
 

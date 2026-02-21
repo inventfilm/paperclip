@@ -5,6 +5,7 @@ import {
   assets,
   companies,
   goals,
+  heartbeatRuns,
   issueAttachments,
   issueComments,
   issues,
@@ -50,6 +51,8 @@ function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
   return checkoutRunId == null;
 }
 
+const TERMINAL_HEARTBEAT_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+
 export function issueService(db: Db) {
   async function assertAssignableAgent(companyId: string, agentId: string) {
     const assignee = await db
@@ -72,6 +75,54 @@ export function issueService(db: Db) {
     if (assignee.status === "terminated") {
       throw conflict("Cannot assign work to terminated agents");
     }
+  }
+
+  async function isTerminalOrMissingHeartbeatRun(runId: string) {
+    const run = await db
+      .select({ status: heartbeatRuns.status })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.id, runId))
+      .then((rows) => rows[0] ?? null);
+    if (!run) return true;
+    return TERMINAL_HEARTBEAT_RUN_STATUSES.has(run.status);
+  }
+
+  async function adoptStaleCheckoutRun(input: {
+    issueId: string;
+    actorAgentId: string;
+    actorRunId: string;
+    expectedCheckoutRunId: string;
+  }) {
+    const stale = await isTerminalOrMissingHeartbeatRun(input.expectedCheckoutRunId);
+    if (!stale) return null;
+
+    const now = new Date();
+    const adopted = await db
+      .update(issues)
+      .set({
+        checkoutRunId: input.actorRunId,
+        executionRunId: input.actorRunId,
+        executionLockedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(issues.id, input.issueId),
+          eq(issues.status, "in_progress"),
+          eq(issues.assigneeAgentId, input.actorAgentId),
+          eq(issues.checkoutRunId, input.expectedCheckoutRunId),
+        ),
+      )
+      .returning({
+        id: issues.id,
+        status: issues.status,
+        assigneeAgentId: issues.assigneeAgentId,
+        checkoutRunId: issues.checkoutRunId,
+        executionRunId: issues.executionRunId,
+      })
+      .then((rows) => rows[0] ?? null);
+
+    return adopted;
   }
 
   return {
@@ -287,6 +338,22 @@ export function issueService(db: Db) {
         if (adopted) return adopted;
       }
 
+      if (
+        checkoutRunId &&
+        current.assigneeAgentId === agentId &&
+        current.status === "in_progress" &&
+        current.checkoutRunId &&
+        current.checkoutRunId !== checkoutRunId
+      ) {
+        const adopted = await adoptStaleCheckoutRun({
+          issueId: id,
+          actorAgentId: agentId,
+          actorRunId: checkoutRunId,
+          expectedCheckoutRunId: current.checkoutRunId,
+        });
+        if (adopted) return db.select().from(issues).where(eq(issues.id, id)).then((rows) => rows[0]!);
+      }
+
       // If this run already owns it and it's in_progress, return it (no self-409)
       if (
         current.assigneeAgentId === agentId &&
@@ -324,7 +391,29 @@ export function issueService(db: Db) {
         current.assigneeAgentId === actorAgentId &&
         sameRunLock(current.checkoutRunId, actorRunId)
       ) {
-        return current;
+        return { ...current, adoptedFromRunId: null as string | null };
+      }
+
+      if (
+        actorRunId &&
+        current.status === "in_progress" &&
+        current.assigneeAgentId === actorAgentId &&
+        current.checkoutRunId &&
+        current.checkoutRunId !== actorRunId
+      ) {
+        const adopted = await adoptStaleCheckoutRun({
+          issueId: id,
+          actorAgentId,
+          actorRunId,
+          expectedCheckoutRunId: current.checkoutRunId,
+        });
+
+        if (adopted) {
+          return {
+            ...adopted,
+            adoptedFromRunId: current.checkoutRunId,
+          };
+        }
       }
 
       throw conflict("Issue run ownership conflict", {
