@@ -315,14 +315,16 @@ export function ApprovalDetail() {
           {(comments ?? []).map((comment: ApprovalComment) => (
             <div key={comment.id} className="border border-border/60 rounded-md p-3">
               <div className="flex items-center justify-between mb-1">
-                <Identity
-                  name={
-                    comment.authorAgentId
-                      ? agentNameById.get(comment.authorAgentId) ?? comment.authorAgentId.slice(0, 8)
-                      : "Board"
-                  }
-                  size="sm"
-                />
+                {comment.authorAgentId ? (
+                  <Link to={`/agents/${comment.authorAgentId}`} className="hover:underline">
+                    <Identity
+                      name={agentNameById.get(comment.authorAgentId) ?? comment.authorAgentId.slice(0, 8)}
+                      size="sm"
+                    />
+                  </Link>
+                ) : (
+                  <Identity name="Board" size="sm" />
+                )}
                 <span className="text-xs text-muted-foreground">
                   {new Date(comment.createdAt).toLocaleString()}
                 </span>

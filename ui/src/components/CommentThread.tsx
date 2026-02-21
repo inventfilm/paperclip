@@ -70,14 +70,16 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
         {sorted.map((comment) => (
           <div key={comment.id} className="border border-border p-3">
             <div className="flex items-center justify-between mb-1">
-              <Identity
-                name={
-                  comment.authorAgentId
-                    ? agentMap?.get(comment.authorAgentId)?.name ?? comment.authorAgentId.slice(0, 8)
-                    : "You"
-                }
-                size="sm"
-              />
+              {comment.authorAgentId ? (
+                <Link to={`/agents/${comment.authorAgentId}`} className="hover:underline">
+                  <Identity
+                    name={agentMap?.get(comment.authorAgentId)?.name ?? comment.authorAgentId.slice(0, 8)}
+                    size="sm"
+                  />
+                </Link>
+              ) : (
+                <Identity name="You" size="sm" />
+              )}
               <span className="text-xs text-muted-foreground">
                 {formatDateTime(comment.createdAt)}
               </span>
