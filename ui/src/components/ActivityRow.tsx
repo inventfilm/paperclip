@@ -66,9 +66,9 @@ function formatVerb(action: string, details?: Record<string, unknown> | null): s
   return ACTION_VERBS[action] ?? action.replace(/[._]/g, " ");
 }
 
-function entityLink(entityType: string, entityId: string): string | null {
+function entityLink(entityType: string, entityId: string, name?: string | null): string | null {
   switch (entityType) {
-    case "issue": return `/issues/${entityId}`;
+    case "issue": return `/issues/${name ?? entityId}`;
     case "agent": return `/agents/${entityId}`;
     case "project": return `/projects/${entityId}`;
     case "goal": return `/goals/${entityId}`;
@@ -100,7 +100,7 @@ export function ActivityRow({ event, agentMap, entityNameMap, className }: Activ
 
   const link = isHeartbeatEvent && heartbeatAgentId
     ? `/agents/${heartbeatAgentId}/runs/${event.entityId}`
-    : entityLink(event.entityType, event.entityId);
+    : entityLink(event.entityType, event.entityId, name);
 
   const actor = event.actorType === "agent" ? agentMap.get(event.actorId) : null;
 
