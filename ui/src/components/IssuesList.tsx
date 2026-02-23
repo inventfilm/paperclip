@@ -225,7 +225,7 @@ export function IssuesList({
                 )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-80 p-0">
+            <PopoverContent align="end" className="w-[min(480px,calc(100vw-2rem))] p-0">
               <div className="p-3 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Filters</span>
@@ -264,62 +264,63 @@ export function IssuesList({
 
                 <div className="border-t border-border" />
 
-                {/* Status */}
-                <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground">Status</span>
-                  <div className="space-y-0.5">
-                    {statusOrder.map((s) => (
-                      <label key={s} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
-                        <Checkbox
-                          checked={viewState.statuses.includes(s)}
-                          onCheckedChange={() => updateView({ statuses: toggleInArray(viewState.statuses, s) })}
-                        />
-                        <StatusIcon status={s} />
-                        <span className="text-sm">{statusLabel(s)}</span>
-                      </label>
-                    ))}
+                {/* Multi-column filter sections */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+                  {/* Status */}
+                  <div className="space-y-1">
+                    <span className="text-xs text-muted-foreground">Status</span>
+                    <div className="space-y-0.5">
+                      {statusOrder.map((s) => (
+                        <label key={s} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                          <Checkbox
+                            checked={viewState.statuses.includes(s)}
+                            onCheckedChange={() => updateView({ statuses: toggleInArray(viewState.statuses, s) })}
+                          />
+                          <StatusIcon status={s} />
+                          <span className="text-sm">{statusLabel(s)}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                <div className="border-t border-border" />
-
-                {/* Priority */}
-                <div className="space-y-1">
-                  <span className="text-xs text-muted-foreground">Priority</span>
-                  <div className="space-y-0.5">
-                    {priorityOrder.map((p) => (
-                      <label key={p} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
-                        <Checkbox
-                          checked={viewState.priorities.includes(p)}
-                          onCheckedChange={() => updateView({ priorities: toggleInArray(viewState.priorities, p) })}
-                        />
-                        <PriorityIcon priority={p} />
-                        <span className="text-sm">{statusLabel(p)}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Assignee */}
-                {agents && agents.length > 0 && (
-                  <>
-                    <div className="border-t border-border" />
+                  {/* Priority + Assignee stacked in right column */}
+                  <div className="space-y-3">
+                    {/* Priority */}
                     <div className="space-y-1">
-                      <span className="text-xs text-muted-foreground">Assignee</span>
-                      <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                        {agents.map((agent) => (
-                          <label key={agent.id} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                      <span className="text-xs text-muted-foreground">Priority</span>
+                      <div className="space-y-0.5">
+                        {priorityOrder.map((p) => (
+                          <label key={p} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
                             <Checkbox
-                              checked={viewState.assignees.includes(agent.id)}
-                              onCheckedChange={() => updateView({ assignees: toggleInArray(viewState.assignees, agent.id) })}
+                              checked={viewState.priorities.includes(p)}
+                              onCheckedChange={() => updateView({ priorities: toggleInArray(viewState.priorities, p) })}
                             />
-                            <span className="text-sm">{agent.name}</span>
+                            <PriorityIcon priority={p} />
+                            <span className="text-sm">{statusLabel(p)}</span>
                           </label>
                         ))}
                       </div>
                     </div>
-                  </>
-                )}
+
+                    {/* Assignee */}
+                    {agents && agents.length > 0 && (
+                      <div className="space-y-1">
+                        <span className="text-xs text-muted-foreground">Assignee</span>
+                        <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                          {agents.map((agent) => (
+                            <label key={agent.id} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                              <Checkbox
+                                checked={viewState.assignees.includes(agent.id)}
+                                onCheckedChange={() => updateView({ assignees: toggleInArray(viewState.assignees, agent.id) })}
+                              />
+                              <span className="text-sm">{agent.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </PopoverContent>
           </Popover>
