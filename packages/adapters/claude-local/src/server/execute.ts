@@ -19,7 +19,12 @@ import {
   renderTemplate,
   runChildProcess,
 } from "@paperclip/adapter-utils/server-utils";
-import { parseClaudeStreamJson, describeClaudeFailure, isClaudeUnknownSessionError } from "./parse.js";
+import {
+  parseClaudeStreamJson,
+  describeClaudeFailure,
+  detectClaudeLoginRequired,
+  isClaudeUnknownSessionError,
+} from "./parse.js";
 
 const PAPERCLIP_SKILLS_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -47,27 +52,50 @@ async function buildSkillsDir(): Promise<string> {
   return tmp;
 }
 
-export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
-  const { runId, agent, runtime, config, context, onLog, onMeta, authToken } = ctx;
+interface ClaudeExecutionInput {
+  runId: string;
+  agent: AdapterExecutionContext["agent"];
+  config: Record<string, unknown>;
+  context: Record<string, unknown>;
+  authToken?: string;
+}
 
-  const promptTemplate = asString(
-    config.promptTemplate,
-    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
-  );
-  const bootstrapTemplate = asString(config.bootstrapPromptTemplate, promptTemplate);
+interface ClaudeRuntimeConfig {
+  command: string;
+  cwd: string;
+  env: Record<string, string>;
+  timeoutSec: number;
+  graceSec: number;
+  extraArgs: string[];
+}
+
+function buildLoginResult(input: {
+  proc: RunProcessResult;
+  loginUrl: string | null;
+}) {
+  return {
+    exitCode: input.proc.exitCode,
+    signal: input.proc.signal,
+    timedOut: input.proc.timedOut,
+    stdout: input.proc.stdout,
+    stderr: input.proc.stderr,
+    loginUrl: input.loginUrl,
+  };
+}
+
+async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<ClaudeRuntimeConfig> {
+  const { runId, agent, config, context, authToken } = input;
+
   const command = asString(config.command, "claude");
-  const model = asString(config.model, "");
-  const effort = asString(config.effort, "");
-  const maxTurns = asNumber(config.maxTurnsPerRun, 0);
-  const dangerouslySkipPermissions = asBoolean(config.dangerouslySkipPermissions, false);
-
   const cwd = asString(config.cwd, process.cwd());
   await ensureAbsoluteDirectory(cwd);
+
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
     typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
   const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
   env.PAPERCLIP_RUN_ID = runId;
+
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
@@ -91,6 +119,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
+
   if (wakeTaskId) {
     env.PAPERCLIP_TASK_ID = wakeTaskId;
   }
@@ -109,12 +138,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (linkedIssueIds.length > 0) {
     env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   }
-  for (const [k, v] of Object.entries(envConfig)) {
-    if (typeof v === "string") env[k] = v;
+
+  for (const [key, value] of Object.entries(envConfig)) {
+    if (typeof value === "string") env[key] = value;
   }
+
   if (!hasExplicitApiKey && authToken) {
     env.PAPERCLIP_API_KEY = authToken;
   }
+
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
@@ -125,6 +157,75 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (fromExtraArgs.length > 0) return fromExtraArgs;
     return asStringArray(config.args);
   })();
+
+  return {
+    command,
+    cwd,
+    env,
+    timeoutSec,
+    graceSec,
+    extraArgs,
+  };
+}
+
+export async function runClaudeLogin(input: {
+  runId: string;
+  agent: AdapterExecutionContext["agent"];
+  config: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  authToken?: string;
+  onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
+}) {
+  const onLog = input.onLog ?? (async () => {});
+  const runtime = await buildClaudeRuntimeConfig({
+    runId: input.runId,
+    agent: input.agent,
+    config: input.config,
+    context: input.context ?? {},
+    authToken: input.authToken,
+  });
+
+  const proc = await runChildProcess(input.runId, runtime.command, ["login"], {
+    cwd: runtime.cwd,
+    env: runtime.env,
+    timeoutSec: runtime.timeoutSec,
+    graceSec: runtime.graceSec,
+    onLog,
+  });
+
+  const loginMeta = detectClaudeLoginRequired({
+    parsed: null,
+    stdout: proc.stdout,
+    stderr: proc.stderr,
+  });
+
+  return buildLoginResult({
+    proc,
+    loginUrl: loginMeta.loginUrl,
+  });
+}
+
+export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const { runId, agent, runtime, config, context, onLog, onMeta, authToken } = ctx;
+
+  const promptTemplate = asString(
+    config.promptTemplate,
+    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
+  );
+  const bootstrapTemplate = asString(config.bootstrapPromptTemplate, promptTemplate);
+  const model = asString(config.model, "");
+  const effort = asString(config.effort, "");
+  const maxTurns = asNumber(config.maxTurnsPerRun, 0);
+  const dangerouslySkipPermissions = asBoolean(config.dangerouslySkipPermissions, false);
+
+  const runtimeConfig = await buildClaudeRuntimeConfig({
+    runId,
+    agent,
+    config,
+    context,
+    authToken,
+  });
+  const { command, cwd, env, timeoutSec, graceSec, extraArgs } = runtimeConfig;
   const skillsDir = await buildSkillsDir();
 
   const runtimeSessionParams = parseObject(runtime.sessionParams);
@@ -216,12 +317,26 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     opts: { fallbackSessionId: string | null; clearSessionOnMissingSession?: boolean },
   ): AdapterExecutionResult => {
     const { proc, parsedStream, parsed } = attempt;
+    const loginMeta = detectClaudeLoginRequired({
+      parsed,
+      stdout: proc.stdout,
+      stderr: proc.stderr,
+    });
+    const errorMeta =
+      loginMeta.loginUrl != null
+        ? {
+            loginUrl: loginMeta.loginUrl,
+          }
+        : undefined;
+
     if (proc.timedOut) {
       return {
         exitCode: proc.exitCode,
         signal: proc.signal,
         timedOut: true,
         errorMessage: `Timed out after ${timeoutSec}s`,
+        errorCode: "timeout",
+        errorMeta,
         clearSession: Boolean(opts.clearSessionOnMissingSession),
       };
     }
@@ -232,6 +347,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         signal: proc.signal,
         timedOut: false,
         errorMessage: parseFallbackErrorMessage(proc),
+        errorCode: loginMeta.requiresLogin ? "claude_auth_required" : null,
+        errorMeta,
         resultJson: {
           stdout: proc.stdout,
           stderr: proc.stderr,
@@ -266,6 +383,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         (proc.exitCode ?? 0) === 0
           ? null
           : describeClaudeFailure(parsed) ?? `Claude exited with code ${proc.exitCode ?? -1}`,
+      errorCode: loginMeta.requiresLogin ? "claude_auth_required" : null,
+      errorMeta,
       usage,
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,

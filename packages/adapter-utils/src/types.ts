@@ -35,6 +35,8 @@ export interface AdapterExecutionResult {
   signal: string | null;
   timedOut: boolean;
   errorMessage?: string | null;
+  errorCode?: string | null;
+  errorMeta?: Record<string, unknown>;
   usage?: UsageSummary;
   /**
    * Legacy single session id output. Prefer `sessionParams` + `sessionDisplayId`.

@@ -1,6 +1,9 @@
 import type { UsageSummary } from "@paperclip/adapter-utils";
 import { asString, asNumber, parseObject, parseJson } from "@paperclip/adapter-utils/server-utils";
 
+const CLAUDE_AUTH_REQUIRED_RE = /(?:not\s+logged\s+in|please\s+log\s+in|please\s+run\s+`?claude\s+login`?|login\s+required|requires\s+login|unauthorized|authentication\s+required)/i;
+const URL_RE = /(https?:\/\/[^\s'"`<>()[\]{};,!?]+[^\s'"`<>()[\]{};,!.?:]+)/gi;
+
 export function parseClaudeStreamJson(stdout: string) {
   let sessionId: string | null = null;
   let model = "";
@@ -102,6 +105,37 @@ function extractClaudeErrorMessages(parsed: Record<string, unknown>): string[] {
   }
 
   return messages;
+}
+
+export function extractClaudeLoginUrl(text: string): string | null {
+  const match = text.match(URL_RE);
+  if (!match || match.length === 0) return null;
+  for (const rawUrl of match) {
+    const cleaned = rawUrl.replace(/[\])}.!,?;:'\"]+$/g, "");
+    if (cleaned.includes("claude") || cleaned.includes("anthropic") || cleaned.includes("auth")) {
+      return cleaned;
+    }
+  }
+  return match[0]?.replace(/[\])}.!,?;:'\"]+$/g, "") ?? null;
+}
+
+export function detectClaudeLoginRequired(input: {
+  parsed: Record<string, unknown> | null;
+  stdout: string;
+  stderr: string;
+}): { requiresLogin: boolean; loginUrl: string | null } {
+  const resultText = asString(input.parsed?.result, "").trim();
+  const messages = [resultText, ...extractClaudeErrorMessages(input.parsed ?? {}), input.stdout, input.stderr]
+    .join("\n")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const requiresLogin = messages.some((line) => CLAUDE_AUTH_REQUIRED_RE.test(line));
+  return {
+    requiresLogin,
+    loginUrl: extractClaudeLoginUrl([input.stdout, input.stderr].join("\n")),
+  };
 }
 
 export function describeClaudeFailure(parsed: Record<string, unknown>): string | null {

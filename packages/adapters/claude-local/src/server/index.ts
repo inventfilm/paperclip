@@ -1,4 +1,4 @@
-export { execute } from "./execute.js";
+export { execute, runClaudeLogin } from "./execute.js";
 export { testEnvironment } from "./test.js";
 export { parseClaudeStreamJson, describeClaudeFailure, isClaudeUnknownSessionError } from "./parse.js";
 import type { AdapterSessionCodec } from "@paperclip/adapter-utils";
