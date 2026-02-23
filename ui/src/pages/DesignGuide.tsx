@@ -1,7 +1,11 @@
 import { useState } from "react";
 import {
+  BookOpen,
   Bot,
+  Check,
+  ChevronDown,
   CircleDot,
+  Command as CommandIcon,
   DollarSign,
   Hexagon,
   History,
@@ -49,6 +53,54 @@ import {
   TooltipTrigger,
   TooltipContent,
 } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+  DropdownMenuShortcut,
+} from "@/components/ui/dropdown-menu";
+import {
+  Sheet,
+  SheetTrigger,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetFooter,
+} from "@/components/ui/sheet";
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandGroup,
+  CommandItem,
+  CommandEmpty,
+  CommandSeparator,
+} from "@/components/ui/command";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import {
   Avatar,
   AvatarFallback,
@@ -117,6 +169,9 @@ function Swatch({ name, cssVar }: { name: string; cssVar: string }) {
 export function DesignGuide() {
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("medium");
+  const [selectValue, setSelectValue] = useState("in_progress");
+  const [menuChecked, setMenuChecked] = useState(true);
+  const [collapsibleOpen, setCollapsibleOpen] = useState(false);
   const [inlineText, setInlineText] = useState("Click to edit this text");
   const [inlineTitle, setInlineTitle] = useState("Editable Title");
   const [inlineDesc, setInlineDesc] = useState(
@@ -136,6 +191,43 @@ export function DesignGuide() {
           Every component, style, and pattern used across Paperclip.
         </p>
       </div>
+
+      {/* ============================================================ */}
+      {/*  COVERAGE                                                     */}
+      {/* ============================================================ */}
+      <Section title="Component Coverage">
+        <p className="text-sm text-muted-foreground">
+          This page should be updated when new UI primitives or app-level patterns ship.
+        </p>
+        <div className="grid gap-6 md:grid-cols-2">
+          <SubSection title="UI primitives">
+            <div className="flex flex-wrap gap-2">
+              {[
+                "avatar", "badge", "breadcrumb", "button", "card", "checkbox", "collapsible",
+                "command", "dialog", "dropdown-menu", "input", "label", "popover", "scroll-area",
+                "select", "separator", "sheet", "skeleton", "tabs", "textarea", "tooltip",
+              ].map((name) => (
+                <Badge key={name} variant="outline" className="font-mono text-[10px]">
+                  {name}
+                </Badge>
+              ))}
+            </div>
+          </SubSection>
+          <SubSection title="App components">
+            <div className="flex flex-wrap gap-2">
+              {[
+                "StatusBadge", "StatusIcon", "PriorityIcon", "EntityRow", "EmptyState", "MetricCard",
+                "FilterBar", "InlineEditor", "PageSkeleton", "Identity", "CommentThread", "MarkdownEditor",
+                "PropertiesPanel", "Sidebar", "CommandPalette",
+              ].map((name) => (
+                <Badge key={name} variant="ghost" className="font-mono text-[10px]">
+                  {name}
+                </Badge>
+              ))}
+            </div>
+          </SubSection>
+        </div>
+      </Section>
 
       {/* ============================================================ */}
       {/*  COLORS                                                       */}
@@ -299,9 +391,10 @@ export function DesignGuide() {
           <div className="flex items-center gap-2 flex-wrap">
             {[
               "active", "running", "paused", "idle", "archived", "planned",
-              "achieved", "completed", "failed", "succeeded", "error", "backlog",
-              "todo", "in_progress", "in_review", "blocked", "done",
-              "cancelled", "pending", "approved", "rejected",
+              "achieved", "completed", "failed", "timed_out", "succeeded", "error",
+              "pending_approval", "backlog", "todo", "in_progress", "in_review", "blocked",
+              "done", "terminated", "cancelled", "pending", "revision_requested",
+              "approved", "rejected",
             ].map((s) => (
               <StatusBadge key={s} status={s} />
             ))}
@@ -365,7 +458,7 @@ export function DesignGuide() {
               ["timer", "bg-blue-900/50 text-blue-300"],
               ["assignment", "bg-violet-900/50 text-violet-300"],
               ["on_demand", "bg-cyan-900/50 text-cyan-300"],
-              ["webhook", "bg-neutral-800 text-neutral-400"],
+              ["automation", "bg-neutral-800 text-neutral-400"],
             ].map(([label, cls]) => (
               <span key={label} className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
                 {label}
@@ -440,6 +533,217 @@ export function DesignGuide() {
             </div>
           </SubSection>
         </div>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  SELECT                                                       */}
+      {/* ============================================================ */}
+      <Section title="Select">
+        <div className="grid gap-6 md:grid-cols-2">
+          <SubSection title="Default size">
+            <Select value={selectValue} onValueChange={setSelectValue}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="backlog">Backlog</SelectItem>
+                <SelectItem value="todo">Todo</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="in_review">In Review</SelectItem>
+                <SelectItem value="done">Done</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Current value: {selectValue}</p>
+          </SubSection>
+          <SubSection title="Small trigger">
+            <Select defaultValue="high">
+              <SelectTrigger size="sm" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="critical">Critical</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </SubSection>
+        </div>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  DROPDOWN MENU                                                */}
+      {/* ============================================================ */}
+      <Section title="Dropdown Menu">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm">
+              Quick Actions
+              <ChevronDown className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuItem>
+              <Check className="h-4 w-4" />
+              Mark as done
+              <DropdownMenuShortcut>⌘D</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem>
+              <BookOpen className="h-4 w-4" />
+              Open docs
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={menuChecked}
+              onCheckedChange={(value) => setMenuChecked(value === true)}
+            >
+              Watch issue
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuItem variant="destructive">
+              <Trash2 className="h-4 w-4" />
+              Delete issue
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  POPOVER                                                      */}
+      {/* ============================================================ */}
+      <Section title="Popover">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm">Open Popover</Button>
+          </PopoverTrigger>
+          <PopoverContent className="space-y-2">
+            <p className="text-sm font-medium">Agent heartbeat</p>
+            <p className="text-xs text-muted-foreground">
+              Last run succeeded 24s ago. Next timer run in 9m.
+            </p>
+            <Button size="xs">Wake now</Button>
+          </PopoverContent>
+        </Popover>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  COLLAPSIBLE                                                  */}
+      {/* ============================================================ */}
+      <Section title="Collapsible">
+        <Collapsible open={collapsibleOpen} onOpenChange={setCollapsibleOpen} className="space-y-2">
+          <CollapsibleTrigger asChild>
+            <Button variant="outline" size="sm">
+              {collapsibleOpen ? "Hide" : "Show"} advanced filters
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="rounded-md border border-border p-3">
+            <div className="space-y-2">
+              <Label htmlFor="owner-filter">Owner</Label>
+              <Input id="owner-filter" placeholder="Filter by agent name" />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  SHEET                                                        */}
+      {/* ============================================================ */}
+      <Section title="Sheet">
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="outline" size="sm">Open Side Panel</Button>
+          </SheetTrigger>
+          <SheetContent side="right">
+            <SheetHeader>
+              <SheetTitle>Issue Properties</SheetTitle>
+              <SheetDescription>Edit metadata without leaving the current page.</SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 px-4">
+              <div className="space-y-1">
+                <Label htmlFor="sheet-title">Title</Label>
+                <Input id="sheet-title" defaultValue="Improve onboarding docs" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="sheet-description">Description</Label>
+                <Textarea id="sheet-description" defaultValue="Capture setup pitfalls and screenshots." />
+              </div>
+            </div>
+            <SheetFooter>
+              <Button variant="outline">Cancel</Button>
+              <Button>Save</Button>
+            </SheetFooter>
+          </SheetContent>
+        </Sheet>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  SCROLL AREA                                                  */}
+      {/* ============================================================ */}
+      <Section title="Scroll Area">
+        <ScrollArea className="h-36 rounded-md border border-border">
+          <div className="space-y-2 p-3">
+            {Array.from({ length: 12 }).map((_, i) => (
+              <div key={i} className="rounded-md border border-border p-2 text-sm">
+                Heartbeat run #{i + 1}: completed successfully
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  COMMAND                                                      */}
+      {/* ============================================================ */}
+      <Section title="Command (CMDK)">
+        <div className="rounded-md border border-border">
+          <Command>
+            <CommandInput placeholder="Type a command or search..." />
+            <CommandList>
+              <CommandEmpty>No results found.</CommandEmpty>
+              <CommandGroup heading="Pages">
+                <CommandItem>
+                  <LayoutDashboard className="h-4 w-4" />
+                  Dashboard
+                </CommandItem>
+                <CommandItem>
+                  <CircleDot className="h-4 w-4" />
+                  Issues
+                </CommandItem>
+              </CommandGroup>
+              <CommandSeparator />
+              <CommandGroup heading="Actions">
+                <CommandItem>
+                  <CommandIcon className="h-4 w-4" />
+                  Open command palette
+                </CommandItem>
+                <CommandItem>
+                  <Plus className="h-4 w-4" />
+                  Create new issue
+                </CommandItem>
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </div>
+      </Section>
+
+      {/* ============================================================ */}
+      {/*  BREADCRUMB                                                   */}
+      {/* ============================================================ */}
+      <Section title="Breadcrumb">
+        <Breadcrumb>
+          <BreadcrumbList>
+            <BreadcrumbItem>
+              <BreadcrumbLink href="#">Projects</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbLink href="#">Paperclip App</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem>
+              <BreadcrumbPage>Issue List</BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       </Section>
 
       {/* ============================================================ */}
@@ -1009,7 +1313,8 @@ export function DesignGuide() {
             ["C", "New Issue (outside inputs)"],
             ["[", "Toggle Sidebar"],
             ["]", "Toggle Properties Panel"],
-            ["Cmd+Enter", "Submit current dialog"],
+            ["Cmd+1..9 / Ctrl+1..9", "Switch Company (by rail order)"],
+            ["Cmd+Enter / Ctrl+Enter", "Submit markdown comment"],
           ].map(([key, desc]) => (
             <div key={key} className="flex items-center justify-between px-4 py-2">
               <span className="text-muted-foreground">{desc}</span>
