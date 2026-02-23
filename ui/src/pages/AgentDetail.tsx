@@ -1465,7 +1465,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
   if (isMobile) {
     if (selectedRun) {
       return (
-        <div className="space-y-3">
+        <div className="space-y-3 min-w-0 overflow-x-hidden">
           <Link
             to={`/agents/${agentId}/runs`}
             className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors no-underline"
@@ -1478,7 +1478,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
       );
     }
     return (
-      <div className="border border-border rounded-lg">
+      <div className="border border-border rounded-lg overflow-x-hidden">
         {sorted.map((run) => (
           <RunListItem key={run.id} run={run} isSelected={false} agentId={agentId} />
         ))}
@@ -1572,10 +1572,10 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   const hasNonZeroExit = run.exitCode !== null && run.exitCode !== 0;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0">
       {/* Run summary card */}
       <div className="border border-border rounded-lg overflow-hidden">
-        <div className="flex">
+        <div className="flex flex-col sm:flex-row">
           {/* Left column: status + timing */}
           <div className="flex-1 p-4 space-y-3">
             <div className="flex items-center gap-2">
@@ -1673,7 +1673,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 
           {/* Right column: metrics */}
           {hasMetrics && (
-            <div className="border-l border-border p-4 grid grid-cols-2 gap-x-8 gap-y-3 content-center">
+            <div className="border-t sm:border-t-0 sm:border-l border-border p-4 grid grid-cols-2 gap-x-4 sm:gap-x-8 gap-y-3 content-center">
               <div>
                 <div className="text-xs text-muted-foreground">Input</div>
                 <div className="text-sm font-medium font-mono">{formatTokens(metrics.input)}</div>
@@ -2068,10 +2068,10 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             <div className="text-xs"><span className="text-muted-foreground">Adapter: </span>{adapterInvokePayload.adapterType}</div>
           )}
           {typeof adapterInvokePayload.cwd === "string" && (
-            <div className="text-xs"><span className="text-muted-foreground">Working dir: </span><span className="font-mono">{adapterInvokePayload.cwd}</span></div>
+            <div className="text-xs break-all"><span className="text-muted-foreground">Working dir: </span><span className="font-mono">{adapterInvokePayload.cwd}</span></div>
           )}
           {typeof adapterInvokePayload.command === "string" && (
-            <div className="text-xs">
+            <div className="text-xs break-all">
               <span className="text-muted-foreground">Command: </span>
               <span className="font-mono">
                 {[
@@ -2143,16 +2143,16 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           )}
         </div>
       </div>
-      <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5">
+      <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5 overflow-x-hidden">
         {transcript.length === 0 && !run.logRef && (
           <div className="text-neutral-500">No persisted transcript for this run.</div>
         )}
         {transcript.map((entry, idx) => {
           const time = new Date(entry.ts).toLocaleTimeString("en-US", { hour12: false });
-          const grid = "grid grid-cols-[auto_auto_1fr] gap-x-3 items-baseline";
-          const tsCell = "text-neutral-600 select-none w-16";
-          const lblCell = "w-20";
-          const contentCell = "min-w-0 whitespace-pre-wrap break-words";
+          const grid = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
+          const tsCell = "text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs";
+          const lblCell = "w-14 sm:w-20 text-[10px] sm:text-xs";
+          const contentCell = "min-w-0 whitespace-pre-wrap break-words overflow-hidden";
           const expandCell = "col-span-full md:col-start-3 md:col-span-1";
 
           if (entry.kind === "assistant") {
