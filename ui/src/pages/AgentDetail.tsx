@@ -16,6 +16,7 @@ import { adapterLabels, roleLabels } from "../components/agent-config-primitives
 import { getUIAdapter, buildTranscript } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
+import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
 import { EntityRow } from "../components/EntityRow";
 import { Identity } from "../components/Identity";
@@ -620,10 +621,7 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
     : run.error ?? "";
 
   return (
-    <div className={cn(
-      "border rounded-lg p-4 space-y-3",
-      isLive ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.08)]" : "border-border"
-    )}>
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isLive && (
@@ -642,26 +640,32 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
         </Link>
       </div>
 
-      <div className="flex items-center gap-2">
-        <StatusIcon className={cn("h-3.5 w-3.5", statusInfo.color, run.status === "running" && "animate-spin")} />
-        <StatusBadge status={run.status} />
-        <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
-        <span className={cn(
-          "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-          run.invocationSource === "timer" ? "bg-blue-900/50 text-blue-300"
-            : run.invocationSource === "assignment" ? "bg-violet-900/50 text-violet-300"
-            : run.invocationSource === "on_demand" ? "bg-cyan-900/50 text-cyan-300"
-            : "bg-neutral-800 text-neutral-400"
-        )}>
-          {sourceLabels[run.invocationSource] ?? run.invocationSource}
-        </span>
-        <span className="ml-auto text-xs text-muted-foreground">{relativeTime(run.createdAt)}</span>
+      <div className={cn(
+        "border rounded-lg p-4 space-y-2",
+        isLive ? "border-cyan-500/30 shadow-[0_0_12px_rgba(6,182,212,0.08)]" : "border-border"
+      )}>
+        <div className="flex items-center gap-2">
+          <StatusIcon className={cn("h-3.5 w-3.5", statusInfo.color, run.status === "running" && "animate-spin")} />
+          <StatusBadge status={run.status} />
+          <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
+          <span className={cn(
+            "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+            run.invocationSource === "timer" ? "bg-blue-900/50 text-blue-300"
+              : run.invocationSource === "assignment" ? "bg-violet-900/50 text-violet-300"
+              : run.invocationSource === "on_demand" ? "bg-cyan-900/50 text-cyan-300"
+              : "bg-neutral-800 text-neutral-400"
+          )}>
+            {sourceLabels[run.invocationSource] ?? run.invocationSource}
+          </span>
+          <span className="ml-auto text-xs text-muted-foreground">{relativeTime(run.createdAt)}</span>
+        </div>
+
+        {summary && (
+          <div className="overflow-hidden max-h-16">
+            <MarkdownBody className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{summary}</MarkdownBody>
+          </div>
+        )}
       </div>
-
-      {summary && (
-        <p className="text-xs text-muted-foreground truncate">{summary}</p>
-      )}
-
     </div>
   );
 }
