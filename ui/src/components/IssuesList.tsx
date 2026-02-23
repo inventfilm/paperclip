@@ -1,0 +1,482 @@
+import { useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { useDialog } from "../context/DialogContext";
+import { groupBy } from "../lib/groupBy";
+import { formatDate } from "../lib/utils";
+import { StatusIcon } from "./StatusIcon";
+import { PriorityIcon } from "./PriorityIcon";
+import { EmptyState } from "./EmptyState";
+import { Identity } from "./Identity";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
+import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight } from "lucide-react";
+import type { Issue } from "@paperclip/shared";
+
+/* ── Helpers ── */
+
+const statusOrder = ["in_progress", "todo", "backlog", "in_review", "blocked", "done", "cancelled"];
+const priorityOrder = ["critical", "high", "medium", "low"];
+
+function statusLabel(status: string): string {
+  return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/* ── View state ── */
+
+export type IssueViewState = {
+  statuses: string[];
+  priorities: string[];
+  assignees: string[];
+  sortField: "status" | "priority" | "title" | "created" | "updated";
+  sortDir: "asc" | "desc";
+  groupBy: "status" | "priority" | "assignee" | "none";
+};
+
+const defaultViewState: IssueViewState = {
+  statuses: ["todo", "in_progress", "in_review", "blocked"],
+  priorities: [],
+  assignees: [],
+  sortField: "status",
+  sortDir: "asc",
+  groupBy: "status",
+};
+
+const quickFilterPresets = [
+  { label: "Active", statuses: ["todo", "in_progress", "in_review", "blocked"] },
+  { label: "Backlog", statuses: ["backlog"] },
+  { label: "Done", statuses: ["done", "cancelled"] },
+];
+
+function getViewState(key: string): IssueViewState {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) return { ...defaultViewState, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return { ...defaultViewState };
+}
+
+function saveViewState(key: string, state: IssueViewState) {
+  localStorage.setItem(key, JSON.stringify(state));
+}
+
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort();
+  const sb = [...b].sort();
+  return sa.every((v, i) => v === sb[i]);
+}
+
+function toggleInArray(arr: string[], value: string): string[] {
+  return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
+}
+
+function applyFilters(issues: Issue[], state: IssueViewState): Issue[] {
+  let result = issues;
+  if (state.statuses.length > 0) result = result.filter((i) => state.statuses.includes(i.status));
+  if (state.priorities.length > 0) result = result.filter((i) => state.priorities.includes(i.priority));
+  if (state.assignees.length > 0) result = result.filter((i) => i.assigneeAgentId != null && state.assignees.includes(i.assigneeAgentId));
+  return result;
+}
+
+function sortIssues(issues: Issue[], state: IssueViewState): Issue[] {
+  const sorted = [...issues];
+  const dir = state.sortDir === "asc" ? 1 : -1;
+  sorted.sort((a, b) => {
+    switch (state.sortField) {
+      case "status":
+        return dir * (statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
+      case "priority":
+        return dir * (priorityOrder.indexOf(a.priority) - priorityOrder.indexOf(b.priority));
+      case "title":
+        return dir * a.title.localeCompare(b.title);
+      case "created":
+        return dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      case "updated":
+        return dir * (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+      default:
+        return 0;
+    }
+  });
+  return sorted;
+}
+
+function countActiveFilters(state: IssueViewState): number {
+  let count = 0;
+  if (state.statuses.length > 0) count++;
+  if (state.priorities.length > 0) count++;
+  if (state.assignees.length > 0) count++;
+  return count;
+}
+
+/* ── Component ── */
+
+interface Agent {
+  id: string;
+  name: string;
+}
+
+interface IssuesListProps {
+  issues: Issue[];
+  isLoading?: boolean;
+  error?: Error | null;
+  agents?: Agent[];
+  liveIssueIds?: Set<string>;
+  projectId?: string;
+  viewStateKey: string;
+  onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
+}
+
+export function IssuesList({
+  issues,
+  isLoading,
+  error,
+  agents,
+  liveIssueIds,
+  projectId,
+  viewStateKey,
+  onUpdateIssue,
+}: IssuesListProps) {
+  const { openNewIssue } = useDialog();
+  const navigate = useNavigate();
+
+  const [viewState, setViewState] = useState<IssueViewState>(() => getViewState(viewStateKey));
+
+  const updateView = useCallback((patch: Partial<IssueViewState>) => {
+    setViewState((prev) => {
+      const next = { ...prev, ...patch };
+      saveViewState(viewStateKey, next);
+      return next;
+    });
+  }, [viewStateKey]);
+
+  const agentName = (id: string | null) => {
+    if (!id || !agents) return null;
+    return agents.find((a) => a.id === id)?.name ?? null;
+  };
+
+  const filtered = useMemo(() => {
+    return sortIssues(applyFilters(issues, viewState), viewState);
+  }, [issues, viewState]);
+
+  const activeFilterCount = countActiveFilters(viewState);
+
+  const groupedContent = useMemo(() => {
+    if (viewState.groupBy === "none") {
+      return [{ key: "__all", label: null as string | null, items: filtered }];
+    }
+    if (viewState.groupBy === "status") {
+      const groups = groupBy(filtered, (i) => i.status);
+      return statusOrder
+        .filter((s) => groups[s]?.length)
+        .map((s) => ({ key: s, label: statusLabel(s), items: groups[s]! }));
+    }
+    if (viewState.groupBy === "priority") {
+      const groups = groupBy(filtered, (i) => i.priority);
+      return priorityOrder
+        .filter((p) => groups[p]?.length)
+        .map((p) => ({ key: p, label: statusLabel(p), items: groups[p]! }));
+    }
+    // assignee
+    const groups = groupBy(filtered, (i) => i.assigneeAgentId ?? "__unassigned");
+    return Object.keys(groups).map((key) => ({
+      key,
+      label: key === "__unassigned" ? "Unassigned" : (agentName(key) ?? key.slice(0, 8)),
+      items: groups[key]!,
+    }));
+  }, [filtered, viewState.groupBy, agents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const newIssueDefaults = (groupKey?: string) => {
+    const defaults: Record<string, string> = {};
+    if (projectId) defaults.projectId = projectId;
+    if (groupKey) {
+      if (viewState.groupBy === "status") defaults.status = groupKey;
+      else if (viewState.groupBy === "priority") defaults.priority = groupKey;
+      else if (viewState.groupBy === "assignee" && groupKey !== "__unassigned") defaults.assigneeAgentId = groupKey;
+    }
+    return defaults;
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between gap-3">
+        <Button size="sm" onClick={() => openNewIssue(newIssueDefaults())}>
+          <Plus className="h-4 w-4 mr-1" />
+          New Issue
+        </Button>
+
+        <div className="flex items-center gap-1">
+          {/* Filter */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm" className={`text-xs ${activeFilterCount > 0 ? "text-blue-400" : ""}`}>
+                <Filter className="h-3 w-3 mr-1" />
+                {activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter"}
+                {activeFilterCount > 0 && (
+                  <X
+                    className="h-3 w-3 ml-1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      updateView({ statuses: [], priorities: [], assignees: [] });
+                    }}
+                  />
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-80 p-0">
+              <div className="p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">Filters</span>
+                  {activeFilterCount > 0 && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => updateView({ statuses: [], priorities: [], assignees: [] })}
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {/* Quick filters */}
+                <div className="space-y-1.5">
+                  <span className="text-xs text-muted-foreground">Quick filters</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {quickFilterPresets.map((preset) => {
+                      const isActive = arraysEqual(viewState.statuses, preset.statuses);
+                      return (
+                        <button
+                          key={preset.label}
+                          className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                            isActive
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
+                          }`}
+                          onClick={() => updateView({ statuses: isActive ? [] : [...preset.statuses] })}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="border-t border-border" />
+
+                {/* Status */}
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Status</span>
+                  <div className="space-y-0.5">
+                    {statusOrder.map((s) => (
+                      <label key={s} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                        <Checkbox
+                          checked={viewState.statuses.includes(s)}
+                          onCheckedChange={() => updateView({ statuses: toggleInArray(viewState.statuses, s) })}
+                        />
+                        <StatusIcon status={s} />
+                        <span className="text-sm">{statusLabel(s)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-border" />
+
+                {/* Priority */}
+                <div className="space-y-1">
+                  <span className="text-xs text-muted-foreground">Priority</span>
+                  <div className="space-y-0.5">
+                    {priorityOrder.map((p) => (
+                      <label key={p} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                        <Checkbox
+                          checked={viewState.priorities.includes(p)}
+                          onCheckedChange={() => updateView({ priorities: toggleInArray(viewState.priorities, p) })}
+                        />
+                        <PriorityIcon priority={p} />
+                        <span className="text-sm">{statusLabel(p)}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Assignee */}
+                {agents && agents.length > 0 && (
+                  <>
+                    <div className="border-t border-border" />
+                    <div className="space-y-1">
+                      <span className="text-xs text-muted-foreground">Assignee</span>
+                      <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                        {agents.map((agent) => (
+                          <label key={agent.id} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                            <Checkbox
+                              checked={viewState.assignees.includes(agent.id)}
+                              onCheckedChange={() => updateView({ assignees: toggleInArray(viewState.assignees, agent.id) })}
+                            />
+                            <span className="text-sm">{agent.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Sort */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-xs">
+                <ArrowUpDown className="h-3 w-3 mr-1" />
+                Sort
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-48 p-0">
+              <div className="p-2 space-y-0.5">
+                {([
+                  ["status", "Status"],
+                  ["priority", "Priority"],
+                  ["title", "Title"],
+                  ["created", "Created"],
+                  ["updated", "Updated"],
+                ] as const).map(([field, label]) => (
+                  <button
+                    key={field}
+                    className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
+                      viewState.sortField === field ? "bg-accent/50 text-foreground" : "hover:bg-accent/50 text-muted-foreground"
+                    }`}
+                    onClick={() => {
+                      if (viewState.sortField === field) {
+                        updateView({ sortDir: viewState.sortDir === "asc" ? "desc" : "asc" });
+                      } else {
+                        updateView({ sortField: field, sortDir: "asc" });
+                      }
+                    }}
+                  >
+                    <span>{label}</span>
+                    {viewState.sortField === field && (
+                      <span className="text-xs text-muted-foreground">
+                        {viewState.sortDir === "asc" ? "\u2191" : "\u2193"}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Group */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-xs">
+                <Layers className="h-3 w-3 mr-1" />
+                Group
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-44 p-0">
+              <div className="p-2 space-y-0.5">
+                {([
+                  ["status", "Status"],
+                  ["priority", "Priority"],
+                  ["assignee", "Assignee"],
+                  ["none", "None"],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
+                      viewState.groupBy === value ? "bg-accent/50 text-foreground" : "hover:bg-accent/50 text-muted-foreground"
+                    }`}
+                    onClick={() => updateView({ groupBy: value })}
+                  >
+                    <span>{label}</span>
+                    {viewState.groupBy === value && <Check className="h-3.5 w-3.5" />}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+      </div>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {!isLoading && filtered.length === 0 && (
+        <EmptyState
+          icon={CircleDot}
+          message="No issues match the current filters."
+          action="Create Issue"
+          onAction={() => openNewIssue(newIssueDefaults())}
+        />
+      )}
+
+      {groupedContent.map((group) => (
+        <Collapsible key={group.key} defaultOpen>
+          {group.label && (
+            <div className="flex items-center py-1.5 pl-1">
+              <CollapsibleTrigger className="flex items-center gap-1.5">
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
+                <span className="text-sm font-semibold uppercase tracking-wide">
+                  {group.label}
+                </span>
+              </CollapsibleTrigger>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="ml-auto text-muted-foreground"
+                onClick={() => openNewIssue(newIssueDefaults(group.key))}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+          <CollapsibleContent>
+            {group.items.map((issue) => (
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+              <div
+                key={issue.id}
+                className="flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors"
+                onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
+              >
+                {/* Spacer matching caret width so status icon aligns with group title */}
+                <div className="w-3.5 shrink-0" />
+                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
+                <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <StatusIcon
+                    status={issue.status}
+                    onChange={(s) => onUpdateIssue(issue.id, { status: s })}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground font-mono shrink-0">
+                  {issue.identifier ?? issue.id.slice(0, 8)}
+                </span>
+                <span className="truncate flex-1 min-w-0">{issue.title}</span>
+                <div className="flex items-center gap-3 shrink-0 ml-auto">
+                  {liveIssueIds?.has(issue.id) && (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                      </span>
+                      <span className="text-[11px] font-medium text-blue-400">Live</span>
+                    </span>
+                  )}
+                  {issue.assigneeAgentId && (() => {
+                    const name = agentName(issue.assigneeAgentId);
+                    return name
+                      ? <Identity name={name} size="sm" />
+                      : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
+                  })()}
+                  <span className="text-xs text-muted-foreground">
+                    {formatDate(issue.createdAt)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </CollapsibleContent>
+        </Collapsible>
+      ))}
+    </div>
+  );
+}
