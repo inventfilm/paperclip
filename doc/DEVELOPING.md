@@ -2,6 +2,14 @@
 
 This project can run fully in local dev without setting up PostgreSQL manually.
 
+## Deployment Modes
+
+For mode definitions and intended CLI behavior, see `doc/DEPLOYMENT-MODES.md`.
+
+Current implementation status:
+
+- canonical model: `local_trusted` and `authenticated` (with `private/public` exposure)
+
 ## Prerequisites
 
 - Node.js 20+

@@ -84,10 +84,12 @@ More detailed task structure TBD.
 
 ## Guidelines
 
-There are two deployment scenarios that need to be maintained:
+There are two runtime modes Paperclip must support:
 
-- a single user, local trusted deployment - this should be easy to install with a single `npx paperclip run` command and the environment is trusted and self-contained on a local machine (e.g. local files, agents, embedded db, easy to use)
-- multi-user cloud deployment - allows for a hosted deploy (remote deployment, user logins, hosted db, scalable)
+- `local_trusted` (default): single-user local trusted deployment with no login friction
+- `authenticated`: login-required mode that supports both private-network and public deployment exposure policies
+
+Canonical mode design and command expectations live in `doc/DEPLOYMENT-MODES.md`.
 
 ## Further Detail
 

@@ -25,6 +25,18 @@ Choose local instance:
 pnpm paperclip run --instance dev
 ```
 
+## Deployment Modes
+
+Mode taxonomy and design intent are documented in `doc/DEPLOYMENT-MODES.md`.
+
+Current CLI behavior:
+
+- `paperclip onboard` and `paperclip configure --section server` set deployment mode in config
+- runtime can override mode with `PAPERCLIP_DEPLOYMENT_MODE`
+- `paperclip run` and `paperclip doctor` do not yet expose a direct `--mode` flag
+
+Target behavior (planned) is documented in `doc/DEPLOYMENT-MODES.md` section 5.
+
 All client commands support:
 
 - `--api-base <url>`

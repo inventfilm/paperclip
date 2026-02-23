@@ -39,10 +39,10 @@ These decisions close open questions from `SPEC.md` for V1.
 | Task ownership | Single assignee; atomic checkout required for `in_progress` transition |
 | Recovery | No automatic reassignment; stale work is surfaced, not silently fixed |
 | Agent adapters | Built-in `process` and `http` adapters |
-| Auth | Session auth for board, API keys for agents |
+| Auth | Mode-dependent human auth (`local_trusted` implicit board in current code; authenticated mode uses sessions), API keys for agents |
 | Budget period | Monthly UTC calendar window |
 | Budget enforcement | Soft alerts + hard limit auto-pause |
-| Deployment modes | Embedded PostgreSQL default; Docker/hosted Postgres supported |
+| Deployment modes | Canonical model is `local_trusted` + `authenticated` with `private/public` exposure policy (see `doc/DEPLOYMENT-MODES.md`) |
 
 ## 4. Current Baseline (Repo Snapshot)
 
