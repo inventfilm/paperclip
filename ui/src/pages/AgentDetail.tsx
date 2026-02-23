@@ -708,7 +708,12 @@ function AgentOverview({
 
       {/* Recent Issues */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">Recent Issues ({assignedIssues.length})</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Recent Issues</h3>
+          <Link to={`/issues?assignee=${agentId}`} className="text-xs text-muted-foreground hover:text-foreground transition-colors">
+            See All &rarr;
+          </Link>
+        </div>
         {assignedIssues.length === 0 ? (
           <p className="text-sm text-muted-foreground">No assigned issues.</p>
         ) : (

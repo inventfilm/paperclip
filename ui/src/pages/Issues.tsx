@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -13,6 +14,7 @@ import { CircleDot } from "lucide-react";
 export function Issues() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
 
   const { data: agents } = useQuery({
@@ -66,6 +68,7 @@ export function Issues() {
       agents={agents}
       liveIssueIds={liveIssueIds}
       viewStateKey="paperclip:issues-view"
+      initialAssignees={searchParams.get("assignee") ? [searchParams.get("assignee")!] : undefined}
       onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
     />
   );

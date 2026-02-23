@@ -125,6 +125,7 @@ interface IssuesListProps {
   liveIssueIds?: Set<string>;
   projectId?: string;
   viewStateKey: string;
+  initialAssignees?: string[];
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
@@ -136,11 +137,17 @@ export function IssuesList({
   liveIssueIds,
   projectId,
   viewStateKey,
+  initialAssignees,
   onUpdateIssue,
 }: IssuesListProps) {
   const { openNewIssue } = useDialog();
 
-  const [viewState, setViewState] = useState<IssueViewState>(() => getViewState(viewStateKey));
+  const [viewState, setViewState] = useState<IssueViewState>(() => {
+    if (initialAssignees) {
+      return { ...defaultViewState, assignees: initialAssignees, statuses: [] };
+    }
+    return getViewState(viewStateKey);
+  });
 
   const updateView = useCallback((patch: Partial<IssueViewState>) => {
     setViewState((prev) => {
