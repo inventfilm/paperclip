@@ -59,6 +59,6 @@ export const issues = pgTable(
     ),
     parentIdx: index("issues_company_parent_idx").on(table.companyId, table.parentId),
     projectIdx: index("issues_company_project_idx").on(table.companyId, table.projectId),
-    identifierIdx: uniqueIndex("issues_company_identifier_idx").on(table.companyId, table.identifier),
+    identifierIdx: uniqueIndex("issues_identifier_idx").on(table.identifier),
   }),
 );
