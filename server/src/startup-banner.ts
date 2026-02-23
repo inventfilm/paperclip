@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolvePaperclipConfigPath, resolvePaperclipEnvPath } from "./paths.js";
+import type { DeploymentExposure, DeploymentMode } from "@paperclip/shared";
 
 import { parse as parseEnvFileContents } from "dotenv";
 
@@ -17,6 +18,10 @@ type EmbeddedPostgresInfo = {
 };
 
 type StartupBannerOptions = {
+  host: string;
+  deploymentMode: DeploymentMode;
+  deploymentExposure: DeploymentExposure;
+  authReady: boolean;
   requestedPort: number;
   listenPort: number;
   uiMode: UiMode;
@@ -88,7 +93,8 @@ function resolveAgentJwtSecretStatus(
 }
 
 export function printStartupBanner(opts: StartupBannerOptions): void {
-  const baseUrl = `http://localhost:${opts.listenPort}`;
+  const baseHost = opts.host === "0.0.0.0" ? "localhost" : opts.host;
+  const baseUrl = `http://${baseHost}:${opts.listenPort}`;
   const apiUrl = `${baseUrl}/api`;
   const uiUrl = opts.uiMode === "none" ? "disabled" : baseUrl;
   const configPath = resolvePaperclipConfigPath();
@@ -134,6 +140,8 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     ...art,
     color("  ───────────────────────────────────────────────────────", "blue"),
     row("Mode", `${dbMode}  |  ${uiMode}`),
+    row("Deploy", `${opts.deploymentMode} (${opts.deploymentExposure})`),
+    row("Auth", opts.authReady ? color("ready", "green") : color("not-ready", "yellow")),
     row("Server", portValue),
     row("API", `${apiUrl} ${color(`(health: ${apiUrl}/health)`, "dim")}`),
     row("UI", uiUrl),

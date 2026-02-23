@@ -1,10 +1,46 @@
 import { Router } from "express";
+import type { Db } from "@paperclip/db";
+import { count, sql } from "drizzle-orm";
+import { instanceUserRoles } from "@paperclip/db";
+import type { DeploymentExposure, DeploymentMode } from "@paperclip/shared";
 
-export function healthRoutes() {
+export function healthRoutes(
+  db?: Db,
+  opts: {
+    deploymentMode: DeploymentMode;
+    deploymentExposure: DeploymentExposure;
+    authReady: boolean;
+  } = {
+    deploymentMode: "local_trusted",
+    deploymentExposure: "private",
+    authReady: true,
+  },
+) {
   const router = Router();
 
-  router.get("/", (_req, res) => {
-    res.json({ status: "ok" });
+  router.get("/", async (_req, res) => {
+    if (!db) {
+      res.json({ status: "ok" });
+      return;
+    }
+
+    let bootstrapStatus: "ready" | "bootstrap_pending" = "ready";
+    if (opts.deploymentMode === "authenticated") {
+      const roleCount = await db
+        .select({ count: count() })
+        .from(instanceUserRoles)
+        .where(sql`${instanceUserRoles.role} = 'instance_admin'`)
+        .then((rows) => Number(rows[0]?.count ?? 0));
+      bootstrapStatus = roleCount > 0 ? "ready" : "bootstrap_pending";
+    }
+
+    res.json({
+      status: "ok",
+      deploymentMode: opts.deploymentMode,
+      deploymentExposure: opts.deploymentExposure,
+      authReady: opts.authReady,
+      bootstrapStatus,
+    });
   });
 
   return router;

@@ -3,12 +3,18 @@ import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
+import type { Request as ExpressRequest } from "express";
+import { and, eq } from "drizzle-orm";
 import {
   createDb,
   ensurePostgresDatabase,
   inspectMigrations,
   applyPendingMigrations,
   reconcilePendingMigrationHistory,
+  authUsers,
+  companies,
+  companyMemberships,
+  instanceUserRoles,
 } from "@paperclip/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
@@ -18,6 +24,11 @@ import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { heartbeatService } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
+import {
+  createBetterAuthHandler,
+  createBetterAuthInstance,
+  resolveBetterAuthSession,
+} from "./auth/better-auth.js";
 
 type EmbeddedPostgresInstance = {
   initialise(): Promise<void>;
@@ -121,6 +132,71 @@ async function ensureMigrations(connectionString: string, label: string): Promis
   return "applied (pending migrations)";
 }
 
+function isLoopbackHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
+}
+
+const LOCAL_BOARD_USER_ID = "local-board";
+const LOCAL_BOARD_USER_EMAIL = "local@paperclip.local";
+const LOCAL_BOARD_USER_NAME = "Board";
+
+async function ensureLocalTrustedBoardPrincipal(db: any): Promise<void> {
+  const now = new Date();
+  const existingUser = await db
+    .select({ id: authUsers.id })
+    .from(authUsers)
+    .where(eq(authUsers.id, LOCAL_BOARD_USER_ID))
+    .then((rows: Array<{ id: string }>) => rows[0] ?? null);
+
+  if (!existingUser) {
+    await db.insert(authUsers).values({
+      id: LOCAL_BOARD_USER_ID,
+      name: LOCAL_BOARD_USER_NAME,
+      email: LOCAL_BOARD_USER_EMAIL,
+      emailVerified: true,
+      image: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const role = await db
+    .select({ id: instanceUserRoles.id })
+    .from(instanceUserRoles)
+    .where(and(eq(instanceUserRoles.userId, LOCAL_BOARD_USER_ID), eq(instanceUserRoles.role, "instance_admin")))
+    .then((rows: Array<{ id: string }>) => rows[0] ?? null);
+  if (!role) {
+    await db.insert(instanceUserRoles).values({
+      userId: LOCAL_BOARD_USER_ID,
+      role: "instance_admin",
+    });
+  }
+
+  const companyRows = await db.select({ id: companies.id }).from(companies);
+  for (const company of companyRows) {
+    const membership = await db
+      .select({ id: companyMemberships.id })
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.companyId, company.id),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalId, LOCAL_BOARD_USER_ID),
+        ),
+      )
+      .then((rows: Array<{ id: string }>) => rows[0] ?? null);
+    if (membership) continue;
+    await db.insert(companyMemberships).values({
+      companyId: company.id,
+      principalType: "user",
+      principalId: LOCAL_BOARD_USER_ID,
+      status: "active",
+      membershipRole: "owner",
+    });
+  }
+}
+
 let db;
 let embeddedPostgres: EmbeddedPostgresInstance | null = null;
 let embeddedPostgresStartedByThisProcess = false;
@@ -217,9 +293,64 @@ if (config.databaseUrl) {
   startupDbInfo = { mode: "embedded-postgres", dataDir, port };
 }
 
+if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {
+  throw new Error(
+    `local_trusted mode requires loopback host binding (received: ${config.host}). ` +
+      "Use authenticated mode for non-loopback deployments.",
+  );
+}
+
+if (config.deploymentMode === "local_trusted" && config.deploymentExposure !== "private") {
+  throw new Error("local_trusted mode only supports private exposure");
+}
+
+if (config.deploymentMode === "authenticated") {
+  if (config.authBaseUrlMode === "explicit" && !config.authPublicBaseUrl) {
+    throw new Error("auth.baseUrlMode=explicit requires auth.publicBaseUrl");
+  }
+  if (config.deploymentExposure === "public") {
+    if (config.authBaseUrlMode !== "explicit") {
+      throw new Error("authenticated public exposure requires auth.baseUrlMode=explicit");
+    }
+    if (!config.authPublicBaseUrl) {
+      throw new Error("authenticated public exposure requires auth.publicBaseUrl");
+    }
+  }
+}
+
+let authReady = config.deploymentMode === "local_trusted";
+let betterAuthHandler: ReturnType<typeof createBetterAuthHandler> | undefined;
+let resolveSession:
+  | ((req: ExpressRequest) => Promise<Awaited<ReturnType<typeof resolveBetterAuthSession>>>)
+  | undefined;
+if (config.deploymentMode === "local_trusted") {
+  await ensureLocalTrustedBoardPrincipal(db as any);
+}
+if (config.deploymentMode === "authenticated") {
+  const betterAuthSecret =
+    process.env.BETTER_AUTH_SECRET?.trim() ?? process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
+  if (!betterAuthSecret) {
+    throw new Error(
+      "authenticated mode requires BETTER_AUTH_SECRET (or PAPERCLIP_AGENT_JWT_SECRET) to be set",
+    );
+  }
+  const auth = createBetterAuthInstance(db as any, config);
+  betterAuthHandler = createBetterAuthHandler(auth);
+  resolveSession = (req) => resolveBetterAuthSession(auth, req);
+  authReady = true;
+}
+
 const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
 const storageService = createStorageServiceFromConfig(config);
-const app = await createApp(db as any, { uiMode, storageService });
+const app = await createApp(db as any, {
+  uiMode,
+  storageService,
+  deploymentMode: config.deploymentMode,
+  deploymentExposure: config.deploymentExposure,
+  authReady,
+  betterAuthHandler,
+  resolveSession,
+});
 const server = createServer(app);
 const listenPort = await detectPort(config.port);
 
@@ -227,7 +358,7 @@ if (listenPort !== config.port) {
   logger.warn({ requestedPort: config.port, selectedPort: listenPort }, "Requested port is busy; using next free port");
 }
 
-setupLiveEventsWebSocketServer(server, db as any);
+setupLiveEventsWebSocketServer(server, db as any, { deploymentMode: config.deploymentMode });
 
 if (config.heartbeatSchedulerEnabled) {
   const heartbeat = heartbeatService(db as any);
@@ -258,9 +389,13 @@ if (config.heartbeatSchedulerEnabled) {
   }, config.heartbeatSchedulerIntervalMs);
 }
 
-server.listen(listenPort, () => {
-  logger.info(`Server listening on :${listenPort}`);
+server.listen(listenPort, config.host, () => {
+  logger.info(`Server listening on ${config.host}:${listenPort}`);
   printStartupBanner({
+    host: config.host,
+    deploymentMode: config.deploymentMode,
+    deploymentExposure: config.deploymentExposure,
+    authReady,
     requestedPort: config.port,
     listenPort,
     uiMode,

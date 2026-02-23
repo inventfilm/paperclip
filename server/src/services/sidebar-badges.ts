@@ -8,7 +8,7 @@ const FAILED_HEARTBEAT_STATUSES = ["failed", "timed_out"];
 
 export function sidebarBadgeService(db: Db) {
   return {
-    get: async (companyId: string): Promise<SidebarBadges> => {
+    get: async (companyId: string, extra?: { joinRequests?: number }): Promise<SidebarBadges> => {
       const actionableApprovals = await db
         .select({ count: sql<number>`count(*)` })
         .from(approvals)
@@ -39,10 +39,12 @@ export function sidebarBadgeService(db: Db) {
         FAILED_HEARTBEAT_STATUSES.includes(row.runStatus),
       ).length;
 
+      const joinRequests = extra?.joinRequests ?? 0;
       return {
-        inbox: actionableApprovals + failedRuns,
+        inbox: actionableApprovals + failedRuns + joinRequests,
         approvals: actionableApprovals,
         failedRuns,
+        joinRequests,
       };
     },
   };

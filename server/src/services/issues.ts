@@ -4,6 +4,7 @@ import {
   agents,
   assets,
   companies,
+  companyMemberships,
   goals,
   heartbeatRuns,
   issueAttachments,
@@ -74,6 +75,24 @@ export function issueService(db: Db) {
     }
     if (assignee.status === "terminated") {
       throw conflict("Cannot assign work to terminated agents");
+    }
+  }
+
+  async function assertAssignableUser(companyId: string, userId: string) {
+    const membership = await db
+      .select({ id: companyMemberships.id })
+      .from(companyMemberships)
+      .where(
+        and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.principalId, userId),
+          eq(companyMemberships.status, "active"),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    if (!membership) {
+      throw notFound("Assignee user not found");
     }
   }
 
@@ -157,8 +176,17 @@ export function issueService(db: Db) {
         .then((rows) => rows[0] ?? null),
 
     create: async (companyId: string, data: Omit<typeof issues.$inferInsert, "companyId">) => {
+      if (data.assigneeAgentId && data.assigneeUserId) {
+        throw unprocessable("Issue can only have one assignee");
+      }
       if (data.assigneeAgentId) {
         await assertAssignableAgent(companyId, data.assigneeAgentId);
+      }
+      if (data.assigneeUserId) {
+        await assertAssignableUser(companyId, data.assigneeUserId);
+      }
+      if (data.status === "in_progress" && !data.assigneeAgentId && !data.assigneeUserId) {
+        throw unprocessable("in_progress issues require an assignee");
       }
       return db.transaction(async (tx) => {
         const [company] = await tx
@@ -203,11 +231,22 @@ export function issueService(db: Db) {
         updatedAt: new Date(),
       };
 
-      if (patch.status === "in_progress" && !patch.assigneeAgentId && !existing.assigneeAgentId) {
+      const nextAssigneeAgentId =
+        data.assigneeAgentId !== undefined ? data.assigneeAgentId : existing.assigneeAgentId;
+      const nextAssigneeUserId =
+        data.assigneeUserId !== undefined ? data.assigneeUserId : existing.assigneeUserId;
+
+      if (nextAssigneeAgentId && nextAssigneeUserId) {
+        throw unprocessable("Issue can only have one assignee");
+      }
+      if (patch.status === "in_progress" && !nextAssigneeAgentId && !nextAssigneeUserId) {
         throw unprocessable("in_progress issues require an assignee");
       }
       if (data.assigneeAgentId) {
         await assertAssignableAgent(existing.companyId, data.assigneeAgentId);
+      }
+      if (data.assigneeUserId) {
+        await assertAssignableUser(existing.companyId, data.assigneeUserId);
       }
 
       applyStatusSideEffects(data.status, patch);
@@ -220,7 +259,10 @@ export function issueService(db: Db) {
       if (data.status && data.status !== "in_progress") {
         patch.checkoutRunId = null;
       }
-      if (data.assigneeAgentId !== undefined && data.assigneeAgentId !== existing.assigneeAgentId) {
+      if (
+        (data.assigneeAgentId !== undefined && data.assigneeAgentId !== existing.assigneeAgentId) ||
+        (data.assigneeUserId !== undefined && data.assigneeUserId !== existing.assigneeUserId)
+      ) {
         patch.checkoutRunId = null;
       }
 
@@ -277,6 +319,7 @@ export function issueService(db: Db) {
         .update(issues)
         .set({
           assigneeAgentId: agentId,
+          assigneeUserId: null,
           checkoutRunId,
           executionRunId: checkoutRunId,
           status: "in_progress",

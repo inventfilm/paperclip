@@ -18,6 +18,10 @@ import {
   approvals,
   activityLog,
   companySecrets,
+  joinRequests,
+  invites,
+  principalPermissionGrants,
+  companyMemberships,
 } from "@paperclip/db";
 
 export function companyService(db: Db) {
@@ -68,6 +72,10 @@ export function companyService(db: Db) {
         await tx.delete(approvalComments).where(eq(approvalComments.companyId, id));
         await tx.delete(approvals).where(eq(approvals.companyId, id));
         await tx.delete(companySecrets).where(eq(companySecrets.companyId, id));
+        await tx.delete(joinRequests).where(eq(joinRequests.companyId, id));
+        await tx.delete(invites).where(eq(invites.companyId, id));
+        await tx.delete(principalPermissionGrants).where(eq(principalPermissionGrants.companyId, id));
+        await tx.delete(companyMemberships).where(eq(companyMemberships.companyId, id));
         await tx.delete(issues).where(eq(issues.companyId, id));
         await tx.delete(goals).where(eq(goals.companyId, id));
         await tx.delete(projects).where(eq(projects.companyId, id));

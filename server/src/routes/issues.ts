@@ -12,6 +12,7 @@ import {
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
 import {
+  accessService,
   agentService,
   goalService,
   heartbeatService,
@@ -21,6 +22,7 @@ import {
   projectService,
 } from "../services/index.js";
 import { logger } from "../middleware/logger.js";
+import { forbidden, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const MAX_ATTACHMENT_BYTES = Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
@@ -35,6 +37,7 @@ const ALLOWED_ATTACHMENT_CONTENT_TYPES = new Set([
 export function issueRoutes(db: Db, storage: StorageService) {
   const router = Router();
   const svc = issueService(db);
+  const access = accessService(db);
   const heartbeat = heartbeatService(db);
   const agentsSvc = agentService(db);
   const projectsSvc = projectService(db);
@@ -76,6 +79,31 @@ export function issueRoutes(db: Db, storage: StorageService) {
     if (actorAgent.role === "ceo" || Boolean(actorAgent.permissions?.canCreateAgents)) return true;
     res.status(403).json({ error: "Missing permission to link approvals" });
     return false;
+  }
+
+  function canCreateAgentsLegacy(agent: { permissions: Record<string, unknown> | null | undefined; role: string }) {
+    if (agent.role === "ceo") return true;
+    if (!agent.permissions || typeof agent.permissions !== "object") return false;
+    return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
+  }
+
+  async function assertCanAssignTasks(req: Request, companyId: string) {
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type === "board") {
+      if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return;
+      const allowed = await access.canUser(companyId, req.actor.userId, "tasks:assign");
+      if (!allowed) throw forbidden("Missing permission: tasks:assign");
+      return;
+    }
+    if (req.actor.type === "agent") {
+      if (!req.actor.agentId) throw forbidden("Agent authentication required");
+      const allowedByGrant = await access.hasPermission(companyId, "agent", req.actor.agentId, "tasks:assign");
+      if (allowedByGrant) return;
+      const actorAgent = await agentsSvc.getById(req.actor.agentId);
+      if (actorAgent && actorAgent.companyId === companyId && canCreateAgentsLegacy(actorAgent)) return;
+      throw forbidden("Missing permission: tasks:assign");
+    }
+    throw unauthorized();
   }
 
   function requireAgentRunId(req: Request, res: Response) {
@@ -124,15 +152,30 @@ export function issueRoutes(db: Db, storage: StorageService) {
     return true;
   }
 
+  async function normalizeIssueIdentifier(rawId: string): Promise<string> {
+    if (/^[A-Z]+-\d+$/i.test(rawId)) {
+      const issue = await svc.getByIdentifier(rawId);
+      if (issue) {
+        return issue.id;
+      }
+    }
+    return rawId;
+  }
+
   // Resolve issue identifiers (e.g. "PAP-39") to UUIDs for all /issues/:id routes
   router.param("id", async (req, res, next, rawId) => {
     try {
-      if (/^[A-Z]+-\d+$/i.test(rawId)) {
-        const issue = await svc.getByIdentifier(rawId);
-        if (issue) {
-          req.params.id = issue.id;
-        }
-      }
+      req.params.id = await normalizeIssueIdentifier(rawId);
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Resolve issue identifiers (e.g. "PAP-39") to UUIDs for company-scoped attachment routes.
+  router.param("issueId", async (req, res, next, rawId) => {
+    try {
+      req.params.issueId = await normalizeIssueIdentifier(rawId);
       next();
     } catch (err) {
       next(err);
@@ -240,6 +283,9 @@ export function issueRoutes(db: Db, storage: StorageService) {
   router.post("/companies/:companyId/issues", validate(createIssueSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    if (req.body.assigneeAgentId || req.body.assigneeUserId) {
+      await assertCanAssignTasks(req, companyId);
+    }
 
     const actor = getActorInfo(req);
     const issue = await svc.create(companyId, {
@@ -285,6 +331,12 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
+    const assigneeWillChange =
+      (req.body.assigneeAgentId !== undefined && req.body.assigneeAgentId !== existing.assigneeAgentId) ||
+      (req.body.assigneeUserId !== undefined && req.body.assigneeUserId !== existing.assigneeUserId);
+    if (assigneeWillChange) {
+      await assertCanAssignTasks(req, existing.companyId);
+    }
     if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
 
     const { comment: commentBody, hiddenAt: hiddenAtRaw, ...updateFields } = req.body;
@@ -344,8 +396,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
     }
 
-    const assigneeChanged =
-      req.body.assigneeAgentId !== undefined && req.body.assigneeAgentId !== existing.assigneeAgentId;
+    const assigneeChanged = assigneeWillChange;
 
     // Merge all wakeups from this update into one enqueue per agent to avoid duplicate runs.
     void (async () => {

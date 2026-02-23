@@ -2,7 +2,18 @@ import { readConfigFile } from "./config-file.js";
 import { existsSync } from "node:fs";
 import { config as loadDotenv } from "dotenv";
 import { resolvePaperclipEnvPath } from "./paths.js";
-import { SECRET_PROVIDERS, STORAGE_PROVIDERS, type SecretProvider, type StorageProvider } from "@paperclip/shared";
+import {
+  AUTH_BASE_URL_MODES,
+  DEPLOYMENT_EXPOSURES,
+  DEPLOYMENT_MODES,
+  SECRET_PROVIDERS,
+  STORAGE_PROVIDERS,
+  type AuthBaseUrlMode,
+  type DeploymentExposure,
+  type DeploymentMode,
+  type SecretProvider,
+  type StorageProvider,
+} from "@paperclip/shared";
 import {
   resolveDefaultEmbeddedPostgresDir,
   resolveDefaultSecretsKeyFilePath,
@@ -18,7 +29,12 @@ if (existsSync(PAPERCLIP_ENV_FILE_PATH)) {
 type DatabaseMode = "embedded-postgres" | "postgres";
 
 export interface Config {
+  deploymentMode: DeploymentMode;
+  deploymentExposure: DeploymentExposure;
+  host: string;
   port: number;
+  authBaseUrlMode: AuthBaseUrlMode;
+  authPublicBaseUrl: string | undefined;
   databaseMode: DatabaseMode;
   databaseUrl: string | undefined;
   embeddedPostgresDataDir: string;
@@ -84,8 +100,45 @@ export function loadConfig(): Config {
       ? process.env.PAPERCLIP_STORAGE_S3_FORCE_PATH_STYLE === "true"
       : (fileStorage?.s3?.forcePathStyle ?? false);
 
+  const deploymentModeFromEnvRaw = process.env.PAPERCLIP_DEPLOYMENT_MODE;
+  const deploymentModeFromEnv =
+    deploymentModeFromEnvRaw && DEPLOYMENT_MODES.includes(deploymentModeFromEnvRaw as DeploymentMode)
+      ? (deploymentModeFromEnvRaw as DeploymentMode)
+      : null;
+  const deploymentMode: DeploymentMode = deploymentModeFromEnv ?? fileConfig?.server.deploymentMode ?? "local_trusted";
+  const deploymentExposureFromEnvRaw = process.env.PAPERCLIP_DEPLOYMENT_EXPOSURE;
+  const deploymentExposureFromEnv =
+    deploymentExposureFromEnvRaw &&
+    DEPLOYMENT_EXPOSURES.includes(deploymentExposureFromEnvRaw as DeploymentExposure)
+      ? (deploymentExposureFromEnvRaw as DeploymentExposure)
+      : null;
+  const deploymentExposure: DeploymentExposure =
+    deploymentMode === "local_trusted"
+      ? "private"
+      : (deploymentExposureFromEnv ?? fileConfig?.server.exposure ?? "private");
+  const authBaseUrlModeFromEnvRaw = process.env.PAPERCLIP_AUTH_BASE_URL_MODE;
+  const authBaseUrlModeFromEnv =
+    authBaseUrlModeFromEnvRaw &&
+    AUTH_BASE_URL_MODES.includes(authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
+      ? (authBaseUrlModeFromEnvRaw as AuthBaseUrlMode)
+      : null;
+  const authPublicBaseUrlRaw =
+    process.env.PAPERCLIP_AUTH_PUBLIC_BASE_URL ??
+    process.env.BETTER_AUTH_URL ??
+    fileConfig?.auth?.publicBaseUrl;
+  const authPublicBaseUrl = authPublicBaseUrlRaw?.trim() || undefined;
+  const authBaseUrlMode: AuthBaseUrlMode =
+    authBaseUrlModeFromEnv ??
+    fileConfig?.auth?.baseUrlMode ??
+    (authPublicBaseUrl ? "explicit" : "auto");
+
   return {
+    deploymentMode,
+    deploymentExposure,
+    host: process.env.HOST ?? fileConfig?.server.host ?? "127.0.0.1",
     port: Number(process.env.PORT) || fileConfig?.server.port || 3100,
+    authBaseUrlMode,
+    authPublicBaseUrl,
     databaseMode: fileDatabaseMode,
     databaseUrl: process.env.DATABASE_URL ?? fileDbUrl,
     embeddedPostgresDataDir: resolveHomeAwarePath(

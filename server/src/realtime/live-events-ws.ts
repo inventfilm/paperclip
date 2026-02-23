@@ -4,6 +4,7 @@ import type { Duplex } from "node:stream";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import { agentApiKeys } from "@paperclip/db";
+import type { DeploymentMode } from "@paperclip/shared";
 import { WebSocket, WebSocketServer } from "ws";
 import { logger } from "../middleware/logger.js";
 import { subscribeCompanyLiveEvents } from "../services/live-events.js";
@@ -52,13 +53,17 @@ async function authorizeUpgrade(
   req: IncomingMessage,
   companyId: string,
   url: URL,
+  deploymentMode: DeploymentMode,
 ): Promise<UpgradeContext | null> {
   const queryToken = url.searchParams.get("token")?.trim() ?? "";
   const authToken = parseBearerToken(req.headers.authorization);
   const token = authToken ?? (queryToken.length > 0 ? queryToken : null);
 
-  // Browser board context has no bearer token in V1.
+  // Local trusted browser board context has no bearer token in V1.
   if (!token) {
+    if (deploymentMode !== "local_trusted") {
+      return null;
+    }
     return {
       companyId,
       actorType: "board",
@@ -89,7 +94,11 @@ async function authorizeUpgrade(
   };
 }
 
-export function setupLiveEventsWebSocketServer(server: HttpServer, db: Db) {
+export function setupLiveEventsWebSocketServer(
+  server: HttpServer,
+  db: Db,
+  opts: { deploymentMode: DeploymentMode },
+) {
   const wss = new WebSocketServer({ noServer: true });
   const cleanupByClient = new Map<WebSocket, () => void>();
   const aliveByClient = new Map<WebSocket, boolean>();
@@ -153,7 +162,7 @@ export function setupLiveEventsWebSocketServer(server: HttpServer, db: Db) {
       return;
     }
 
-    void authorizeUpgrade(db, req, companyId, url)
+    void authorizeUpgrade(db, req, companyId, url, opts.deploymentMode)
       .then((context) => {
         if (!context) {
           rejectUpgrade(socket, "403 Forbidden", "forbidden");

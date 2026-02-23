@@ -1,8 +1,9 @@
-import express, { Router } from "express";
+import express, { Router, type Request as ExpressRequest } from "express";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclip/db";
+import type { DeploymentExposure, DeploymentMode } from "@paperclip/shared";
 import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
@@ -21,21 +22,49 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
 import { llmRoutes } from "./routes/llms.js";
 import { assetRoutes } from "./routes/assets.js";
+import { accessRoutes } from "./routes/access.js";
+import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 
-export async function createApp(db: Db, opts: { uiMode: UiMode; storageService: StorageService }) {
+export async function createApp(
+  db: Db,
+  opts: {
+    uiMode: UiMode;
+    storageService: StorageService;
+    deploymentMode: DeploymentMode;
+    deploymentExposure: DeploymentExposure;
+    authReady: boolean;
+    betterAuthHandler?: express.RequestHandler;
+    resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
+  },
+) {
   const app = express();
 
   app.use(express.json());
   app.use(httpLogger);
-  app.use(actorMiddleware(db));
+  app.use(
+    actorMiddleware(db, {
+      deploymentMode: opts.deploymentMode,
+      resolveSession: opts.resolveSession,
+    }),
+  );
+  if (opts.betterAuthHandler) {
+    app.all("/api/auth/*authPath", opts.betterAuthHandler);
+  }
   app.use(llmRoutes(db));
 
   // Mount API routes
   const api = Router();
   api.use(boardMutationGuard());
-  api.use("/health", healthRoutes());
+  api.use(
+    "/health",
+    healthRoutes(db, {
+      deploymentMode: opts.deploymentMode,
+      deploymentExposure: opts.deploymentExposure,
+      authReady: opts.authReady,
+    }),
+  );
   api.use("/companies", companyRoutes(db));
   api.use(agentRoutes(db));
   api.use(assetRoutes(db, opts.storageService));
@@ -48,6 +77,7 @@ export async function createApp(db: Db, opts: { uiMode: UiMode; storageService: 
   api.use(activityRoutes(db));
   api.use(dashboardRoutes(db));
   api.use(sidebarBadgeRoutes(db));
+  api.use(accessRoutes(db));
   app.use("/api", api);
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));

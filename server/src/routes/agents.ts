@@ -1,4 +1,5 @@
 import { Router, type Request } from "express";
+import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclip/db";
 import { agents as agentsTable, companies, heartbeatRuns } from "@paperclip/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -15,6 +16,7 @@ import {
 import { validate } from "../middleware/validate.js";
 import {
   agentService,
+  accessService,
   approvalService,
   heartbeatService,
   issueApprovalService,
@@ -26,10 +28,12 @@ import { forbidden } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
 import { redactEventPayload } from "../redaction.js";
+import { runClaudeLogin } from "@paperclip/adapter-claude-local/server";
 
 export function agentRoutes(db: Db) {
   const router = Router();
   const svc = agentService(db);
+  const access = accessService(db);
   const approvalsSvc = approvalService(db);
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
@@ -43,13 +47,21 @@ export function agentRoutes(db: Db) {
 
   async function assertCanCreateAgentsForCompany(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
-    if (req.actor.type === "board") return null;
+    if (req.actor.type === "board") {
+      if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return null;
+      const allowed = await access.canUser(companyId, req.actor.userId, "agents:create");
+      if (!allowed) {
+        throw forbidden("Missing permission: agents:create");
+      }
+      return null;
+    }
     if (!req.actor.agentId) throw forbidden("Agent authentication required");
     const actorAgent = await svc.getById(req.actor.agentId);
     if (!actorAgent || actorAgent.companyId !== companyId) {
       throw forbidden("Agent key cannot access another company");
     }
-    if (!canCreateAgents(actorAgent)) {
+    const allowedByGrant = await access.hasPermission(companyId, "agent", actorAgent.id, "agents:create");
+    if (!allowedByGrant && !canCreateAgents(actorAgent)) {
       throw forbidden("Missing permission: can create agents");
     }
     return actorAgent;
@@ -61,11 +73,15 @@ export function agentRoutes(db: Db) {
 
   async function actorCanReadConfigurationsForCompany(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
-    if (req.actor.type === "board") return true;
+    if (req.actor.type === "board") {
+      if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return true;
+      return access.canUser(companyId, req.actor.userId, "agents:create");
+    }
     if (!req.actor.agentId) return false;
     const actorAgent = await svc.getById(req.actor.agentId);
     if (!actorAgent || actorAgent.companyId !== companyId) return false;
-    return canCreateAgents(actorAgent);
+    const allowedByGrant = await access.hasPermission(companyId, "agent", actorAgent.id, "agents:create");
+    return allowedByGrant || canCreateAgents(actorAgent);
   }
 
   async function assertCanUpdateAgent(req: Request, targetAgent: { id: string; companyId: string }) {
@@ -80,7 +96,13 @@ export function agentRoutes(db: Db) {
 
     if (actorAgent.id === targetAgent.id) return;
     if (actorAgent.role === "ceo") return;
-    if (canCreateAgents(actorAgent)) return;
+    const allowedByGrant = await access.hasPermission(
+      targetAgent.companyId,
+      "agent",
+      actorAgent.id,
+      "agents:create",
+    );
+    if (allowedByGrant || canCreateAgents(actorAgent)) return;
     throw forbidden("Only CEO or agent creators can modify other agents");
   }
 
@@ -917,6 +939,37 @@ export function agentRoutes(db: Db) {
     });
 
     res.status(202).json(run);
+  });
+
+  router.post("/agents/:id/claude-login", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    if (agent.adapterType !== "claude_local") {
+      res.status(400).json({ error: "Login is only supported for claude_local agents" });
+      return;
+    }
+
+    const config = asRecord(agent.adapterConfig) ?? {};
+    const runtimeConfig = await secretsSvc.resolveAdapterConfigForRuntime(agent.companyId, config);
+    const result = await runClaudeLogin({
+      runId: `claude-login-${randomUUID()}`,
+      agent: {
+        id: agent.id,
+        companyId: agent.companyId,
+        name: agent.name,
+        adapterType: agent.adapterType,
+        adapterConfig: agent.adapterConfig,
+      },
+      config: runtimeConfig,
+    });
+
+    res.json(result);
   });
 
   router.get("/companies/:companyId/heartbeat-runs", async (req, res) => {

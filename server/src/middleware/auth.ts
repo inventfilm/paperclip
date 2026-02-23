@@ -1,22 +1,65 @@
 import { createHash } from "node:crypto";
-import type { RequestHandler } from "express";
+import type { Request, RequestHandler } from "express";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
-import { agentApiKeys, agents } from "@paperclip/db";
+import { agentApiKeys, agents, companyMemberships, instanceUserRoles } from "@paperclip/db";
 import { verifyLocalAgentJwt } from "../agent-auth-jwt.js";
+import type { DeploymentMode } from "@paperclip/shared";
+import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function actorMiddleware(db: Db): RequestHandler {
+interface ActorMiddlewareOptions {
+  deploymentMode: DeploymentMode;
+  resolveSession?: (req: Request) => Promise<BetterAuthSessionResult | null>;
+}
+
+export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHandler {
   return async (req, _res, next) => {
-    req.actor = { type: "board", userId: "board" };
+    req.actor =
+      opts.deploymentMode === "local_trusted"
+        ? { type: "board", userId: "local-board", isInstanceAdmin: true, source: "local_implicit" }
+        : { type: "none", source: "none" };
 
     const runIdHeader = req.header("x-paperclip-run-id");
 
     const authHeader = req.header("authorization");
     if (!authHeader?.toLowerCase().startsWith("bearer ")) {
+      if (opts.deploymentMode === "authenticated" && opts.resolveSession) {
+        const session = await opts.resolveSession(req);
+        if (session?.user?.id) {
+          const userId = session.user.id;
+          const [roleRow, memberships] = await Promise.all([
+            db
+              .select({ id: instanceUserRoles.id })
+              .from(instanceUserRoles)
+              .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
+              .then((rows) => rows[0] ?? null),
+            db
+              .select({ companyId: companyMemberships.companyId })
+              .from(companyMemberships)
+              .where(
+                and(
+                  eq(companyMemberships.principalType, "user"),
+                  eq(companyMemberships.principalId, userId),
+                  eq(companyMemberships.status, "active"),
+                ),
+              ),
+          ]);
+          req.actor = {
+            type: "board",
+            userId,
+            companyIds: memberships.map((row) => row.companyId),
+            isInstanceAdmin: Boolean(roleRow),
+            runId: runIdHeader ?? undefined,
+            source: "session",
+          };
+          next();
+          return;
+        }
+      }
       if (runIdHeader) req.actor.runId = runIdHeader;
       next();
       return;
@@ -64,6 +107,7 @@ export function actorMiddleware(db: Db): RequestHandler {
         companyId: claims.company_id,
         keyId: undefined,
         runId: runIdHeader || claims.run_id || undefined,
+        source: "agent_jwt",
       };
       next();
       return;
@@ -91,6 +135,7 @@ export function actorMiddleware(db: Db): RequestHandler {
       companyId: key.companyId,
       keyId: key.id,
       runId: runIdHeader || undefined,
+      source: "agent_key",
     };
 
     next();
