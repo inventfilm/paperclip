@@ -17,6 +17,8 @@ export interface Project {
   status: ProjectStatus;
   leadAgentId: string | null;
   targetDate: string | null;
+  color: string | null;
+  archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

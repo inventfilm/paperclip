@@ -1,6 +1,15 @@
 export const COMPANY_STATUSES = ["active", "paused", "archived"] as const;
 export type CompanyStatus = (typeof COMPANY_STATUSES)[number];
 
+export const DEPLOYMENT_MODES = ["local_trusted", "authenticated"] as const;
+export type DeploymentMode = (typeof DEPLOYMENT_MODES)[number];
+
+export const DEPLOYMENT_EXPOSURES = ["private", "public"] as const;
+export type DeploymentExposure = (typeof DEPLOYMENT_EXPOSURES)[number];
+
+export const AUTH_BASE_URL_MODES = ["auto", "explicit"] as const;
+export type AuthBaseUrlMode = (typeof AUTH_BASE_URL_MODES)[number];
+
 export const AGENT_STATUSES = [
   "active",
   "paused",
@@ -58,6 +67,19 @@ export const PROJECT_STATUSES = [
   "cancelled",
 ] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
+
+export const PROJECT_COLORS = [
+  "#6366f1", // indigo
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+  "#ef4444", // red
+  "#f97316", // orange
+  "#eab308", // yellow
+  "#22c55e", // green
+  "#14b8a6", // teal
+  "#06b6d4", // cyan
+  "#3b82f6", // blue
+] as const;
 
 export const APPROVAL_TYPES = ["hire_agent", "approve_ceo_strategy"] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
@@ -124,3 +146,34 @@ export const LIVE_EVENT_TYPES = [
   "activity.logged",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
+
+export const PRINCIPAL_TYPES = ["user", "agent"] as const;
+export type PrincipalType = (typeof PRINCIPAL_TYPES)[number];
+
+export const MEMBERSHIP_STATUSES = ["pending", "active", "suspended"] as const;
+export type MembershipStatus = (typeof MEMBERSHIP_STATUSES)[number];
+
+export const INSTANCE_USER_ROLES = ["instance_admin"] as const;
+export type InstanceUserRole = (typeof INSTANCE_USER_ROLES)[number];
+
+export const INVITE_TYPES = ["company_join", "bootstrap_ceo"] as const;
+export type InviteType = (typeof INVITE_TYPES)[number];
+
+export const INVITE_JOIN_TYPES = ["human", "agent", "both"] as const;
+export type InviteJoinType = (typeof INVITE_JOIN_TYPES)[number];
+
+export const JOIN_REQUEST_TYPES = ["human", "agent"] as const;
+export type JoinRequestType = (typeof JOIN_REQUEST_TYPES)[number];
+
+export const JOIN_REQUEST_STATUSES = ["pending_approval", "approved", "rejected"] as const;
+export type JoinRequestStatus = (typeof JOIN_REQUEST_STATUSES)[number];
+
+export const PERMISSION_KEYS = [
+  "agents:create",
+  "users:invite",
+  "users:manage_permissions",
+  "tasks:assign",
+  "tasks:assign_scope",
+  "joins:approve",
+] as const;
+export type PermissionKey = (typeof PERMISSION_KEYS)[number];

@@ -14,6 +14,8 @@ export const projects = pgTable(
     status: text("status").notNull().default("backlog"),
     leadAgentId: uuid("lead_agent_id").references(() => agents.id),
     targetDate: date("target_date"),
+    color: text("color"),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

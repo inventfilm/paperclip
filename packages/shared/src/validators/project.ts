@@ -10,6 +10,8 @@ export const createProjectSchema = z.object({
   status: z.enum(PROJECT_STATUSES).optional().default("backlog"),
   leadAgentId: z.string().uuid().optional().nullable(),
   targetDate: z.string().optional().nullable(),
+  color: z.string().optional().nullable(),
+  archivedAt: z.string().datetime().optional().nullable(),
 });
 
 export type CreateProject = z.infer<typeof createProjectSchema>;

@@ -1,7 +1,6 @@
 import {
   Inbox,
   CircleDot,
-  Hexagon,
   Target,
   LayoutDashboard,
   Bot,
@@ -9,7 +8,6 @@ import {
   History,
   Search,
   SquarePen,
-  ShieldCheck,
   BookOpen,
   Paperclip,
 } from "lucide-react";
@@ -17,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CompanySwitcher } from "./CompanySwitcher";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
+import { SidebarProjects } from "./SidebarProjects";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { sidebarBadgesApi } from "../api/sidebarBadges";
@@ -82,20 +81,15 @@ export function Sidebar() {
             />
           </div>
 
+          <SidebarProjects />
+
           <SidebarSection label="Work">
             <SidebarNavItem to="/issues" label="Issues" icon={CircleDot} />
-            <SidebarNavItem to="/projects" label="Projects" icon={Hexagon} />
             <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           </SidebarSection>
 
           <SidebarSection label="Company">
             <SidebarNavItem to="/agents" label="Agents" icon={Bot} />
-            <SidebarNavItem
-              to="/approvals"
-              label="Approvals"
-              icon={ShieldCheck}
-              badge={sidebarBadges?.approvals}
-            />
             <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
             <SidebarNavItem to="/activity" label="Activity" icon={History} />
           </SidebarSection>

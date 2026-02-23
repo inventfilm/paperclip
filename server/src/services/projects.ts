@@ -1,7 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import { projects, projectGoals, goals } from "@paperclip/db";
-import type { ProjectGoalRef } from "@paperclip/shared";
+import { PROJECT_COLORS, type ProjectGoalRef } from "@paperclip/shared";
 
 type ProjectRow = typeof projects.$inferSelect;
 
@@ -89,6 +89,14 @@ export function projectService(db: Db) {
     ): Promise<ProjectWithGoals> => {
       const { goalIds: inputGoalIds, ...projectData } = data;
       const ids = resolveGoalIds({ goalIds: inputGoalIds, goalId: projectData.goalId });
+
+      // Auto-assign a color from the palette if none provided
+      if (!projectData.color) {
+        const existing = await db.select({ color: projects.color }).from(projects).where(eq(projects.companyId, companyId));
+        const usedColors = new Set(existing.map((r) => r.color).filter(Boolean));
+        const nextColor = PROJECT_COLORS.find((c) => !usedColors.has(c)) ?? PROJECT_COLORS[existing.length % PROJECT_COLORS.length];
+        projectData.color = nextColor;
+      }
 
       // Also write goalId to the legacy column (first goal or null)
       const legacyGoalId = ids && ids.length > 0 ? ids[0] : projectData.goalId ?? null;
