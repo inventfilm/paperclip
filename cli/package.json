@@ -19,6 +19,7 @@
     "@paperclip/db": "workspace:*",
     "@paperclip/server": "workspace:*",
     "@paperclip/shared": "workspace:*",
+    "drizzle-orm": "0.38.4",
     "dotenv": "^17.0.1",
     "commander": "^13.1.0",
     "picocolors": "^1.1.1"

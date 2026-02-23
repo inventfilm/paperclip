@@ -91,3 +91,16 @@ export {
   createAssetImageMetadataSchema,
   type CreateAssetImageMetadata,
 } from "./asset.js";
+
+export {
+  createCompanyInviteSchema,
+  acceptInviteSchema,
+  listJoinRequestsQuerySchema,
+  updateMemberPermissionsSchema,
+  updateUserCompanyAccessSchema,
+  type CreateCompanyInvite,
+  type AcceptInvite,
+  type ListJoinRequestsQuery,
+  type UpdateMemberPermissions,
+  type UpdateUserCompanyAccess,
+} from "./access.js";

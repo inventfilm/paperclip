@@ -1,5 +1,11 @@
 export { companies } from "./companies.js";
+export { authUsers, authSessions, authAccounts, authVerifications } from "./auth.js";
+export { instanceUserRoles } from "./instance_user_roles.js";
 export { agents } from "./agents.js";
+export { companyMemberships } from "./company_memberships.js";
+export { principalPermissionGrants } from "./principal_permission_grants.js";
+export { invites } from "./invites.js";
+export { joinRequests } from "./join_requests.js";
 export { agentConfigRevisions } from "./agent_config_revisions.js";
 export { agentApiKeys } from "./agent_api_keys.js";
 export { agentRuntimeState } from "./agent_runtime_state.js";

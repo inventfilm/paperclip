@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { SECRET_PROVIDERS, STORAGE_PROVIDERS } from "./constants.js";
+import {
+  AUTH_BASE_URL_MODES,
+  DEPLOYMENT_EXPOSURES,
+  DEPLOYMENT_MODES,
+  SECRET_PROVIDERS,
+  STORAGE_PROVIDERS,
+} from "./constants.js";
 
 export const configMetaSchema = z.object({
   version: z.literal(1),
@@ -25,8 +31,16 @@ export const loggingConfigSchema = z.object({
 });
 
 export const serverConfigSchema = z.object({
+  deploymentMode: z.enum(DEPLOYMENT_MODES).default("local_trusted"),
+  exposure: z.enum(DEPLOYMENT_EXPOSURES).default("private"),
+  host: z.string().default("127.0.0.1"),
   port: z.number().int().min(1).max(65535).default(3100),
   serveUi: z.boolean().default(true),
+});
+
+export const authConfigSchema = z.object({
+  baseUrlMode: z.enum(AUTH_BASE_URL_MODES).default("auto"),
+  publicBaseUrl: z.string().url().optional(),
 });
 
 export const storageLocalDiskConfigSchema = z.object({
@@ -66,32 +80,72 @@ export const secretsConfigSchema = z.object({
   }),
 });
 
-export const paperclipConfigSchema = z.object({
-  $meta: configMetaSchema,
-  llm: llmConfigSchema.optional(),
-  database: databaseConfigSchema,
-  logging: loggingConfigSchema,
-  server: serverConfigSchema,
-  storage: storageConfigSchema.default({
-    provider: "local_disk",
-    localDisk: {
-      baseDir: "~/.paperclip/instances/default/data/storage",
-    },
-    s3: {
-      bucket: "paperclip",
-      region: "us-east-1",
-      prefix: "",
-      forcePathStyle: false,
-    },
-  }),
-  secrets: secretsConfigSchema.default({
-    provider: "local_encrypted",
-    strictMode: false,
-    localEncrypted: {
-      keyFilePath: "~/.paperclip/instances/default/secrets/master.key",
-    },
-  }),
-});
+export const paperclipConfigSchema = z
+  .object({
+    $meta: configMetaSchema,
+    llm: llmConfigSchema.optional(),
+    database: databaseConfigSchema,
+    logging: loggingConfigSchema,
+    server: serverConfigSchema,
+    auth: authConfigSchema.default({
+      baseUrlMode: "auto",
+    }),
+    storage: storageConfigSchema.default({
+      provider: "local_disk",
+      localDisk: {
+        baseDir: "~/.paperclip/instances/default/data/storage",
+      },
+      s3: {
+        bucket: "paperclip",
+        region: "us-east-1",
+        prefix: "",
+        forcePathStyle: false,
+      },
+    }),
+    secrets: secretsConfigSchema.default({
+      provider: "local_encrypted",
+      strictMode: false,
+      localEncrypted: {
+        keyFilePath: "~/.paperclip/instances/default/secrets/master.key",
+      },
+    }),
+  })
+  .superRefine((value, ctx) => {
+    if (value.server.deploymentMode === "local_trusted") {
+      if (value.server.exposure !== "private") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "server.exposure must be private when deploymentMode is local_trusted",
+          path: ["server", "exposure"],
+        });
+      }
+      return;
+    }
+
+    if (value.auth.baseUrlMode === "explicit" && !value.auth.publicBaseUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "auth.publicBaseUrl is required when auth.baseUrlMode is explicit",
+        path: ["auth", "publicBaseUrl"],
+      });
+    }
+
+    if (value.server.exposure === "public" && value.auth.baseUrlMode !== "explicit") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "auth.baseUrlMode must be explicit when deploymentMode=authenticated and exposure=public",
+        path: ["auth", "baseUrlMode"],
+      });
+    }
+
+    if (value.server.exposure === "public" && !value.auth.publicBaseUrl) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "auth.publicBaseUrl is required when deploymentMode=authenticated and exposure=public",
+        path: ["auth", "publicBaseUrl"],
+      });
+    }
+  });
 
 export type PaperclipConfig = z.infer<typeof paperclipConfigSchema>;
 export type LlmConfig = z.infer<typeof llmConfigSchema>;
@@ -103,4 +157,5 @@ export type StorageLocalDiskConfig = z.infer<typeof storageLocalDiskConfigSchema
 export type StorageS3Config = z.infer<typeof storageS3ConfigSchema>;
 export type SecretsConfig = z.infer<typeof secretsConfigSchema>;
 export type SecretsLocalEncryptedConfig = z.infer<typeof secretsLocalEncryptedConfigSchema>;
+export type AuthConfig = z.infer<typeof authConfigSchema>;
 export type ConfigMeta = z.infer<typeof configMetaSchema>;

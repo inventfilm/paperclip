@@ -10,6 +10,7 @@ export const createIssueSchema = z.object({
   status: z.enum(ISSUE_STATUSES).optional().default("backlog"),
   priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
   assigneeAgentId: z.string().uuid().optional().nullable(),
+  assigneeUserId: z.string().optional().nullable(),
   requestDepth: z.number().int().nonnegative().optional().default(0),
   billingCode: z.string().optional().nullable(),
 });

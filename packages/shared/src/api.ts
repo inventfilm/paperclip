@@ -13,4 +13,8 @@ export const API = {
   activity: `${API_PREFIX}/activity`,
   dashboard: `${API_PREFIX}/dashboard`,
   sidebarBadges: `${API_PREFIX}/sidebar-badges`,
+  invites: `${API_PREFIX}/invites`,
+  joinRequests: `${API_PREFIX}/join-requests`,
+  members: `${API_PREFIX}/members`,
+  admin: `${API_PREFIX}/admin`,
 } as const;
