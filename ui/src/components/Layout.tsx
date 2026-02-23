@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState, type UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen } from "lucide-react";
 import { Outlet } from "react-router-dom";
@@ -14,6 +14,7 @@ import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { OnboardingWizard } from "./OnboardingWizard";
 import { ToastViewport } from "./ToastViewport";
+import { MobileBottomNav } from "./MobileBottomNav";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
@@ -30,6 +31,8 @@ export function Layout() {
   const { panelContent, closePanel } = usePanel();
   const { companies, loading: companiesLoading, setSelectedCompanyId } = useCompany();
   const onboardingTriggered = useRef(false);
+  const lastMainScrollTop = useRef(0);
+  const [mobileNavVisible, setMobileNavVisible] = useState(true);
   const { data: health } = useQuery({
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
@@ -67,6 +70,35 @@ export function Layout() {
     onTogglePanel: togglePanel,
     onSwitchCompany: switchCompany,
   });
+
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileNavVisible(true);
+      return;
+    }
+    lastMainScrollTop.current = 0;
+    setMobileNavVisible(true);
+  }, [isMobile]);
+
+  const handleMainScroll = useCallback(
+    (event: UIEvent<HTMLElement>) => {
+      if (!isMobile) return;
+
+      const currentTop = event.currentTarget.scrollTop;
+      const delta = currentTop - lastMainScrollTop.current;
+
+      if (currentTop <= 24) {
+        setMobileNavVisible(true);
+      } else if (delta > 8) {
+        setMobileNavVisible(false);
+      } else if (delta < -8) {
+        setMobileNavVisible(true);
+      }
+
+      lastMainScrollTop.current = currentTop;
+    },
+    [isMobile],
+  );
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
@@ -119,12 +151,16 @@ export function Layout() {
       <div className="flex-1 flex flex-col min-w-0 h-full">
         <BreadcrumbBar />
         <div className="flex flex-1 min-h-0">
-          <main className="flex-1 overflow-auto p-4 md:p-6">
+          <main
+            className={cn("flex-1 overflow-auto p-4 md:p-6", isMobile && "pb-24")}
+            onScroll={handleMainScroll}
+          >
             <Outlet />
           </main>
           <PropertiesPanel />
         </div>
       </div>
+      {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
       <CommandPalette />
       <NewIssueDialog />
       <NewProjectDialog />
