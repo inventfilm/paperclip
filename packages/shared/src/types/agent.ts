@@ -14,6 +14,7 @@ export interface Agent {
   name: string;
   role: AgentRole;
   title: string | null;
+  icon: string | null;
   status: AgentStatus;
   reportsTo: string | null;
   capabilities: string | null;

@@ -3,34 +3,39 @@ import {
   CircleDot,
   Target,
   LayoutDashboard,
-  Bot,
   DollarSign,
   History,
   Search,
   SquarePen,
-  BookOpen,
-  Paperclip,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { CompanySwitcher } from "./CompanySwitcher";
 import { SidebarSection } from "./SidebarSection";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarProjects } from "./SidebarProjects";
+import { SidebarAgents } from "./SidebarAgents";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { sidebarBadgesApi } from "../api/sidebarBadges";
+import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function Sidebar() {
   const { openNewIssue } = useDialog();
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { data: sidebarBadges } = useQuery({
     queryKey: queryKeys.sidebarBadges(selectedCompanyId!),
     queryFn: () => sidebarBadgesApi.get(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: liveRuns } = useQuery({
+    queryKey: queryKeys.liveRuns(selectedCompanyId!),
+    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    refetchInterval: 10_000,
+  });
+  const liveRunCount = liveRuns?.length ?? 0;
 
   function openSearch() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
@@ -38,17 +43,11 @@ export function Sidebar() {
 
   return (
     <aside className="w-60 h-full border-r border-border bg-background flex flex-col">
-      {/* Logo */}
-      <div className="flex items-center gap-2 px-4 py-3">
-        <Paperclip className="h-5 w-5 text-foreground" />
-        <span className="text-sm font-semibold tracking-tight text-foreground">Paperclip</span>
-      </div>
-
-      {/* Company switcher + actions */}
-      <div className="flex items-center gap-1 px-3 pb-3">
-        <div className="flex-1 min-w-0">
-          <CompanySwitcher />
-        </div>
+      {/* Top bar: Company name (bold) + Search — aligned with top sections (no visible border) */}
+      <div className="flex items-center gap-1 px-3 h-12 shrink-0">
+        <span className="flex-1 text-sm font-bold text-foreground truncate pl-1">
+          {selectedCompany?.name ?? "Select company"}
+        </span>
         <Button
           variant="ghost"
           size="icon-sm"
@@ -57,20 +56,20 @@ export function Sidebar() {
         >
           <Search className="h-4 w-4" />
         </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="text-muted-foreground shrink-0"
-          onClick={() => openNewIssue()}
-        >
-          <SquarePen className="h-4 w-4" />
-        </Button>
       </div>
 
       <ScrollArea className="flex-1">
         <nav className="flex flex-col gap-4 px-3 py-2">
           <div className="flex flex-col gap-0.5">
-            <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} />
+            {/* New Issue button aligned with nav items */}
+            <button
+              onClick={() => openNewIssue()}
+              className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+            >
+              <SquarePen className="h-4 w-4 shrink-0" />
+              <span className="truncate">New Issue</span>
+            </button>
+            <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
             <SidebarNavItem
               to="/inbox"
               label="Inbox"
@@ -88,18 +87,14 @@ export function Sidebar() {
             <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           </SidebarSection>
 
+          <SidebarAgents />
+
           <SidebarSection label="Company">
-            <SidebarNavItem to="/agents" label="Agents" icon={Bot} />
             <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
             <SidebarNavItem to="/activity" label="Activity" icon={History} />
           </SidebarSection>
         </nav>
       </ScrollArea>
-
-      {/* Bottom links */}
-      <div className="border-t border-border px-3 py-2">
-        <SidebarNavItem to="/docs" label="Documentation" icon={BookOpen} />
-      </div>
     </aside>
   );
 }

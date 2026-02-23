@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, Link, useBeforeUnload } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { agentsApi, type AgentKey } from "../api/agents";
+import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
@@ -51,6 +51,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
 import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState } from "@paperclip/shared";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
@@ -300,6 +301,16 @@ export function AgentDetail() {
     },
   });
 
+  const updateIcon = useMutation({
+    mutationFn: (icon: string) => agentsApi.update(agentId!, { icon }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agentId!) });
+      if (selectedCompanyId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId) });
+      }
+    },
+  });
+
   const resetTaskSession = useMutation({
     mutationFn: (taskKey: string | null) => agentsApi.resetSession(agentId!, taskKey),
     onSuccess: () => {
@@ -363,12 +374,22 @@ export function AgentDetail() {
     <div className={cn("space-y-6", isMobile && showConfigActionBar && "pb-24")}>
       {/* Header */}
       <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="text-xl font-bold truncate">{agent.name}</h2>
-          <p className="text-sm text-muted-foreground truncate">
-            {roleLabels[agent.role] ?? agent.role}
-            {agent.title ? ` - ${agent.title}` : ""}
-          </p>
+        <div className="flex items-center gap-3 min-w-0">
+          <AgentIconPicker
+            value={agent.icon}
+            onChange={(icon) => updateIcon.mutate(icon)}
+          >
+            <button className="shrink-0 flex items-center justify-center h-10 w-10 rounded-lg bg-accent hover:bg-accent/80 transition-colors">
+              <AgentIcon icon={agent.icon} className="h-5 w-5" />
+            </button>
+          </AgentIconPicker>
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold truncate">{agent.name}</h2>
+            <p className="text-sm text-muted-foreground truncate">
+              {roleLabels[agent.role] ?? agent.role}
+              {agent.title ? ` - ${agent.title}` : ""}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           <Button
@@ -1024,6 +1045,11 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   const navigate = useNavigate();
   const metrics = runMetrics(run);
   const [sessionOpen, setSessionOpen] = useState(false);
+  const [claudeLoginResult, setClaudeLoginResult] = useState<ClaudeLoginResult | null>(null);
+
+  useEffect(() => {
+    setClaudeLoginResult(null);
+  }, [run.id]);
 
   const cancelRun = useMutation({
     mutationFn: () => heartbeatsApi.cancel(run.id),
@@ -1051,6 +1077,13 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.runtimeState(run.agentId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.taskSessions(run.agentId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.runIssues(run.id) });
+    },
+  });
+
+  const runClaudeLogin = useMutation({
+    mutationFn: () => agentsApi.loginWithClaude(run.agentId),
+    onSuccess: (data) => {
+      setClaudeLoginResult(data);
     },
   });
 
@@ -1109,6 +1142,53 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               <div className="text-xs">
                 <span className="text-red-400">{run.error}</span>
                 {run.errorCode && <span className="text-muted-foreground ml-1">({run.errorCode})</span>}
+              </div>
+            )}
+            {run.errorCode === "claude_auth_required" && adapterType === "claude_local" && (
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => runClaudeLogin.mutate()}
+                  disabled={runClaudeLogin.isPending}
+                >
+                  {runClaudeLogin.isPending ? "Running claude login..." : "Login to Claude Code"}
+                </Button>
+                {runClaudeLogin.isError && (
+                  <p className="text-xs text-destructive">
+                    {runClaudeLogin.error instanceof Error
+                      ? runClaudeLogin.error.message
+                      : "Failed to run Claude login"}
+                  </p>
+                )}
+                {claudeLoginResult?.loginUrl && (
+                  <p className="text-xs">
+                    Login URL:
+                    <a
+                      href={claudeLoginResult.loginUrl}
+                      className="text-blue-400 underline underline-offset-2 ml-1 break-all"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {claudeLoginResult.loginUrl}
+                    </a>
+                  </p>
+                )}
+                {claudeLoginResult && (
+                  <>
+                    {!!claudeLoginResult.stdout && (
+                      <pre className="bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">
+                        {claudeLoginResult.stdout}
+                      </pre>
+                    )}
+                    {!!claudeLoginResult.stderr && (
+                      <pre className="bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-300 overflow-x-auto whitespace-pre-wrap">
+                        {claudeLoginResult.stderr}
+                      </pre>
+                    )}
+                  </>
+                )}
               </div>
             )}
             {hasNonZeroExit && (
