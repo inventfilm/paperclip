@@ -101,7 +101,7 @@ export function Layout() {
   );
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden">
+    <div className="flex h-screen bg-background text-foreground overflow-hidden pt-[env(safe-area-inset-top)]">
       {/* Mobile backdrop */}
       {isMobile && sidebarOpen && (
         <div
@@ -114,7 +114,7 @@ export function Layout() {
       {isMobile ? (
         <div
           className={cn(
-            "fixed inset-y-0 left-0 z-50 flex transition-transform duration-200 ease-in-out",
+            "fixed inset-y-0 left-0 z-50 flex pt-[env(safe-area-inset-top)] transition-transform duration-200 ease-in-out",
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
