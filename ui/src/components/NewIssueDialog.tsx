@@ -237,6 +237,7 @@ export function NewIssueDialog() {
     >
       <DialogContent
         showCloseButton={false}
+        aria-describedby={undefined}
         className={cn(
           "p-0 gap-0 flex flex-col max-h-[calc(100vh-6rem)]",
           expanded
