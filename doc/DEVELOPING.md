@@ -29,6 +29,14 @@ This starts:
 - API server: `http://localhost:3100`
 - UI: served by the API server in dev middleware mode (same origin as API)
 
+Tailscale/private-auth dev mode:
+
+```sh
+pnpm dev --tailscale-auth
+```
+
+This runs dev as `authenticated/private` and binds the server to `0.0.0.0` for private-network access.
+
 ## One-Command Local Run
 
 For a first-time local install, you can bootstrap and run in one command:
