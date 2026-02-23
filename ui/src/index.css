@@ -120,6 +120,16 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Prevent double-tap-to-zoom on interactive elements for mobile */
+  a,
+  button,
+  [role="button"],
+  input,
+  select,
+  textarea,
+  label {
+    touch-action: manipulation;
+  }
 }
 
 /* Dark mode scrollbars */

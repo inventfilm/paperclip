@@ -208,22 +208,25 @@ export function IssuesList({
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-2 sm:gap-3">
         <Button size="sm" variant="outline" onClick={() => openNewIssue(newIssueDefaults())}>
-          <Plus className="h-4 w-4 mr-1" />
-          New Issue
+          <Plus className="h-4 w-4 sm:mr-1" />
+          <span className="hidden sm:inline">New Issue</span>
         </Button>
 
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1">
           {/* Filter */}
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="sm" className={`text-xs ${activeFilterCount > 0 ? "text-blue-400" : ""}`}>
-                <Filter className="h-3 w-3 mr-1" />
-                {activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter"}
+                <Filter className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
+                <span className="hidden sm:inline">{activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter"}</span>
+                {activeFilterCount > 0 && (
+                  <span className="sm:hidden text-[10px] font-medium ml-0.5">{activeFilterCount}</span>
+                )}
                 {activeFilterCount > 0 && (
                   <X
-                    className="h-3 w-3 ml-1"
+                    className="h-3 w-3 ml-1 hidden sm:block"
                     onClick={(e) => {
                       e.stopPropagation();
                       updateView({ statuses: [], priorities: [], assignees: [] });
@@ -336,8 +339,8 @@ export function IssuesList({
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="sm" className="text-xs">
-                <ArrowUpDown className="h-3 w-3 mr-1" />
-                Sort
+                <ArrowUpDown className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
+                <span className="hidden sm:inline">Sort</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-48 p-0">
@@ -378,8 +381,8 @@ export function IssuesList({
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="sm" className="text-xs">
-                <Layers className="h-3 w-3 mr-1" />
-                Group
+                <Layers className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
+                <span className="hidden sm:inline">Group</span>
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-44 p-0">
@@ -458,14 +461,14 @@ export function IssuesList({
                   {issue.identifier ?? issue.id.slice(0, 8)}
                 </span>
                 <span className="truncate flex-1 min-w-0">{issue.title}</span>
-                <div className="flex items-center gap-3 shrink-0 ml-auto">
+                <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
                   {liveIssueIds?.has(issue.id) && (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10">
+                    <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
                       <span className="relative flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
                       </span>
-                      <span className="text-[11px] font-medium text-blue-400">Live</span>
+                      <span className="text-[11px] font-medium text-blue-400 hidden sm:inline">Live</span>
                     </span>
                   )}
                   {issue.assigneeAgentId && (() => {
@@ -474,7 +477,7 @@ export function IssuesList({
                       ? <Identity name={name} size="sm" />
                       : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
                   })()}
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs text-muted-foreground hidden sm:inline">
                     {formatDate(issue.createdAt)}
                   </span>
                 </div>
