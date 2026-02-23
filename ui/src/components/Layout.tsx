@@ -19,6 +19,7 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
@@ -57,6 +58,8 @@ export function Layout() {
     },
     [companies, setSelectedCompanyId],
   );
+
+  useCompanyPageMemory();
 
   useKeyboardShortcuts({
     onNewIssue: () => openNewIssue(),
