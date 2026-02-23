@@ -158,6 +158,14 @@ export function CompanyRail() {
     sortByStoredOrder(companies).map((c) => c.id)
   );
 
+  // Re-sync orderedIds from localStorage whenever companies changes.
+  // Handles initial data load (companies starts as [] before query resolves)
+  // and subsequent refetches triggered by live updates.
+  useEffect(() => {
+    if (companies.length === 0) return;
+    setOrderedIds(sortByStoredOrder(companies).map((c) => c.id));
+  }, [companies]);
+
   // Sync order across tabs via the native storage event
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
