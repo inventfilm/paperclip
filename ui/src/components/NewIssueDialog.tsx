@@ -237,9 +237,9 @@ export function NewIssueDialog() {
       <DialogContent
         showCloseButton={false}
         className={cn(
-          "p-0 gap-0 flex flex-col",
+          "p-0 gap-0 flex flex-col max-h-[calc(100vh-6rem)]",
           expanded
-            ? "sm:max-w-2xl h-[calc(100vh-6rem)] max-h-[calc(100vh-6rem)]"
+            ? "sm:max-w-2xl h-[calc(100vh-6rem)]"
             : "sm:max-w-lg"
         )}
         onKeyDown={handleKeyDown}
@@ -293,7 +293,7 @@ export function NewIssueDialog() {
         </div>
 
         {/* Description */}
-        <div className={cn("px-4 pb-2", expanded ? "flex-1 min-h-0" : "")}>
+        <div className={cn("px-4 pb-2 overflow-y-auto min-h-0", expanded ? "flex-1" : "")}>
           <MarkdownEditor
             ref={descriptionEditorRef}
             value={description}
