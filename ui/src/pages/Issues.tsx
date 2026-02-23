@@ -1,69 +1,19 @@
 import { useEffect, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
-import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { groupBy } from "../lib/groupBy";
-import { StatusIcon } from "../components/StatusIcon";
-import { PriorityIcon } from "../components/PriorityIcon";
-import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
-import { PageTabBar } from "../components/PageTabBar";
-import { Button } from "@/components/ui/button";
-import { Tabs } from "@/components/ui/tabs";
-import { CircleDot, Plus } from "lucide-react";
-import { formatDate } from "../lib/utils";
-import { Identity } from "../components/Identity";
-import type { Issue } from "@paperclip/shared";
-
-const statusOrder = ["in_progress", "todo", "backlog", "in_review", "blocked", "done", "cancelled"];
-
-function statusLabel(status: string): string {
-  return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-type TabFilter = "all" | "active" | "backlog" | "done" | "recent";
-
-const issueTabItems = [
-  { value: "all", label: "All Issues" },
-  { value: "active", label: "Active" },
-  { value: "backlog", label: "Backlog" },
-  { value: "done", label: "Done" },
-  { value: "recent", label: "Recent" },
-] as const;
-
-function parseIssueTab(value: string | null): TabFilter {
-  if (value === "all" || value === "active" || value === "backlog" || value === "done" || value === "recent") return value;
-  return "active";
-}
-
-function filterIssues(issues: Issue[], tab: TabFilter): Issue[] {
-  switch (tab) {
-    case "active":
-      return issues.filter((i) => ["todo", "in_progress", "in_review", "blocked"].includes(i.status));
-    case "backlog":
-      return issues.filter((i) => i.status === "backlog");
-    case "done":
-      return issues.filter((i) => ["done", "cancelled"].includes(i.status));
-    default:
-      return issues;
-  }
-}
+import { IssuesList } from "../components/IssuesList";
+import { CircleDot } from "lucide-react";
 
 export function Issues() {
   const { selectedCompanyId } = useCompany();
-  const { openNewIssue } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const location = useLocation();
-  const pathSegment = location.pathname.split("/").pop() ?? "active";
-  const tab = parseIssueTab(pathSegment);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -104,164 +54,19 @@ export function Issues() {
     },
   });
 
-  const agentName = (id: string | null) => {
-    if (!id || !agents) return null;
-    return agents.find((a) => a.id === id)?.name ?? null;
-  };
-
   if (!selectedCompanyId) {
     return <EmptyState icon={CircleDot} message="Select a company to view issues." />;
   }
 
-  const filtered = filterIssues(issues ?? [], tab);
-  const recentSorted = tab === "recent"
-    ? [...filtered].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    : null;
-  const grouped = groupBy(filtered, (i) => i.status);
-  const orderedGroups = statusOrder
-    .filter((s) => grouped[s]?.length)
-    .map((s) => ({ status: s, items: grouped[s]! }));
-
-  const setTab = (nextTab: TabFilter) => {
-    navigate(`/issues/${nextTab}`);
-  };
-
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <Tabs value={tab} onValueChange={(v) => setTab(v as TabFilter)}>
-          <PageTabBar items={[...issueTabItems]} value={tab} onValueChange={(v) => setTab(v as TabFilter)} />
-        </Tabs>
-        <Button size="sm" onClick={() => openNewIssue()}>
-          <Plus className="h-4 w-4 mr-1" />
-          New Issue
-        </Button>
-      </div>
-
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
-
-      {issues && filtered.length === 0 && (
-        <EmptyState
-          icon={CircleDot}
-          message="No issues found."
-          action="Create Issue"
-          onAction={() => openNewIssue()}
-        />
-      )}
-
-      {recentSorted ? (
-        <div className="border border-border">
-          {recentSorted.map((issue) => (
-            <EntityRow
-              key={issue.id}
-              identifier={issue.identifier ?? issue.id.slice(0, 8)}
-              title={issue.title}
-              onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
-              leading={
-                // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                  <PriorityIcon
-                    priority={issue.priority}
-                    onChange={(p) => updateIssue.mutate({ id: issue.id, data: { priority: p } })}
-                  />
-                  <StatusIcon
-                    status={issue.status}
-                    onChange={(s) => updateIssue.mutate({ id: issue.id, data: { status: s } })}
-                  />
-                </div>
-              }
-              trailing={
-                <div className="flex items-center gap-3">
-                  {liveIssueIds.has(issue.id) && (
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-                      </span>
-                      <span className="text-[11px] font-medium text-blue-400">Live</span>
-                    </span>
-                  )}
-                  {issue.assigneeAgentId && (() => {
-                    const name = agentName(issue.assigneeAgentId);
-                    return name
-                      ? <Identity name={name} size="sm" />
-                      : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
-                  })()}
-                  <span className="text-xs text-muted-foreground">
-                    {formatDate(issue.updatedAt)}
-                  </span>
-                </div>
-              }
-            />
-          ))}
-        </div>
-      ) : (
-        orderedGroups.map(({ status, items }) => (
-          <div key={status}>
-            <div className="flex items-center gap-2 px-4 py-2 bg-muted/50">
-              <StatusIcon status={status} />
-              <span className="text-xs font-semibold uppercase tracking-wide">
-                {statusLabel(status)}
-              </span>
-              <span className="text-xs text-muted-foreground">{items.length}</span>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="ml-auto text-muted-foreground"
-                onClick={() => openNewIssue({ status })}
-              >
-                <Plus className="h-3 w-3" />
-              </Button>
-            </div>
-            <div className="border border-border">
-              {items.map((issue) => (
-                <EntityRow
-                  key={issue.id}
-                  identifier={issue.identifier ?? issue.id.slice(0, 8)}
-                  title={issue.title}
-                  onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
-                  leading={
-                    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-                    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                      <PriorityIcon
-                        priority={issue.priority}
-                        onChange={(p) => updateIssue.mutate({ id: issue.id, data: { priority: p } })}
-                      />
-                      <StatusIcon
-                        status={issue.status}
-                        onChange={(s) => updateIssue.mutate({ id: issue.id, data: { status: s } })}
-                      />
-                    </div>
-                  }
-                  trailing={
-                    <div className="flex items-center gap-3">
-                      {liveIssueIds.has(issue.id) && (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10">
-                          <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-                          </span>
-                          <span className="text-[11px] font-medium text-blue-400">Live</span>
-                        </span>
-                      )}
-                      {issue.assigneeAgentId && (() => {
-                        const name = agentName(issue.assigneeAgentId);
-                        return name
-                          ? <Identity name={name} size="sm" />
-                          : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
-                      })()}
-                      <span className="text-xs text-muted-foreground">
-                        {formatDate(issue.createdAt)}
-                      </span>
-                    </div>
-                  }
-                />
-              ))}
-            </div>
-          </div>
-        ))
-      )}
-    </div>
+    <IssuesList
+      issues={issues ?? []}
+      isLoading={isLoading}
+      error={error as Error | null}
+      agents={agents}
+      liveIssueIds={liveIssueIds}
+      viewStateKey="paperclip:issues-view"
+      onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
+    />
   );
 }

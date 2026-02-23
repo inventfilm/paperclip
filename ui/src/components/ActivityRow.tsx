@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Identity } from "./Identity";
 import { timeAgo } from "../lib/timeAgo";
 import { cn } from "../lib/utils";
@@ -85,8 +85,6 @@ interface ActivityRowProps {
 }
 
 export function ActivityRow({ event, agentMap, entityNameMap, className }: ActivityRowProps) {
-  const navigate = useNavigate();
-
   const verb = formatVerb(event.action, event.details);
 
   const isHeartbeatEvent = event.entityType === "heartbeat_run";
@@ -104,27 +102,38 @@ export function ActivityRow({ event, agentMap, entityNameMap, className }: Activ
 
   const actor = event.actorType === "agent" ? agentMap.get(event.actorId) : null;
 
+  const inner = (
+    <div className="flex gap-3">
+      <p className="flex-1 min-w-0">
+        <Identity
+          name={actor?.name ?? (event.actorType === "system" ? "System" : event.actorId || "You")}
+          size="xs"
+          className="align-baseline"
+        />
+        <span className="text-muted-foreground ml-1">{verb} </span>
+        {name && <span className="font-medium">{name}</span>}
+      </p>
+      <span className="text-xs text-muted-foreground shrink-0 pt-0.5">{timeAgo(event.createdAt)}</span>
+    </div>
+  );
+
+  const classes = cn(
+    "px-4 py-2 text-sm",
+    link && "cursor-pointer hover:bg-accent/50 transition-colors",
+    className,
+  );
+
+  if (link) {
+    return (
+      <Link to={link} className={cn(classes, "no-underline text-inherit block")}>
+        {inner}
+      </Link>
+    );
+  }
+
   return (
-    <div
-      className={cn(
-        "px-4 py-2 text-sm",
-        link && "cursor-pointer hover:bg-accent/50 transition-colors",
-        className,
-      )}
-      onClick={link ? () => navigate(link) : undefined}
-    >
-      <div className="flex gap-3">
-        <p className="flex-1 min-w-0">
-          <Identity
-            name={actor?.name ?? (event.actorType === "system" ? "System" : event.actorId || "You")}
-            size="xs"
-            className="align-baseline"
-          />
-          <span className="text-muted-foreground ml-1">{verb} </span>
-          {name && <span className="font-medium">{name}</span>}
-        </p>
-        <span className="text-xs text-muted-foreground shrink-0 pt-0.5">{timeAgo(event.createdAt)}</span>
-      </div>
+    <div className={classes}>
+      {inner}
     </div>
   );
 }

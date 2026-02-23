@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useDialog } from "../context/DialogContext";
 import { groupBy } from "../lib/groupBy";
 import { formatDate } from "../lib/utils";
@@ -139,7 +139,6 @@ export function IssuesList({
   onUpdateIssue,
 }: IssuesListProps) {
   const { openNewIssue } = useDialog();
-  const navigate = useNavigate();
 
   const [viewState, setViewState] = useState<IssueViewState>(() => getViewState(viewStateKey));
 
@@ -202,7 +201,7 @@ export function IssuesList({
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-3">
-        <Button size="sm" onClick={() => openNewIssue(newIssueDefaults())}>
+        <Button size="sm" variant="outline" onClick={() => openNewIssue(newIssueDefaults())}>
           <Plus className="h-4 w-4 mr-1" />
           New Issue
         </Button>
@@ -434,16 +433,14 @@ export function IssuesList({
           )}
           <CollapsibleContent>
             {group.items.map((issue) => (
-              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-              <div
+              <Link
                 key={issue.id}
-                className="flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors"
-                onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
+                to={`/issues/${issue.identifier ?? issue.id}`}
+                className="flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit"
               >
                 {/* Spacer matching caret width so status icon aligns with group title */}
                 <div className="w-3.5 shrink-0" />
-                {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-                <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                <div className="shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
                   <StatusIcon
                     status={issue.status}
                     onChange={(s) => onUpdateIssue(issue.id, { status: s })}
@@ -473,7 +470,7 @@ export function IssuesList({
                     {formatDate(issue.createdAt)}
                   </span>
                 </div>
-              </div>
+              </Link>
             ))}
           </CollapsibleContent>
         </Collapsible>

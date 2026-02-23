@@ -100,7 +100,7 @@ function ColorPicker({
         aria-label="Change project color"
       />
       {open && (
-        <div className="absolute top-full left-0 mt-2 p-2 bg-popover border border-border rounded-lg shadow-lg z-50">
+        <div className="absolute top-full left-0 mt-2 p-2 bg-popover border border-border rounded-lg shadow-lg z-50 w-max">
           <div className="grid grid-cols-5 gap-1.5">
             {PROJECT_COLORS.map((color) => (
               <button
@@ -252,11 +252,13 @@ export function ProjectDetail() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <ColorPicker
-          currentColor={project.color ?? "#6366f1"}
-          onSelect={(color) => updateProject.mutate({ color })}
-        />
+      <div className="flex items-start gap-3">
+        <div className="h-7 flex items-center">
+          <ColorPicker
+            currentColor={project.color ?? "#6366f1"}
+            onSelect={(color) => updateProject.mutate({ color })}
+          />
+        </div>
         <InlineEditor
           value={project.name}
           onSave={(name) => updateProject.mutate({ name })}

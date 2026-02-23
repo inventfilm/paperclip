@@ -14,6 +14,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { User, Hexagon, ArrowUpRight } from "lucide-react";
+import { AgentIcon } from "./AgentIconPicker";
 
 interface IssuePropertiesProps {
   issue: Issue;
@@ -130,6 +131,7 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                   )}
                   onClick={() => { onUpdate({ assigneeAgentId: a.id }); setAssigneeOpen(false); }}
                 >
+                  <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
                   {a.name}
                 </button>
               ))}
@@ -151,7 +153,13 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
             <PopoverTrigger asChild>
               <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
                 {issue.projectId ? (
-                  <span className="text-sm">{projectName(issue.projectId)}</span>
+                  <>
+                    <span
+                      className="shrink-0 h-3 w-3 rounded-sm"
+                      style={{ backgroundColor: projects?.find((p) => p.id === issue.projectId)?.color ?? "#6366f1" }}
+                    />
+                    <span className="text-sm">{projectName(issue.projectId)}</span>
+                  </>
                 ) : (
                   <>
                     <Hexagon className="h-3.5 w-3.5 text-muted-foreground" />
@@ -160,7 +168,7 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                 )}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-52 p-1" align="end">
+            <PopoverContent className="w-fit min-w-[11rem] p-1" align="end">
               <input
                 className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
                 placeholder="Search projects..."
@@ -170,7 +178,7 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
               />
               <button
                 className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
                   !issue.projectId && "bg-accent"
                 )}
                 onClick={() => { onUpdate({ projectId: null }); setProjectOpen(false); }}
@@ -187,11 +195,15 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                 <button
                   key={p.id}
                   className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
                     p.id === issue.projectId && "bg-accent"
                   )}
                   onClick={() => { onUpdate({ projectId: p.id }); setProjectOpen(false); }}
                 >
+                  <span
+                    className="shrink-0 h-3 w-3 rounded-sm"
+                    style={{ backgroundColor: p.color ?? "#6366f1" }}
+                  />
                   {p.name}
                 </button>
               ))}

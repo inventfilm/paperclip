@@ -1,5 +1,17 @@
 const BASE = "/api";
 
+export class ApiError extends Error {
+  status: number;
+  body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? undefined);
   const body = init?.body;
@@ -9,11 +21,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   const res = await fetch(`${BASE}${path}`, {
     headers,
+    credentials: "include",
     ...init,
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.error ?? `Request failed: ${res.status}`);
+    const errorBody = await res.json().catch(() => null);
+    throw new ApiError(
+      (errorBody as { error?: string } | null)?.error ?? `Request failed: ${res.status}`,
+      res.status,
+      errorBody,
+    );
   }
   return res.json();
 }

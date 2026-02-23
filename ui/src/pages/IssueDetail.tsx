@@ -122,8 +122,6 @@ export function IssueDetail() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
-  const [projectOpen, setProjectOpen] = useState(false);
-  const [projectSearch, setProjectSearch] = useState("");
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -412,54 +410,20 @@ export function IssueDetail() {
           />
           <span className="text-xs font-mono text-muted-foreground">{issue.identifier ?? issue.id.slice(0, 8)}</span>
 
-          <Popover open={projectOpen} onOpenChange={(open) => { setProjectOpen(open); if (!open) setProjectSearch(""); }}>
-            <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 -mx-1 py-0.5">
-                <Hexagon className="h-3 w-3 shrink-0" />
-                {issue.projectId
-                  ? ((projects ?? []).find((p) => p.id === issue.projectId)?.name ?? issue.projectId.slice(0, 8))
-                  : <span className="opacity-50">No project</span>
-                }
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-52 p-1" align="start">
-              <input
-                className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-                placeholder="Search projects..."
-                value={projectSearch}
-                onChange={(e) => setProjectSearch(e.target.value)}
-                autoFocus
-              />
-              <button
-                className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                  !issue.projectId && "bg-accent"
-                )}
-                onClick={() => { updateIssue.mutate({ projectId: null }); setProjectOpen(false); }}
-              >
-                No project
-              </button>
-              {(projects ?? [])
-                .filter((p) => {
-                  if (!projectSearch.trim()) return true;
-                  return p.name.toLowerCase().includes(projectSearch.toLowerCase());
-                })
-                .map((p) => (
-                  <button
-                    key={p.id}
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                      p.id === issue.projectId && "bg-accent"
-                    )}
-                    onClick={() => { updateIssue.mutate({ projectId: p.id }); setProjectOpen(false); }}
-                  >
-                    <Hexagon className="h-3 w-3 text-muted-foreground shrink-0" />
-                    {p.name}
-                  </button>
-                ))
-              }
-            </PopoverContent>
-          </Popover>
+          {issue.projectId ? (
+            <Link
+              to={`/projects/${issue.projectId}`}
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 -mx-1 py-0.5"
+            >
+              <Hexagon className="h-3 w-3 shrink-0" />
+              {(projects ?? []).find((p) => p.id === issue.projectId)?.name ?? issue.projectId.slice(0, 8)}
+            </Link>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-50 px-1 -mx-1 py-0.5">
+              <Hexagon className="h-3 w-3 shrink-0" />
+              No project
+            </span>
+          )}
 
           <Popover open={moreOpen} onOpenChange={setMoreOpen}>
             <PopoverTrigger asChild>
@@ -590,6 +554,10 @@ export function IssueDetail() {
         agentMap={agentMap}
         onAdd={async (body, reopen) => {
           await addComment.mutateAsync({ body, reopen });
+        }}
+        imageUploadHandler={async (file) => {
+          const attachment = await uploadAttachment.mutateAsync(file);
+          return attachment.contentPath;
         }}
       />
 

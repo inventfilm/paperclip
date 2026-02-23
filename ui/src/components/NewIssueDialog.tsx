@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
+import { AgentIcon } from "./AgentIconPicker";
 import type { Project, Agent } from "@paperclip/shared";
 
 const DRAFT_KEY = "paperclip:issue-draft";
@@ -373,8 +374,17 @@ export function NewIssueDialog() {
           <Popover open={assigneeOpen} onOpenChange={(open) => { setAssigneeOpen(open); if (!open) setAssigneeSearch(""); }}>
             <PopoverTrigger asChild>
               <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
-                <User className="h-3 w-3 text-muted-foreground" />
-                {currentAssignee ? currentAssignee.name : "Assignee"}
+                {currentAssignee ? (
+                  <>
+                    <AgentIcon icon={currentAssignee.icon} className="h-3 w-3 text-muted-foreground" />
+                    {currentAssignee.name}
+                  </>
+                ) : (
+                  <>
+                    <User className="h-3 w-3 text-muted-foreground" />
+                    Assignee
+                  </>
+                )}
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-52 p-1" align="start">
@@ -410,6 +420,7 @@ export function NewIssueDialog() {
                   )}
                   onClick={() => { setAssigneeId(a.id); setAssigneeOpen(false); }}
                 >
+                  <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
                   {a.name}
                 </button>
               ))}
@@ -420,14 +431,26 @@ export function NewIssueDialog() {
           <Popover open={projectOpen} onOpenChange={setProjectOpen}>
             <PopoverTrigger asChild>
               <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
-                <Hexagon className="h-3 w-3 text-muted-foreground" />
-                {currentProject ? currentProject.name : "Project"}
+                {currentProject ? (
+                  <>
+                    <span
+                      className="shrink-0 h-3 w-3 rounded-sm"
+                      style={{ backgroundColor: currentProject.color ?? "#6366f1" }}
+                    />
+                    {currentProject.name}
+                  </>
+                ) : (
+                  <>
+                    <Hexagon className="h-3 w-3 text-muted-foreground" />
+                    Project
+                  </>
+                )}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-44 p-1" align="start">
+            <PopoverContent className="w-fit min-w-[11rem] p-1" align="start">
               <button
                 className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
                   !projectId && "bg-accent"
                 )}
                 onClick={() => { setProjectId(""); setProjectOpen(false); }}
@@ -438,11 +461,15 @@ export function NewIssueDialog() {
                 <button
                   key={p.id}
                   className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
                     p.id === projectId && "bg-accent"
                   )}
                   onClick={() => { setProjectId(p.id); setProjectOpen(false); }}
                 >
+                  <span
+                    className="shrink-0 h-3 w-3 rounded-sm"
+                    style={{ backgroundColor: p.color ?? "#6366f1" }}
+                  />
                   {p.name}
                 </button>
               ))}

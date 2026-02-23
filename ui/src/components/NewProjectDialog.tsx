@@ -24,6 +24,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import { PROJECT_COLORS } from "@paperclip/shared";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
@@ -89,6 +90,7 @@ export function NewProjectDialog() {
       name: name.trim(),
       description: description.trim() || undefined,
       status,
+      color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
       ...(goalIds.length > 0 ? { goalIds } : {}),
       ...(targetDate ? { targetDate } : {}),
     });
@@ -151,9 +153,9 @@ export function NewProjectDialog() {
         </div>
 
         {/* Name */}
-        <div className="px-4 pt-3">
+        <div className="px-4 pt-4 pb-2 shrink-0">
           <input
-            className="w-full text-base font-medium bg-transparent outline-none placeholder:text-muted-foreground/50"
+            className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50"
             placeholder="Project name"
             value={name}
             onChange={(e) => setName(e.target.value)}

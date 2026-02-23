@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
 import { activityApi } from "../api/activity";
@@ -31,7 +31,6 @@ export function Dashboard() {
   const { selectedCompanyId, selectedCompany, companies } = useCompany();
   const { openOnboarding } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const navigate = useNavigate();
   const [animatedActivityIds, setAnimatedActivityIds] = useState<Set<string>>(new Set());
   const seenActivityIdsRef = useRef<Set<string>>(new Set());
   const hydratedActivityRef = useRef(false);
@@ -180,14 +179,12 @@ export function Dashboard() {
               icon={Bot}
               value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
               label="Agents Enabled"
-              onClick={() => navigate("/agents")}
+              to="/agents"
               description={
                 <span>
-                  <span className="cursor-pointer" onClick={() => navigate("/agents")}>{data.agents.running} running</span>
-                  {", "}
-                  <span className="cursor-pointer" onClick={() => navigate("/agents")}>{data.agents.paused} paused</span>
-                  {", "}
-                  <span className="cursor-pointer" onClick={() => navigate("/agents")}>{data.agents.error} errors</span>
+                  {data.agents.running} running{", "}
+                  {data.agents.paused} paused{", "}
+                  {data.agents.error} errors
                 </span>
               }
             />
@@ -195,12 +192,11 @@ export function Dashboard() {
               icon={CircleDot}
               value={data.tasks.inProgress}
               label="Tasks In Progress"
-              onClick={() => navigate("/issues")}
+              to="/issues"
               description={
                 <span>
-                  <span className="cursor-pointer" onClick={() => navigate("/issues")}>{data.tasks.open} open</span>
-                  {", "}
-                  <span className="cursor-pointer" onClick={() => navigate("/issues")}>{data.tasks.blocked} blocked</span>
+                  {data.tasks.open} open{", "}
+                  {data.tasks.blocked} blocked
                 </span>
               }
             />
@@ -208,9 +204,9 @@ export function Dashboard() {
               icon={DollarSign}
               value={formatCents(data.costs.monthSpendCents)}
               label="Month Spend"
-              onClick={() => navigate("/costs")}
+              to="/costs"
               description={
-                <span className="cursor-pointer" onClick={() => navigate("/costs")}>
+                <span>
                   {data.costs.monthBudgetCents > 0
                     ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
                     : "Unlimited budget"}
@@ -221,9 +217,9 @@ export function Dashboard() {
               icon={ShieldCheck}
               value={data.pendingApprovals}
               label="Pending Approvals"
-              onClick={() => navigate("/approvals")}
+              to="/approvals"
               description={
-                <span className="cursor-pointer" onClick={() => navigate("/issues")}>
+                <span>
                   {data.staleTasks} stale tasks
                 </span>
               }
@@ -263,10 +259,10 @@ export function Dashboard() {
               ) : (
                 <div className="border border-border divide-y divide-border">
                   {recentIssues.slice(0, 10).map((issue) => (
-                    <div
+                    <Link
                       key={issue.id}
-                      className="px-4 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors"
-                      onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
+                      to={`/issues/${issue.identifier ?? issue.id}`}
+                      className="px-4 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit block"
                     >
                       <div className="flex gap-3">
                         <div className="flex items-start gap-2 min-w-0 flex-1">
@@ -288,7 +284,7 @@ export function Dashboard() {
                           {timeAgo(issue.updatedAt)}
                         </span>
                       </div>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}

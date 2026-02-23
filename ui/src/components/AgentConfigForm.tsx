@@ -50,6 +50,8 @@ type AgentConfigFormProps = {
   onSaveActionChange?: (save: (() => void) | null) => void;
   onCancelActionChange?: (cancel: (() => void) | null) => void;
   hideInlineSave?: boolean;
+  /** "cards" renders each section as heading + bordered card (for settings pages). Default: "inline" (border-b dividers). */
+  sectionLayout?: "inline" | "cards";
 } & (
   | {
       mode: "create";
@@ -138,6 +140,7 @@ function extractPickedDirectoryPath(handle: unknown): string | null {
 export function AgentConfigForm(props: AgentConfigFormProps) {
   const { mode, adapterModels: externalModels } = props;
   const isCreate = mode === "create";
+  const cards = props.sectionLayout === "cards";
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
 
@@ -324,7 +327,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     : false;
 
   return (
-    <div className="relative">
+    <div className={cn("relative", cards && "space-y-6")}>
       {/* ---- Floating Save button (edit mode, when dirty) ---- */}
       {isDirty && !props.hideInlineSave && (
         <div className="sticky top-0 z-10 flex items-center justify-end px-4 py-2 bg-background/90 backdrop-blur-sm border-b border-primary/20">
@@ -343,9 +346,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
       {/* ---- Identity (edit only) ---- */}
       {!isCreate && (
-        <div className="border-b border-border">
-          <div className="px-4 py-2 text-xs font-medium text-muted-foreground">Identity</div>
-          <div className="px-4 pb-3 space-y-3">
+        <div className={cn(!cards && "border-b border-border")}>
+          {cards
+            ? <h3 className="text-sm font-medium mb-3">Identity</h3>
+            : <div className="px-4 py-2 text-xs font-medium text-muted-foreground">Identity</div>
+          }
+          <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
             <Field label="Name" hint={help.name}>
               <DraftInput
                 value={eff("identity", "name", props.agent.name)}
@@ -403,11 +409,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
       )}
 
       {/* ---- Adapter ---- */}
-      <div className={cn(isCreate ? "border-t border-border" : "border-b border-border")}>
-        <div className="px-4 py-2 flex items-center justify-between gap-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            Adapter
-          </span>
+      <div className={cn(!cards && (isCreate ? "border-t border-border" : "border-b border-border"))}>
+        <div className={cn(cards ? "flex items-center justify-between mb-3" : "px-4 py-2 flex items-center justify-between gap-2")}>
+          {cards
+            ? <h3 className="text-sm font-medium">Adapter</h3>
+            : <span className="text-xs font-medium text-muted-foreground">Adapter</span>
+          }
           <Button
             type="button"
             variant="outline"
@@ -419,7 +426,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             {testEnvironment.isPending ? "Testing..." : "Test environment"}
           </Button>
         </div>
-        <div className="px-4 pb-3 space-y-3">
+        <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
           <Field label="Adapter type" hint={help.adapterType}>
             <AdapterTypeDropdown
               value={adapterType}
@@ -531,11 +538,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
       {/* ---- Permissions & Configuration ---- */}
       {isLocal && (
-        <div className="border-b border-border">
-          <div className="px-4 py-2 text-xs font-medium text-muted-foreground">
-            Permissions & Configuration
-          </div>
-          <div className="px-4 pb-3 space-y-3">
+        <div className={cn(!cards && "border-b border-border")}>
+          {cards
+            ? <h3 className="text-sm font-medium mb-3">Permissions &amp; Configuration</h3>
+            : <div className="px-4 py-2 text-xs font-medium text-muted-foreground">Permissions &amp; Configuration</div>
+          }
+          <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
               <Field label="Command" hint={help.localCommand}>
                 <DraftInput
                   value={
@@ -689,12 +697,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
       {/* ---- Run Policy ---- */}
       {isCreate ? (
-        <div className="border-b border-border">
-          <div className="px-4 py-2 text-xs font-medium text-muted-foreground flex items-center gap-2">
-            <Heart className="h-3 w-3" />
-            Run Policy
-          </div>
-          <div className="px-4 pb-3 space-y-3">
+        <div className={cn(!cards && "border-b border-border")}>
+          {cards
+            ? <h3 className="text-sm font-medium flex items-center gap-2 mb-3"><Heart className="h-3 w-3" /> Run Policy</h3>
+            : <div className="px-4 py-2 text-xs font-medium text-muted-foreground flex items-center gap-2"><Heart className="h-3 w-3" /> Run Policy</div>
+          }
+          <div className={cn(cards ? "border border-border rounded-lg p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
             <ToggleWithNumber
               label="Heartbeat on interval"
               hint={help.heartbeatInterval}
@@ -710,30 +718,32 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
           </div>
         </div>
       ) : (
-        <div className="border-b border-border">
-          <div className="px-4 py-2 text-xs font-medium text-muted-foreground flex items-center gap-2">
-            <Heart className="h-3 w-3" />
-            Run Policy
-          </div>
-          <div className="px-4 pb-3 space-y-3">
-            <ToggleWithNumber
-              label="Heartbeat on interval"
-              hint={help.heartbeatInterval}
-              checked={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
-              onCheckedChange={(v) => mark("heartbeat", "enabled", v)}
-              number={eff("heartbeat", "intervalSec", Number(heartbeat.intervalSec ?? 300))}
-              onNumberChange={(v) => mark("heartbeat", "intervalSec", v)}
-              numberLabel="sec"
-              numberPrefix="Run heartbeat every"
-              numberHint={help.intervalSec}
-              showNumber={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
-            />
-          </div>
-          <CollapsibleSection
-            title="Advanced Run Policy"
-            open={runPolicyAdvancedOpen}
-            onToggle={() => setRunPolicyAdvancedOpen(!runPolicyAdvancedOpen)}
-          >
+        <div className={cn(!cards && "border-b border-border")}>
+          {cards
+            ? <h3 className="text-sm font-medium flex items-center gap-2 mb-3"><Heart className="h-3 w-3" /> Run Policy</h3>
+            : <div className="px-4 py-2 text-xs font-medium text-muted-foreground flex items-center gap-2"><Heart className="h-3 w-3" /> Run Policy</div>
+          }
+          <div className={cn(cards ? "border border-border rounded-lg overflow-hidden" : "")}>
+            <div className={cn(cards ? "p-4 space-y-3" : "px-4 pb-3 space-y-3")}>
+              <ToggleWithNumber
+                label="Heartbeat on interval"
+                hint={help.heartbeatInterval}
+                checked={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
+                onCheckedChange={(v) => mark("heartbeat", "enabled", v)}
+                number={eff("heartbeat", "intervalSec", Number(heartbeat.intervalSec ?? 300))}
+                onNumberChange={(v) => mark("heartbeat", "intervalSec", v)}
+                numberLabel="sec"
+                numberPrefix="Run heartbeat every"
+                numberHint={help.intervalSec}
+                showNumber={eff("heartbeat", "enabled", heartbeat.enabled !== false)}
+              />
+            </div>
+            <CollapsibleSection
+              title="Advanced Run Policy"
+              bordered={cards}
+              open={runPolicyAdvancedOpen}
+              onToggle={() => setRunPolicyAdvancedOpen(!runPolicyAdvancedOpen)}
+            >
             <div className="space-y-3">
               <ToggleField
                 label="Wake on demand"
@@ -771,6 +781,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               </Field>
             </div>
           </CollapsibleSection>
+          </div>
         </div>
       )}
 

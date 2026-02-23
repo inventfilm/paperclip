@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
+import { accessApi } from "../api/access";
+import { ApiError } from "../api/client";
 import { dashboardApi } from "../api/dashboard";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -17,19 +19,39 @@ import { StatusBadge } from "../components/StatusBadge";
 import { timeAgo } from "../lib/timeAgo";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Tabs } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Inbox as InboxIcon,
   AlertTriangle,
   Clock,
-  ExternalLink,
   ArrowUpRight,
   XCircle,
 } from "lucide-react";
 import { Identity } from "../components/Identity";
-import type { HeartbeatRun, Issue } from "@paperclip/shared";
+import { PageTabBar } from "../components/PageTabBar";
+import type { HeartbeatRun, Issue, JoinRequest } from "@paperclip/shared";
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
 const FAILED_RUN_STATUSES = new Set(["failed", "timed_out"]);
+const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
+
+type InboxTab = "new" | "all";
+type InboxCategoryFilter =
+  | "everything"
+  | "join_requests"
+  | "approvals"
+  | "failed_runs"
+  | "alerts"
+  | "stale_work";
+type InboxApprovalFilter = "all" | "actionable" | "resolved";
+type SectionKey = "join_requests" | "approvals" | "failed_runs" | "alerts" | "stale_work";
 
 const RUN_SOURCE_LABELS: Record<string, string> = {
   timer: "Scheduled",
@@ -44,12 +66,9 @@ function getStaleIssues(issues: Issue[]): Issue[] {
     .filter(
       (i) =>
         ["in_progress", "todo"].includes(i.status) &&
-        now - new Date(i.updatedAt).getTime() > STALE_THRESHOLD_MS
+        now - new Date(i.updatedAt).getTime() > STALE_THRESHOLD_MS,
     )
-    .sort(
-      (a, b) =>
-        new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime()
-    );
+    .sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
 }
 
 function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[] {
@@ -64,9 +83,7 @@ function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[] {
     }
   }
 
-  return Array.from(latestByAgent.values()).filter((run) =>
-    FAILED_RUN_STATUSES.has(run.status),
-  );
+  return Array.from(latestByAgent.values()).filter((run) => FAILED_RUN_STATUSES.has(run.status));
 }
 
 function firstNonEmptyLine(value: string | null | undefined): string | null {
@@ -76,11 +93,7 @@ function firstNonEmptyLine(value: string | null | undefined): string | null {
 }
 
 function runFailureMessage(run: HeartbeatRun): string {
-  return (
-    firstNonEmptyLine(run.error) ??
-    firstNonEmptyLine(run.stderrExcerpt) ??
-    "Run exited with an error."
-  );
+  return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt) ?? "Run exited with an error.";
 }
 
 function readIssueIdFromRun(run: HeartbeatRun): string | null {
@@ -100,8 +113,14 @@ export function Inbox() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
+  const [allCategoryFilter, setAllCategoryFilter] = useState<InboxCategoryFilter>("everything");
+  const [allApprovalFilter, setAllApprovalFilter] = useState<InboxApprovalFilter>("all");
+
+  const pathSegment = location.pathname.split("/").pop() ?? "new";
+  const tab: InboxTab = pathSegment === "all" ? "all" : "new";
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -113,25 +132,48 @@ export function Inbox() {
     setBreadcrumbs([{ label: "Inbox" }]);
   }, [setBreadcrumbs]);
 
-  const { data: approvals, isLoading: isApprovalsLoading, error } = useQuery({
+  const {
+    data: approvals,
+    isLoading: isApprovalsLoading,
+    error: approvalsError,
+  } = useQuery({
     queryKey: queryKeys.approvals.list(selectedCompanyId!),
     queryFn: () => approvalsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
-  const { data: dashboard } = useQuery({
+  const {
+    data: joinRequests = [],
+    isLoading: isJoinRequestsLoading,
+  } = useQuery({
+    queryKey: queryKeys.access.joinRequests(selectedCompanyId!),
+    queryFn: async () => {
+      try {
+        return await accessApi.listJoinRequests(selectedCompanyId!, "pending_approval");
+      } catch (err) {
+        if (err instanceof ApiError && (err.status === 403 || err.status === 401)) {
+          return [];
+        }
+        throw err;
+      }
+    },
+    enabled: !!selectedCompanyId,
+    retry: false,
+  });
+
+  const { data: dashboard, isLoading: isDashboardLoading } = useQuery({
     queryKey: queryKeys.dashboard(selectedCompanyId!),
     queryFn: () => dashboardApi.summary(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
-  const { data: issues } = useQuery({
+  const { data: issues, isLoading: isIssuesLoading } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
     queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
-  const { data: heartbeatRuns } = useQuery({
+  const { data: heartbeatRuns, isLoading: isRunsLoading } = useQuery({
     queryKey: queryKeys.heartbeats(selectedCompanyId!),
     queryFn: () => heartbeatsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -156,6 +198,28 @@ export function Inbox() {
     [heartbeatRuns],
   );
 
+  const allApprovals = useMemo(
+    () =>
+      [...(approvals ?? [])].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+    [approvals],
+  );
+
+  const actionableApprovals = useMemo(
+    () => allApprovals.filter((approval) => ACTIONABLE_APPROVAL_STATUSES.has(approval.status)),
+    [allApprovals],
+  );
+
+  const filteredAllApprovals = useMemo(() => {
+    if (allApprovalFilter === "all") return allApprovals;
+
+    return allApprovals.filter((approval) => {
+      const isActionable = ACTIONABLE_APPROVAL_STATUSES.has(approval.status);
+      return allApprovalFilter === "actionable" ? isActionable : !isActionable;
+    });
+  }, [allApprovals, allApprovalFilter]);
+
   const agentName = (id: string | null) => {
     if (!id) return null;
     return agentById.get(id) ?? null;
@@ -164,6 +228,7 @@ export function Inbox() {
   const approveMutation = useMutation({
     mutationFn: (id: string) => approvalsApi.approve(id),
     onSuccess: (_approval, id) => {
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
       navigate(`/approvals/${id}?resolved=approved`);
     },
@@ -175,6 +240,7 @@ export function Inbox() {
   const rejectMutation = useMutation({
     mutationFn: (id: string) => approvalsApi.reject(id),
     onSuccess: () => {
+      setActionError(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
     },
     onError: (err) => {
@@ -182,67 +248,251 @@ export function Inbox() {
     },
   });
 
+  const approveJoinMutation = useMutation({
+    mutationFn: (joinRequest: JoinRequest) =>
+      accessApi.approveJoinRequest(selectedCompanyId!, joinRequest.id),
+    onSuccess: () => {
+      setActionError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Failed to approve join request");
+    },
+  });
+
+  const rejectJoinMutation = useMutation({
+    mutationFn: (joinRequest: JoinRequest) =>
+      accessApi.rejectJoinRequest(selectedCompanyId!, joinRequest.id),
+    onSuccess: () => {
+      setActionError(null);
+      queryClient.invalidateQueries({ queryKey: queryKeys.access.joinRequests(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.sidebarBadges(selectedCompanyId!) });
+    },
+    onError: (err) => {
+      setActionError(err instanceof Error ? err.message : "Failed to reject join request");
+    },
+  });
+
   if (!selectedCompanyId) {
     return <EmptyState icon={InboxIcon} message="Select a company to view inbox." />;
   }
 
-  const actionableApprovals = (approvals ?? []).filter(
-    (approval) => approval.status === "pending" || approval.status === "revision_requested",
-  );
-  const hasActionableApprovals = actionableApprovals.length > 0;
   const hasRunFailures = failedRuns.length > 0;
-  const showAggregateAgentError =
-    !!dashboard && dashboard.agents.error > 0 && !hasRunFailures;
-  const hasAlerts =
+  const showAggregateAgentError = !!dashboard && dashboard.agents.error > 0 && !hasRunFailures;
+  const showBudgetAlert =
     !!dashboard &&
-    (showAggregateAgentError || (dashboard.costs.monthBudgetCents > 0 && dashboard.costs.monthUtilizationPercent >= 80));
+    dashboard.costs.monthBudgetCents > 0 &&
+    dashboard.costs.monthUtilizationPercent >= 80;
+  const hasAlerts = showAggregateAgentError || showBudgetAlert;
   const hasStale = staleIssues.length > 0;
-  const hasContent = hasActionableApprovals || hasRunFailures || hasAlerts || hasStale;
+  const hasJoinRequests = joinRequests.length > 0;
+
+  const newItemCount =
+    joinRequests.length +
+    actionableApprovals.length +
+    failedRuns.length +
+    staleIssues.length +
+    (showAggregateAgentError ? 1 : 0) +
+    (showBudgetAlert ? 1 : 0);
+
+  const showJoinRequestsCategory =
+    allCategoryFilter === "everything" || allCategoryFilter === "join_requests";
+  const showApprovalsCategory = allCategoryFilter === "everything" || allCategoryFilter === "approvals";
+  const showFailedRunsCategory =
+    allCategoryFilter === "everything" || allCategoryFilter === "failed_runs";
+  const showAlertsCategory = allCategoryFilter === "everything" || allCategoryFilter === "alerts";
+  const showStaleCategory = allCategoryFilter === "everything" || allCategoryFilter === "stale_work";
+
+  const approvalsToRender = tab === "new" ? actionableApprovals : filteredAllApprovals;
+  const showJoinRequestsSection =
+    tab === "new" ? hasJoinRequests : showJoinRequestsCategory && hasJoinRequests;
+  const showApprovalsSection =
+    tab === "new"
+      ? actionableApprovals.length > 0
+      : showApprovalsCategory && filteredAllApprovals.length > 0;
+  const showFailedRunsSection =
+    tab === "new" ? hasRunFailures : showFailedRunsCategory && hasRunFailures;
+  const showAlertsSection = tab === "new" ? hasAlerts : showAlertsCategory && hasAlerts;
+  const showStaleSection = tab === "new" ? hasStale : showStaleCategory && hasStale;
+
+  const visibleSections = [
+    showApprovalsSection ? "approvals" : null,
+    showJoinRequestsSection ? "join_requests" : null,
+    showFailedRunsSection ? "failed_runs" : null,
+    showAlertsSection ? "alerts" : null,
+    showStaleSection ? "stale_work" : null,
+  ].filter((key): key is SectionKey => key !== null);
+
+  const isLoading =
+    isJoinRequestsLoading ||
+    isApprovalsLoading ||
+    isDashboardLoading ||
+    isIssuesLoading ||
+    isRunsLoading;
+
+  const showSeparatorBefore = (key: SectionKey) => visibleSections.indexOf(key) > 0;
 
   return (
     <div className="space-y-6">
-      {isApprovalsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value === "all" ? "all" : "new"}`)}>
+          <PageTabBar
+            items={[
+              {
+                value: "new",
+                label: (
+                  <>
+                    New
+                    {newItemCount > 0 && (
+                      <span className="ml-1.5 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[10px] font-medium text-blue-500">
+                        {newItemCount}
+                      </span>
+                    )}
+                  </>
+                ),
+              },
+              { value: "all", label: "All" },
+            ]}
+          />
+        </Tabs>
+
+        {tab === "all" && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={allCategoryFilter}
+              onValueChange={(value) => setAllCategoryFilter(value as InboxCategoryFilter)}
+            >
+              <SelectTrigger className="h-8 w-[170px] text-xs">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="everything">All categories</SelectItem>
+                <SelectItem value="join_requests">Join requests</SelectItem>
+                <SelectItem value="approvals">Approvals</SelectItem>
+                <SelectItem value="failed_runs">Failed runs</SelectItem>
+                <SelectItem value="alerts">Alerts</SelectItem>
+                <SelectItem value="stale_work">Stale work</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {showApprovalsCategory && (
+              <Select
+                value={allApprovalFilter}
+                onValueChange={(value) => setAllApprovalFilter(value as InboxApprovalFilter)}
+              >
+                <SelectTrigger className="h-8 w-[170px] text-xs">
+                  <SelectValue placeholder="Approval status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All approval statuses</SelectItem>
+                  <SelectItem value="actionable">Needs action</SelectItem>
+                  <SelectItem value="resolved">Resolved</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        )}
+      </div>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
+      {approvalsError && <p className="text-sm text-destructive">{approvalsError.message}</p>}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      {!isApprovalsLoading && !hasContent && (
-        <EmptyState icon={InboxIcon} message="You're all caught up!" />
+      {!isLoading && visibleSections.length === 0 && (
+        <EmptyState
+          icon={InboxIcon}
+          message={tab === "new" ? "You're all caught up!" : "No inbox items match these filters."}
+        />
       )}
 
-      {/* Pending Approvals */}
-      {hasActionableApprovals && (
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Approvals
-            </h3>
-            <button
-              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
-              onClick={() => navigate("/approvals")}
-            >
-              See all approvals <ExternalLink className="ml-0.5 inline h-3 w-3" />
-            </button>
-          </div>
-          <div className="grid gap-3">
-            {actionableApprovals.map((approval) => (
-              <ApprovalCard
-                key={approval.id}
-                approval={approval}
-                requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
-                onApprove={() => approveMutation.mutate(approval.id)}
-                onReject={() => rejectMutation.mutate(approval.id)}
-                onOpen={() => navigate(`/approvals/${approval.id}`)}
-                isPending={approveMutation.isPending || rejectMutation.isPending}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Failed Runs */}
-      {hasRunFailures && (
+      {showApprovalsSection && (
         <>
-          {hasActionableApprovals && <Separator />}
+          {showSeparatorBefore("approvals") && <Separator />}
+          <div>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              {tab === "new" ? "Approvals Needing Action" : "Approvals"}
+            </h3>
+            <div className="grid gap-3">
+              {approvalsToRender.map((approval) => (
+                <ApprovalCard
+                  key={approval.id}
+                  approval={approval}
+                  requesterAgent={
+                    approval.requestedByAgentId
+                      ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null
+                      : null
+                  }
+                  onApprove={() => approveMutation.mutate(approval.id)}
+                  onReject={() => rejectMutation.mutate(approval.id)}
+                  detailLink={`/approvals/${approval.id}`}
+                  isPending={approveMutation.isPending || rejectMutation.isPending}
+                />
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {showJoinRequestsSection && (
+        <>
+          {showSeparatorBefore("join_requests") && <Separator />}
+          <div>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Join Requests
+            </h3>
+            <div className="grid gap-3">
+              {joinRequests.map((joinRequest) => (
+                <div key={joinRequest.id} className="rounded-xl border border-border bg-card p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">
+                        {joinRequest.requestType === "human"
+                          ? "Human join request"
+                          : `Agent join request${joinRequest.agentName ? `: ${joinRequest.agentName}` : ""}`}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        requested {timeAgo(joinRequest.createdAt)} from IP {joinRequest.requestIp}
+                      </p>
+                      {joinRequest.requestEmailSnapshot && (
+                        <p className="text-xs text-muted-foreground">
+                          email: {joinRequest.requestEmailSnapshot}
+                        </p>
+                      )}
+                      {joinRequest.adapterType && (
+                        <p className="text-xs text-muted-foreground">adapter: {joinRequest.adapterType}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={approveJoinMutation.isPending || rejectJoinMutation.isPending}
+                        onClick={() => rejectJoinMutation.mutate(joinRequest)}
+                      >
+                        Reject
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={approveJoinMutation.isPending || rejectJoinMutation.isPending}
+                        onClick={() => approveJoinMutation.mutate(joinRequest)}
+                      >
+                        Approve
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {showFailedRunsSection && (
+        <>
+          {showSeparatorBefore("failed_runs") && <Separator />}
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Failed Runs
@@ -268,9 +518,11 @@ export function Inbox() {
                             <span className="rounded-md bg-red-500/20 p-1.5">
                               <XCircle className="h-4 w-4 text-red-400" />
                             </span>
-                            {linkedAgentName
-                              ? <Identity name={linkedAgentName} size="sm" />
-                              : <span className="text-sm font-medium">Agent {run.agentId.slice(0, 8)}</span>}
+                            {linkedAgentName ? (
+                              <Identity name={linkedAgentName} size="sm" />
+                            ) : (
+                              <span className="text-sm font-medium">Agent {run.agentId.slice(0, 8)}</span>
+                            )}
                             <StatusBadge status={run.status} />
                           </div>
                           <p className="mt-2 text-xs text-muted-foreground">
@@ -282,10 +534,12 @@ export function Inbox() {
                           variant="outline"
                           size="sm"
                           className="h-8 px-2.5"
-                          onClick={() => navigate(`/agents/${run.agentId}/runs/${run.id}`)}
+                          asChild
                         >
-                          Open run
-                          <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
+                          <Link to={`/agents/${run.agentId}/runs/${run.id}`}>
+                            Open run
+                            <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
+                          </Link>
                         </Button>
                       </div>
 
@@ -296,13 +550,12 @@ export function Inbox() {
                       <div className="flex items-center justify-between gap-2 text-xs">
                         <span className="font-mono text-muted-foreground">run {run.id.slice(0, 8)}</span>
                         {issue ? (
-                          <button
-                            type="button"
-                            className="truncate text-muted-foreground transition-colors hover:text-foreground"
-                            onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
+                          <Link
+                            to={`/issues/${issue.identifier ?? issue.id}`}
+                            className="truncate text-muted-foreground transition-colors hover:text-foreground no-underline"
                           >
                             {issue.identifier ?? issue.id.slice(0, 8)} · {issue.title}
-                          </button>
+                          </Link>
                         ) : (
                           <span className="text-muted-foreground">
                             {run.errorCode ? `code: ${run.errorCode}` : "No linked issue"}
@@ -318,61 +571,57 @@ export function Inbox() {
         </>
       )}
 
-      {/* Alerts */}
-      {hasAlerts && (
+      {showAlertsSection && (
         <>
-          {(hasActionableApprovals || hasRunFailures) && <Separator />}
+          {showSeparatorBefore("alerts") && <Separator />}
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Alerts
             </h3>
             <div className="divide-y divide-border border border-border">
               {showAggregateAgentError && (
-                <div
-                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50"
-                  onClick={() => navigate("/agents")}
+                <Link
+                  to="/agents"
+                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 no-underline text-inherit"
                 >
                   <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" />
                   <span className="text-sm">
                     <span className="font-medium">{dashboard!.agents.error}</span>{" "}
                     {dashboard!.agents.error === 1 ? "agent has" : "agents have"} errors
                   </span>
-                </div>
+                </Link>
               )}
-              {dashboard!.costs.monthBudgetCents > 0 && dashboard!.costs.monthUtilizationPercent >= 80 && (
-                <div
-                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50"
-                  onClick={() => navigate("/costs")}
+              {showBudgetAlert && (
+                <Link
+                  to="/costs"
+                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 no-underline text-inherit"
                 >
                   <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400" />
                   <span className="text-sm">
                     Budget at{" "}
-                    <span className="font-medium">
-                      {dashboard!.costs.monthUtilizationPercent}%
-                    </span>{" "}
+                    <span className="font-medium">{dashboard!.costs.monthUtilizationPercent}%</span>{" "}
                     utilization this month
                   </span>
-                </div>
+                </Link>
               )}
             </div>
           </div>
         </>
       )}
 
-      {/* Stale Work */}
-      {hasStale && (
+      {showStaleSection && (
         <>
-          {(hasActionableApprovals || hasRunFailures || hasAlerts) && <Separator />}
+          {showSeparatorBefore("stale_work") && <Separator />}
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               Stale Work
             </h3>
             <div className="divide-y divide-border border border-border">
               {staleIssues.map((issue) => (
-                <div
+                <Link
                   key={issue.id}
-                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50"
-                  onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
+                  to={`/issues/${issue.identifier ?? issue.id}`}
+                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 no-underline text-inherit"
                 >
                   <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <PriorityIcon priority={issue.priority} />
@@ -381,16 +630,21 @@ export function Inbox() {
                     {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="flex-1 truncate text-sm">{issue.title}</span>
-                  {issue.assigneeAgentId && (() => {
-                    const name = agentName(issue.assigneeAgentId);
-                    return name
-                      ? <Identity name={name} size="sm" />
-                      : <span className="font-mono text-xs text-muted-foreground">{issue.assigneeAgentId.slice(0, 8)}</span>;
-                  })()}
+                  {issue.assigneeAgentId &&
+                    (() => {
+                      const name = agentName(issue.assigneeAgentId);
+                      return name ? (
+                        <Identity name={name} size="sm" />
+                      ) : (
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {issue.assigneeAgentId.slice(0, 8)}
+                        </span>
+                      );
+                    })()}
                   <span className="shrink-0 text-xs text-muted-foreground">
                     updated {timeAgo(issue.updatedAt)}
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           </div>

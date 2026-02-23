@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
 import type { ApprovalComment } from "@paperclip/shared";
+import { MarkdownBody } from "../components/MarkdownBody";
 
 export function ApprovalDetail() {
   const { approvalId } = useParams<{ approvalId: string }>();
@@ -329,7 +330,7 @@ export function ApprovalDetail() {
                   {new Date(comment.createdAt).toLocaleString()}
                 </span>
               </div>
-              <p className="text-sm whitespace-pre-wrap">{comment.body}</p>
+              <MarkdownBody className="text-sm">{comment.body}</MarkdownBody>
             </div>
           ))}
         </div>

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { BookOpen } from "lucide-react";
 import { Outlet } from "react-router-dom";
+import { CompanyRail } from "./CompanyRail";
 import { Sidebar } from "./Sidebar";
+import { SidebarNavItem } from "./SidebarNavItem";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -15,31 +19,50 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
+import { healthApi } from "../api/health";
+import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 
 export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialog();
   const { panelContent, closePanel } = usePanel();
-  const { companies, loading: companiesLoading } = useCompany();
+  const { companies, loading: companiesLoading, setSelectedCompanyId } = useCompany();
   const onboardingTriggered = useRef(false);
+  const { data: health } = useQuery({
+    queryKey: queryKeys.health,
+    queryFn: () => healthApi.get(),
+    retry: false,
+  });
 
   useEffect(() => {
     if (companiesLoading || onboardingTriggered.current) return;
+    if (health?.deploymentMode === "authenticated") return;
     if (companies.length === 0) {
       onboardingTriggered.current = true;
       openOnboarding();
     }
-  }, [companies, companiesLoading, openOnboarding]);
+  }, [companies, companiesLoading, openOnboarding, health?.deploymentMode]);
 
   const togglePanel = useCallback(() => {
     if (panelContent) closePanel();
   }, [panelContent, closePanel]);
 
+  // Cmd+1..9 to switch companies
+  const switchCompany = useCallback(
+    (index: number) => {
+      if (index < companies.length) {
+        setSelectedCompanyId(companies[index]!.id);
+      }
+    },
+    [companies, setSelectedCompanyId],
+  );
+
   useKeyboardShortcuts({
     onNewIssue: () => openNewIssue(),
     onToggleSidebar: toggleSidebar,
     onTogglePanel: togglePanel,
+    onSwitchCompany: switchCompany,
   });
 
   return (
@@ -52,24 +75,40 @@ export function Layout() {
         />
       )}
 
-      {/* Sidebar */}
+      {/* Combined sidebar area: company rail + inner sidebar + docs bar */}
       {isMobile ? (
         <div
           className={cn(
-            "fixed inset-y-0 left-0 z-50 w-60 transition-transform duration-200 ease-in-out",
+            "fixed inset-y-0 left-0 z-50 flex transition-transform duration-200 ease-in-out",
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <Sidebar />
+          <div className="flex flex-col h-full">
+            <div className="flex flex-1 min-h-0">
+              <CompanyRail />
+              <Sidebar />
+            </div>
+            <div className="border-t border-r border-border px-3 py-2 bg-background">
+              <SidebarNavItem to="/docs" label="Documentation" icon={BookOpen} />
+            </div>
+          </div>
         </div>
       ) : (
-        <div
-          className={cn(
-            "shrink-0 h-full overflow-hidden transition-all duration-200 ease-in-out",
-            sidebarOpen ? "w-60" : "w-0"
-          )}
-        >
-          <Sidebar />
+        <div className="flex flex-col shrink-0 h-full">
+          <div className="flex flex-1 min-h-0">
+            <CompanyRail />
+            <div
+              className={cn(
+                "overflow-hidden transition-all duration-200 ease-in-out",
+                sidebarOpen ? "w-60" : "w-0"
+              )}
+            >
+              <Sidebar />
+            </div>
+          </div>
+          <div className="border-t border-r border-border px-3 py-2">
+            <SidebarNavItem to="/docs" label="Documentation" icon={BookOpen} />
+          </div>
         </div>
       )}
 

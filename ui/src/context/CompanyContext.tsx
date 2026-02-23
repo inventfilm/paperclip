@@ -10,6 +10,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Company } from "@paperclip/shared";
 import { companiesApi } from "../api/companies";
+import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 
 interface CompanyContextValue {
@@ -39,7 +40,17 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
   const { data: companies = [], isLoading, error } = useQuery({
     queryKey: queryKeys.companies.all,
-    queryFn: () => companiesApi.list(),
+    queryFn: async () => {
+      try {
+        return await companiesApi.list();
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          return [];
+        }
+        throw err;
+      }
+    },
+    retry: false,
   });
 
   // Auto-select first company when list loads

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
@@ -191,7 +191,7 @@ export function Agents() {
               </button>
             </div>
           )}
-          <Button size="sm" onClick={openNewAgent}>
+          <Button size="sm" variant="outline" onClick={openNewAgent}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
             New Agent
           </Button>
@@ -223,7 +223,7 @@ export function Agents() {
                 key={agent.id}
                 title={agent.name}
                 subtitle={`${agent.role}${agent.title ? ` - ${agent.title}` : ""}`}
-                onClick={() => navigate(`/agents/${agent.id}`)}
+                to={`/agents/${agent.id}`}
                 leading={
                   <span className="relative flex h-2.5 w-2.5">
                     <span
@@ -251,7 +251,6 @@ export function Agents() {
                           agentId={agent.id}
                           runId={liveRunByAgent.get(agent.id)!.runId}
                           liveCount={liveRunByAgent.get(agent.id)!.liveCount}
-                          navigate={navigate}
                         />
                       ) : (
                         <StatusBadge status={agent.status} />
@@ -263,7 +262,6 @@ export function Agents() {
                           agentId={agent.id}
                           runId={liveRunByAgent.get(agent.id)!.runId}
                           liveCount={liveRunByAgent.get(agent.id)!.liveCount}
-                          navigate={navigate}
                         />
                       )}
                       <span className="text-xs text-muted-foreground font-mono w-14 text-right">
@@ -294,7 +292,7 @@ export function Agents() {
       {effectiveView === "org" && filteredOrg.length > 0 && (
         <div className="border border-border py-1">
           {filteredOrg.map((node) => (
-            <OrgTreeNode key={node.id} node={node} depth={0} navigate={navigate} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
+            <OrgTreeNode key={node.id} node={node} depth={0} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
           ))}
         </div>
       )}
@@ -317,13 +315,11 @@ export function Agents() {
 function OrgTreeNode({
   node,
   depth,
-  navigate,
   agentMap,
   liveRunByAgent,
 }: {
   node: OrgNode;
   depth: number;
-  navigate: (path: string) => void;
   agentMap: Map<string, Agent>;
   liveRunByAgent: Map<string, { runId: string; liveCount: number }>;
 }) {
@@ -344,9 +340,9 @@ function OrgTreeNode({
 
   return (
     <div style={{ paddingLeft: depth * 24 }}>
-      <button
-        className="flex items-center gap-3 px-3 py-2 hover:bg-accent/30 transition-colors w-full text-left"
-        onClick={() => navigate(`/agents/${node.id}`)}
+      <Link
+        to={`/agents/${node.id}`}
+        className="flex items-center gap-3 px-3 py-2 hover:bg-accent/30 transition-colors w-full text-left no-underline text-inherit"
       >
         <span className="relative flex h-2.5 w-2.5 shrink-0">
           <span className={`absolute inline-flex h-full w-full rounded-full ${statusColor}`} />
@@ -365,7 +361,6 @@ function OrgTreeNode({
                 agentId={node.id}
                 runId={liveRunByAgent.get(node.id)!.runId}
                 liveCount={liveRunByAgent.get(node.id)!.liveCount}
-                navigate={navigate}
               />
             ) : (
               <StatusBadge status={node.status} />
@@ -377,7 +372,6 @@ function OrgTreeNode({
                 agentId={node.id}
                 runId={liveRunByAgent.get(node.id)!.runId}
                 liveCount={liveRunByAgent.get(node.id)!.liveCount}
-                navigate={navigate}
               />
             )}
             {agent && (
@@ -395,11 +389,11 @@ function OrgTreeNode({
             </span>
           </div>
         </div>
-      </button>
+      </Link>
       {node.reports && node.reports.length > 0 && (
         <div className="border-l border-border/50 ml-4">
           {node.reports.map((child) => (
-            <OrgTreeNode key={child.id} node={child} depth={depth + 1} navigate={navigate} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
+            <OrgTreeNode key={child.id} node={child} depth={depth + 1} agentMap={agentMap} liveRunByAgent={liveRunByAgent} />
           ))}
         </div>
       )}
@@ -411,20 +405,16 @@ function LiveRunIndicator({
   agentId,
   runId,
   liveCount,
-  navigate,
 }: {
   agentId: string;
   runId: string;
   liveCount: number;
-  navigate: (path: string) => void;
 }) {
   return (
-    <button
-      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
-      onClick={(e) => {
-        e.stopPropagation();
-        navigate(`/agents/${agentId}/runs/${runId}`);
-      }}
+    <Link
+      to={`/agents/${agentId}/runs/${runId}`}
+      className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
+      onClick={(e) => e.stopPropagation()}
     >
       <span className="relative flex h-2 w-2">
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
@@ -433,6 +423,6 @@ function LiveRunIndicator({
       <span className="text-[11px] font-medium text-blue-400">
         Live{liveCount > 1 ? ` (${liveCount})` : ""}
       </span>
-    </button>
+    </Link>
   );
 }

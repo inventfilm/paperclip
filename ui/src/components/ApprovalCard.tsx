@@ -1,4 +1,5 @@
 import { CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Identity } from "./Identity";
 import { typeLabel, typeIcon, defaultTypeIcon, ApprovalPayloadRenderer } from "./ApprovalPayload";
@@ -19,13 +20,15 @@ export function ApprovalCard({
   onApprove,
   onReject,
   onOpen,
+  detailLink,
   isPending,
 }: {
   approval: Approval;
   requesterAgent: Agent | null;
   onApprove: () => void;
   onReject: () => void;
-  onOpen: () => void;
+  onOpen?: () => void;
+  detailLink?: string;
   isPending: boolean;
 }) {
   const Icon = typeIcon[approval.type] ?? defaultTypeIcon;
@@ -85,9 +88,15 @@ export function ApprovalCard({
         </div>
       )}
       <div className="mt-3">
-        <Button variant="ghost" size="sm" className="text-xs px-0" onClick={onOpen}>
-          View details
-        </Button>
+        {detailLink ? (
+          <Button variant="ghost" size="sm" className="text-xs px-0" asChild>
+            <Link to={detailLink}>View details</Link>
+          </Button>
+        ) : (
+          <Button variant="ghost" size="sm" className="text-xs px-0" onClick={onOpen}>
+            View details
+          </Button>
+        )}
       </div>
     </div>
   );

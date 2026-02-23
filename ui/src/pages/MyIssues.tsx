@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { useCompany } from "../context/CompanyContext";
@@ -15,7 +14,6 @@ import { ListTodo } from "lucide-react";
 export function MyIssues() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const navigate = useNavigate();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "My Issues" }]);
@@ -52,7 +50,7 @@ export function MyIssues() {
               key={issue.id}
               identifier={issue.identifier ?? issue.id.slice(0, 8)}
               title={issue.title}
-              onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
+              to={`/issues/${issue.identifier ?? issue.id}`}}
               leading={
                 <>
                   <PriorityIcon priority={issue.priority} />

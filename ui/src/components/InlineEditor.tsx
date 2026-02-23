@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import Markdown from "react-markdown";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
+import { MarkdownBody } from "./MarkdownBody";
 import { MarkdownEditor } from "./MarkdownEditor";
 
 interface InlineEditorProps {
@@ -138,9 +138,7 @@ export function InlineEditor({
       onClick={() => setEditing(true)}
     >
       {value && multiline ? (
-        <div className="prose prose-sm prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-headings:my-2 prose-headings:text-sm">
-          <Markdown>{value}</Markdown>
-        </div>
+        <MarkdownBody>{value}</MarkdownBody>
       ) : (
         value || placeholder
       )}

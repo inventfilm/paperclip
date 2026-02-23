@@ -22,6 +22,15 @@ export interface AdapterModel {
   label: string;
 }
 
+export interface ClaudeLoginResult {
+  exitCode: number | null;
+  signal: string | null;
+  timedOut: boolean;
+  loginUrl: string | null;
+  stdout: string;
+  stderr: string;
+}
+
 export interface OrgNode {
   id: string;
   name: string;
@@ -87,4 +96,5 @@ export const agentsApi = {
       idempotencyKey?: string | null;
     },
   ) => api.post<HeartbeatRun | { status: "skipped" }>(`/agents/${id}/wakeup`, data),
+  loginWithClaude: (id: string) => api.post<ClaudeLoginResult>(`/agents/${id}/claude-login`, {}),
 };

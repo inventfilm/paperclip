@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import Markdown from "react-markdown";
 import type { IssueComment, Agent } from "@paperclip/shared";
 import { Button } from "@/components/ui/button";
 import { Identity } from "./Identity";
+import { MarkdownBody } from "./MarkdownBody";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { formatDateTime } from "../lib/utils";
 
@@ -17,11 +17,12 @@ interface CommentThreadProps {
   onAdd: (body: string, reopen?: boolean) => Promise<void>;
   issueStatus?: string;
   agentMap?: Map<string, Agent>;
+  imageUploadHandler?: (file: File) => Promise<string>;
 }
 
 const CLOSED_STATUSES = new Set(["done", "cancelled"]);
 
-export function CommentThread({ comments, onAdd, issueStatus, agentMap }: CommentThreadProps) {
+export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUploadHandler }: CommentThreadProps) {
   const [body, setBody] = useState("");
   const [reopen, setReopen] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -35,13 +36,15 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
     [comments],
   );
 
-  // Build mention options from agent map
+  // Build mention options from agent map (exclude terminated agents)
   const mentions = useMemo<MentionOption[]>(() => {
     if (!agentMap) return [];
-    return Array.from(agentMap.values()).map((a) => ({
-      id: a.id,
-      name: a.name,
-    }));
+    return Array.from(agentMap.values())
+      .filter((a) => a.status !== "terminated")
+      .map((a) => ({
+        id: a.id,
+        name: a.name,
+      }));
   }, [agentMap]);
 
   async function handleSubmit() {
@@ -84,9 +87,7 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
                 {formatDateTime(comment.createdAt)}
               </span>
             </div>
-            <div className="text-sm prose prose-sm prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-pre:my-2 prose-headings:my-2 prose-headings:text-sm">
-              <Markdown>{comment.body}</Markdown>
-            </div>
+            <MarkdownBody className="text-sm">{comment.body}</MarkdownBody>
             {comment.runId && comment.runAgentId && (
               <div className="mt-2 pt-2 border-t border-border/60">
                 <Link
@@ -109,6 +110,7 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap }: Commen
           placeholder="Leave a comment..."
           mentions={mentions}
           onSubmit={handleSubmit}
+          imageUploadHandler={imageUploadHandler}
           contentClassName="min-h-[60px] text-sm"
         />
         <div className="flex items-center justify-end gap-3">

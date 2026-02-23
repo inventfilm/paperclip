@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 
 interface MetricCardProps {
@@ -7,25 +8,22 @@ interface MetricCardProps {
   value: string | number;
   label: string;
   description?: ReactNode;
+  to?: string;
   onClick?: () => void;
 }
 
-export function MetricCard({ icon: Icon, value, label, description, onClick }: MetricCardProps) {
-  return (
+export function MetricCard({ icon: Icon, value, label, description, to, onClick }: MetricCardProps) {
+  const isClickable = !!(to || onClick);
+
+  const inner = (
     <Card>
       <CardContent className="p-3 sm:p-4">
         <div className="flex gap-2 sm:gap-3">
           <div className="flex-1 min-w-0">
-            <p
-              className={`text-lg sm:text-2xl font-bold${onClick ? " cursor-pointer" : ""}`}
-              onClick={onClick}
-            >
+            <p className={`text-lg sm:text-2xl font-bold${isClickable ? " cursor-pointer" : ""}`}>
               {value}
             </p>
-            <p
-              className={`text-xs sm:text-sm text-muted-foreground${onClick ? " cursor-pointer" : ""}`}
-              onClick={onClick}
-            >
+            <p className={`text-xs sm:text-sm text-muted-foreground${isClickable ? " cursor-pointer" : ""}`}>
               {label}
             </p>
             {description && (
@@ -39,4 +37,22 @@ export function MetricCard({ icon: Icon, value, label, description, onClick }: M
       </CardContent>
     </Card>
   );
+
+  if (to) {
+    return (
+      <Link to={to} className="no-underline text-inherit" onClick={onClick}>
+        {inner}
+      </Link>
+    );
+  }
+
+  if (onClick) {
+    return (
+      <div className="cursor-pointer" onClick={onClick}>
+        {inner}
+      </div>
+    );
+  }
+
+  return inner;
 }

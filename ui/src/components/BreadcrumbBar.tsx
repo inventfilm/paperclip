@@ -33,7 +33,7 @@ export function BreadcrumbBar() {
   // Single breadcrumb = page title (uppercase)
   if (breadcrumbs.length === 1) {
     return (
-      <div className="border-b border-border px-4 md:px-6 py-4 flex items-center">
+      <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center">
         {menuButton}
         <h1 className="text-sm font-semibold uppercase tracking-wider">
           {breadcrumbs[0].label}
@@ -44,7 +44,7 @@ export function BreadcrumbBar() {
 
   // Multiple breadcrumbs = breadcrumb trail
   return (
-    <div className="border-b border-border px-4 md:px-6 py-3 flex items-center">
+    <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center">
       {menuButton}
       <Breadcrumb>
         <BreadcrumbList>

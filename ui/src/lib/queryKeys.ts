@@ -14,6 +14,8 @@ export const queryKeys = {
   },
   issues: {
     list: (companyId: string) => ["issues", companyId] as const,
+    listByProject: (companyId: string, projectId: string) =>
+      ["issues", companyId, "project", projectId] as const,
     detail: (id: string) => ["issues", "detail", id] as const,
     comments: (issueId: string) => ["issues", "comments", issueId] as const,
     attachments: (issueId: string) => ["issues", "attachments", issueId] as const,
@@ -38,6 +40,15 @@ export const queryKeys = {
     comments: (approvalId: string) => ["approvals", "comments", approvalId] as const,
     issues: (approvalId: string) => ["approvals", "issues", approvalId] as const,
   },
+  access: {
+    joinRequests: (companyId: string, status: string = "pending_approval") =>
+      ["access", "join-requests", companyId, status] as const,
+    invite: (token: string) => ["access", "invite", token] as const,
+  },
+  auth: {
+    session: ["auth", "session"] as const,
+  },
+  health: ["health"] as const,
   secrets: {
     list: (companyId: string) => ["secrets", companyId] as const,
     providers: (companyId: string) => ["secret-providers", companyId] as const,

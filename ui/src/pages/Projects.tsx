@@ -1,5 +1,4 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
@@ -17,7 +16,6 @@ export function Projects() {
   const { selectedCompanyId } = useCompany();
   const { openNewProject } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const navigate = useNavigate();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Projects" }]);
@@ -36,7 +34,7 @@ export function Projects() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end">
-        <Button size="sm" onClick={openNewProject}>
+        <Button size="sm" variant="outline" onClick={openNewProject}>
           <Plus className="h-4 w-4 mr-1" />
           Add Project
         </Button>
@@ -61,7 +59,7 @@ export function Projects() {
               key={project.id}
               title={project.name}
               subtitle={project.description ?? undefined}
-              onClick={() => navigate(`/projects/${project.id}`)}
+              to={`/projects/${project.id}`}
               trailing={
                 <div className="flex items-center gap-3">
                   {project.targetDate && (

@@ -12,7 +12,6 @@ import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { AgentConfigForm } from "../components/AgentConfigForm";
-import { PageTabBar } from "../components/PageTabBar";
 import { adapterLabels, roleLabels } from "../components/agent-config-primitives";
 import { getUIAdapter, buildTranscript } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
@@ -22,9 +21,7 @@ import { EntityRow } from "../components/EntityRow";
 import { Identity } from "../components/Identity";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
 import { cn } from "../lib/utils";
-import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import {
   Popover,
   PopoverContent,
@@ -48,7 +45,9 @@ import {
   EyeOff,
   Copy,
   ChevronRight,
+  ChevronDown,
   ArrowLeft,
+  Settings,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
@@ -167,14 +166,11 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailTab = "overview" | "configuration" | "runs" | "issues" | "costs" | "keys";
+type AgentDetailView = "overview" | "configure" | "runs";
 
-function parseAgentDetailTab(value: string | null): AgentDetailTab {
-  if (value === "configuration") return value;
+function parseAgentDetailView(value: string | null): AgentDetailView {
+  if (value === "configure" || value === "configuration") return "configure";
   if (value === "runs") return value;
-  if (value === "issues") return value;
-  if (value === "costs") return value;
-  if (value === "keys") return value;
   return "overview";
 }
 
@@ -227,7 +223,7 @@ export function AgentDetail() {
   const navigate = useNavigate();
   const [actionError, setActionError] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
-  const activeTab = urlRunId ? "runs" as AgentDetailTab : parseAgentDetailTab(urlTab ?? null);
+  const activeView = urlRunId ? "runs" as AgentDetailView : parseAgentDetailView(urlTab ?? null);
   const [configDirty, setConfigDirty] = useState(false);
   const [configSaving, setConfigSaving] = useState(false);
   const saveConfigActionRef = useRef<(() => void) | null>(null);
@@ -339,11 +335,25 @@ export function AgentDetail() {
   });
 
   useEffect(() => {
-    setBreadcrumbs([
+    const crumbs: { label: string; href?: string }[] = [
       { label: "Agents", href: "/agents" },
-      { label: agent?.name ?? agentId ?? "Agent" },
-    ]);
-  }, [setBreadcrumbs, agent, agentId]);
+    ];
+    const agentName = agent?.name ?? agentId ?? "Agent";
+    if (activeView === "overview" && !urlRunId) {
+      crumbs.push({ label: agentName });
+    } else {
+      crumbs.push({ label: agentName, href: `/agents/${agentId}` });
+      if (urlRunId) {
+        crumbs.push({ label: "Runs", href: `/agents/${agentId}/runs` });
+        crumbs.push({ label: `Run ${urlRunId.slice(0, 8)}` });
+      } else if (activeView === "configure") {
+        crumbs.push({ label: "Configure" });
+      } else if (activeView === "runs") {
+        crumbs.push({ label: "Runs" });
+      }
+    }
+    setBreadcrumbs(crumbs);
+  }, [setBreadcrumbs, agent, agentId, activeView, urlRunId]);
 
   useEffect(() => {
     closePanel();
@@ -358,17 +368,11 @@ export function AgentDetail() {
     }, [configDirty]),
   );
 
-  const setActiveTab = useCallback((nextTab: string) => {
-    if (configDirty && !window.confirm("You have unsaved changes. Discard them?")) return;
-    const next = parseAgentDetailTab(nextTab);
-    navigate(`/agents/${agentId}/${next}`, { replace: !!urlRunId });
-  }, [agentId, navigate, configDirty, urlRunId]);
-
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!agent) return null;
   const isPendingApproval = agent.status === "pending_approval";
-  const showConfigActionBar = activeTab === "configuration" && configDirty;
+  const showConfigActionBar = activeView === "configure" && configDirty;
 
   return (
     <div className={cn("space-y-6", isMobile && showConfigActionBar && "pb-24")}>
@@ -379,12 +383,12 @@ export function AgentDetail() {
             value={agent.icon}
             onChange={(icon) => updateIcon.mutate(icon)}
           >
-            <button className="shrink-0 flex items-center justify-center h-10 w-10 rounded-lg bg-accent hover:bg-accent/80 transition-colors">
-              <AgentIcon icon={agent.icon} className="h-5 w-5" />
+            <button className="shrink-0 flex items-center justify-center h-12 w-12 rounded-lg bg-accent hover:bg-accent/80 transition-colors">
+              <AgentIcon icon={agent.icon} className="h-6 w-6" />
             </button>
           </AgentIconPicker>
           <div className="min-w-0">
-            <h2 className="text-xl font-bold truncate">{agent.name}</h2>
+            <h2 className="text-2xl font-bold truncate">{agent.name}</h2>
             <p className="text-sm text-muted-foreground truncate">
               {roleLabels[agent.role] ?? agent.role}
               {agent.title ? ` - ${agent.title}` : ""}
@@ -432,16 +436,16 @@ export function AgentDetail() {
           )}
           <span className="hidden sm:inline"><StatusBadge status={agent.status} /></span>
           {mobileLiveRun && (
-            <button
-              className="sm:hidden flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
-              onClick={() => navigate(`/agents/${agent.id}/runs/${mobileLiveRun.id}`)}
+            <Link
+              to={`/agents/${agent.id}/runs/${mobileLiveRun.id}`}
+              className="sm:hidden flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors no-underline"
             >
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
               </span>
               <span className="text-[11px] font-medium text-blue-400">Live</span>
-            </button>
+            </Link>
           )}
 
           {/* Overflow menu */}
@@ -550,165 +554,40 @@ export function AgentDetail() {
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <PageTabBar
-          items={[
-            { value: "overview", label: "Overview" },
-            { value: "runs", label: "Runs" },
-            { value: "configuration", label: "Configuration" },
-            { value: "issues", label: `Issues (${assignedIssues.length})` },
-            { value: "costs", label: "Costs" },
-            { value: "keys", label: "API Keys" },
-          ]}
-          value={activeTab}
-          onValueChange={setActiveTab}
+      {/* View content */}
+      {activeView === "overview" && (
+        <AgentOverview
+          agent={agent}
+          runs={heartbeats ?? []}
+          assignedIssues={assignedIssues}
+          runtimeState={runtimeState}
+          reportsToAgent={reportsToAgent ?? null}
+          directReports={directReports}
+          agentId={agentId!}
         />
+      )}
 
-        {/* OVERVIEW TAB */}
-        <TabsContent value="overview" className="space-y-6 mt-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Summary card */}
-            <div className="border border-border rounded-lg p-4 space-y-3">
-              <h3 className="text-sm font-medium">Summary</h3>
-              <div className="space-y-2 text-sm">
-                <SummaryRow label="Adapter">
-                  <span className="font-mono">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span>
-                  {String((agent.adapterConfig as Record<string, unknown>)?.model ?? "") !== "" && (
-                    <span className="text-muted-foreground ml-1">
-                      ({String((agent.adapterConfig as Record<string, unknown>).model)})
-                    </span>
-                  )}
-                </SummaryRow>
-                <SummaryRow label="Heartbeat">
-                  {(agent.runtimeConfig as Record<string, unknown>)?.heartbeat
-                    ? (() => {
-                        const hb = (agent.runtimeConfig as Record<string, unknown>).heartbeat as Record<string, unknown>;
-                        if (!hb.enabled) return <span className="text-muted-foreground">Disabled</span>;
-                        const sec = Number(hb.intervalSec) || 300;
-                        const maxConcurrentRuns = Math.max(1, Math.floor(Number(hb.maxConcurrentRuns) || 1));
-                        const intervalLabel = sec >= 60 ? `${Math.round(sec / 60)} min` : `${sec}s`;
-                        return (
-                          <span>
-                            Every {intervalLabel}
-                            {maxConcurrentRuns > 1 ? ` (max ${maxConcurrentRuns} concurrent)` : ""}
-                          </span>
-                        );
-                      })()
-                    : <span className="text-muted-foreground">Not configured</span>
-                  }
-                </SummaryRow>
-                <SummaryRow label="Last heartbeat">
-                  {agent.lastHeartbeatAt
-                    ? <span>{relativeTime(agent.lastHeartbeatAt)}</span>
-                    : <span className="text-muted-foreground">Never</span>
-                  }
-                </SummaryRow>
-              </div>
-            </div>
+      {activeView === "configure" && (
+        <AgentConfigurePage
+          agent={agent}
+          agentId={agentId!}
+          onDirtyChange={setConfigDirty}
+          onSaveActionChange={setSaveConfigAction}
+          onCancelActionChange={setCancelConfigAction}
+          onSavingChange={setConfigSaving}
+          updatePermissions={updatePermissions}
+        />
+      )}
 
-            {/* Org card */}
-            <div className="border border-border rounded-lg p-4 space-y-3">
-              <h3 className="text-sm font-medium">Organization</h3>
-              <div className="space-y-2 text-sm">
-                <SummaryRow label="Reports to">
-                  {reportsToAgent ? (
-                    <Link
-                      to={`/agents/${reportsToAgent.id}`}
-                      className="text-blue-400 hover:underline"
-                    >
-                      <Identity name={reportsToAgent.name} size="sm" />
-                    </Link>
-                  ) : (
-                    <span className="text-muted-foreground">Nobody (top-level)</span>
-                  )}
-                </SummaryRow>
-                {directReports.length > 0 && (
-                  <div>
-                    <span className="text-xs text-muted-foreground">Direct reports</span>
-                    <div className="mt-1 space-y-1">
-                      {directReports.map((r) => (
-                        <Link
-                          key={r.id}
-                          to={`/agents/${r.id}`}
-                          className="flex items-center gap-2 text-sm text-blue-400 hover:underline"
-                        >
-                          <span className="relative flex h-2 w-2">
-                            <span className={`absolute inline-flex h-full w-full rounded-full ${
-                              r.status === "active"
-                                ? "bg-green-400"
-                                : r.status === "pending_approval"
-                                  ? "bg-amber-400"
-                                  : r.status === "error"
-                                    ? "bg-red-400"
-                                    : "bg-neutral-400"
-                            }`} />
-                          </span>
-                          {r.name}
-                          <span className="text-muted-foreground text-xs">({roleLabels[r.role] ?? r.role})</span>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {agent.capabilities && (
-                  <div>
-                    <span className="text-xs text-muted-foreground">Capabilities</span>
-                    <p className="text-sm mt-0.5">{agent.capabilities}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <LatestRunCard runs={heartbeats ?? []} agentId={agentId!} />
-        </TabsContent>
-
-        {/* RUNS TAB */}
-        <TabsContent value="runs" className="mt-4">
-          <RunsTab runs={heartbeats ?? []} companyId={selectedCompanyId!} agentId={agentId!} selectedRunId={urlRunId ?? null} adapterType={agent.adapterType} />
-        </TabsContent>
-
-        {/* CONFIGURATION TAB */}
-        <TabsContent value="configuration" className="mt-4">
-          <ConfigurationTab
-            agent={agent}
-            onDirtyChange={setConfigDirty}
-            onSaveActionChange={setSaveConfigAction}
-            onCancelActionChange={setCancelConfigAction}
-            onSavingChange={setConfigSaving}
-            updatePermissions={updatePermissions}
-          />
-        </TabsContent>
-
-        {/* ISSUES TAB */}
-        <TabsContent value="issues" className="mt-4">
-          {assignedIssues.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No assigned issues.</p>
-          ) : (
-            <div className="border border-border">
-              {assignedIssues.map((issue) => (
-                <EntityRow
-                  key={issue.id}
-                  identifier={issue.identifier ?? issue.id.slice(0, 8)}
-                  title={issue.title}
-                  onClick={() => navigate(`/issues/${issue.identifier ?? issue.id}`)}
-                  trailing={<StatusBadge status={issue.status} />}
-                />
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        {/* COSTS TAB */}
-        <TabsContent value="costs" className="mt-4">
-          <CostsTab runtimeState={runtimeState ?? undefined} runs={heartbeats ?? []} />
-        </TabsContent>
-
-        {/* KEYS TAB */}
-        <TabsContent value="keys" className="mt-4">
-          <KeysTab agentId={agent.id} />
-        </TabsContent>
-      </Tabs>
+      {activeView === "runs" && (
+        <RunsTab
+          runs={heartbeats ?? []}
+          companyId={selectedCompanyId!}
+          agentId={agentId!}
+          selectedRunId={urlRunId ?? null}
+          adapterType={agent.adapterType}
+        />
+      )}
     </div>
   );
 }
@@ -736,7 +615,6 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
   const liveRun = sorted.find((r) => r.status === "running" || r.status === "queued");
   const run = liveRun ?? sorted[0];
   const isLive = run.status === "running" || run.status === "queued";
-  const metrics = runMetrics(run);
   const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
   const StatusIcon = statusInfo.icon;
   const summary = run.resultJson
@@ -758,12 +636,12 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
           )}
           <h3 className="text-sm font-medium">{isLive ? "Live Run" : "Latest Run"}</h3>
         </div>
-        <button
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          onClick={() => navigate(`/agents/${agentId}/runs/${run.id}`)}
+        <Link
+          to={`/agents/${agentId}/runs/${run.id}`}
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors no-underline"
         >
           View details &rarr;
-        </button>
+        </Link>
       </div>
 
       <div className="flex items-center gap-2">
@@ -786,12 +664,654 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
         <p className="text-xs text-muted-foreground truncate">{summary}</p>
       )}
 
-      {(metrics.totalTokens > 0 || metrics.cost > 0) && (
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
-          {metrics.totalTokens > 0 && <span>{formatTokens(metrics.totalTokens)} tokens</span>}
-          {metrics.cost > 0 && <span>${metrics.cost.toFixed(3)}</span>}
+    </div>
+  );
+}
+
+/* ---- Agent Overview (main single-page view) ---- */
+
+function AgentOverview({
+  agent,
+  runs,
+  assignedIssues,
+  runtimeState,
+  reportsToAgent,
+  directReports,
+  agentId,
+}: {
+  agent: Agent;
+  runs: HeartbeatRun[];
+  assignedIssues: { id: string; title: string; status: string; priority: string; identifier?: string | null; createdAt: Date }[];
+  runtimeState?: AgentRuntimeState;
+  reportsToAgent: Agent | null;
+  directReports: Agent[];
+  agentId: string;
+}) {
+  const navigate = useNavigate();
+
+  return (
+    <div className="space-y-8">
+      {/* Latest Run */}
+      <LatestRunCard runs={runs} agentId={agentId} />
+
+      {/* Charts */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <ChartCard title="Run Activity" subtitle="Last 14 days">
+          <RunActivityChart runs={runs} />
+        </ChartCard>
+        <ChartCard title="Issues by Priority" subtitle="Last 14 days">
+          <PriorityChart issues={assignedIssues} />
+        </ChartCard>
+        <ChartCard title="Issues by Status" subtitle="Last 14 days">
+          <IssueStatusChart issues={assignedIssues} />
+        </ChartCard>
+        <ChartCard title="Success Rate" subtitle="Last 14 days">
+          <SuccessRateChart runs={runs} />
+        </ChartCard>
+      </div>
+
+      {/* Recent Issues */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium">Recent Issues ({assignedIssues.length})</h3>
+        {assignedIssues.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No assigned issues.</p>
+        ) : (
+          <div className="border border-border rounded-lg">
+            {assignedIssues.slice(0, 10).map((issue) => (
+              <EntityRow
+                key={issue.id}
+                identifier={issue.identifier ?? issue.id.slice(0, 8)}
+                title={issue.title}
+                to={`/issues/${issue.identifier ?? issue.id}`}
+                trailing={<StatusBadge status={issue.status} />}
+              />
+            ))}
+            {assignedIssues.length > 10 && (
+              <div className="px-3 py-2 text-xs text-muted-foreground text-center border-t border-border">
+                +{assignedIssues.length - 10} more issues
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Costs */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium">Costs</h3>
+        <CostsSection runtimeState={runtimeState} runs={runs} />
+      </div>
+
+      {/* Configuration Summary */}
+      <ConfigSummary
+        agent={agent}
+        agentId={agentId}
+        reportsToAgent={reportsToAgent}
+        directReports={directReports}
+      />
+    </div>
+  );
+}
+
+/* ---- Chart Components ---- */
+
+function getLast14Days(): string[] {
+  return Array.from({ length: 14 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (13 - i));
+    return d.toISOString().slice(0, 10);
+  });
+}
+
+function formatDayLabel(dateStr: string): string {
+  const d = new Date(dateStr + "T12:00:00");
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function DateLabels({ days }: { days: string[] }) {
+  return (
+    <div className="flex gap-[3px] mt-1.5">
+      {days.map((day, i) => (
+        <div key={day} className="flex-1 text-center overflow-hidden">
+          {(i === 0 || i === 6 || i === 13) ? (
+            <span className="text-[9px] text-muted-foreground tabular-nums">{formatDayLabel(day)}</span>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChartLegend({ items }: { items: { color: string; label: string }[] }) {
+  return (
+    <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-2">
+      {items.map(item => (
+        <span key={item.label} className="flex items-center gap-1 text-[9px] text-muted-foreground">
+          <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-3">
+      <div>
+        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+        {subtitle && <span className="text-[10px] text-muted-foreground/60">{subtitle}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function RunActivityChart({ runs }: { runs: HeartbeatRun[] }) {
+  const days = getLast14Days();
+
+  const grouped = new Map<string, { succeeded: number; failed: number; other: number }>();
+  for (const day of days) grouped.set(day, { succeeded: 0, failed: 0, other: 0 });
+  for (const run of runs) {
+    const day = new Date(run.createdAt).toISOString().slice(0, 10);
+    const entry = grouped.get(day);
+    if (!entry) continue;
+    if (run.status === "succeeded") entry.succeeded++;
+    else if (run.status === "failed" || run.status === "timed_out") entry.failed++;
+    else entry.other++;
+  }
+
+  const maxValue = Math.max(...Array.from(grouped.values()).map(v => v.succeeded + v.failed + v.other), 1);
+  const hasData = Array.from(grouped.values()).some(v => v.succeeded + v.failed + v.other > 0);
+
+  if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
+
+  return (
+    <div>
+      <div className="flex items-end gap-[3px] h-20">
+        {days.map(day => {
+          const entry = grouped.get(day)!;
+          const total = entry.succeeded + entry.failed + entry.other;
+          const heightPct = (total / maxValue) * 100;
+          return (
+            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} runs`}>
+              {total > 0 ? (
+                <div className="flex flex-col-reverse gap-px rounded-t-sm overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
+                  {entry.succeeded > 0 && <div className="bg-emerald-500" style={{ flex: entry.succeeded }} />}
+                  {entry.failed > 0 && <div className="bg-red-500" style={{ flex: entry.failed }} />}
+                  {entry.other > 0 && <div className="bg-neutral-500" style={{ flex: entry.other }} />}
+                </div>
+              ) : (
+                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <DateLabels days={days} />
+    </div>
+  );
+}
+
+const priorityColors: Record<string, string> = {
+  critical: "#ef4444",
+  high: "#f97316",
+  medium: "#eab308",
+  low: "#6b7280",
+};
+
+const priorityOrder = ["critical", "high", "medium", "low"] as const;
+
+function PriorityChart({ issues }: { issues: { priority: string; createdAt: Date }[] }) {
+  const days = getLast14Days();
+  const grouped = new Map<string, Record<string, number>>();
+  for (const day of days) grouped.set(day, { critical: 0, high: 0, medium: 0, low: 0 });
+  for (const issue of issues) {
+    const day = new Date(issue.createdAt).toISOString().slice(0, 10);
+    const entry = grouped.get(day);
+    if (!entry) continue;
+    if (issue.priority in entry) entry[issue.priority]++;
+  }
+
+  const maxValue = Math.max(...Array.from(grouped.values()).map(v => Object.values(v).reduce((a, b) => a + b, 0)), 1);
+  const hasData = Array.from(grouped.values()).some(v => Object.values(v).reduce((a, b) => a + b, 0) > 0);
+
+  if (!hasData) return <p className="text-xs text-muted-foreground">No issues</p>;
+
+  return (
+    <div>
+      <div className="flex items-end gap-[3px] h-20">
+        {days.map(day => {
+          const entry = grouped.get(day)!;
+          const total = Object.values(entry).reduce((a, b) => a + b, 0);
+          const heightPct = (total / maxValue) * 100;
+          return (
+            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
+              {total > 0 ? (
+                <div className="flex flex-col-reverse gap-px rounded-t-sm overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
+                  {priorityOrder.map(p => entry[p] > 0 ? (
+                    <div key={p} style={{ flex: entry[p], backgroundColor: priorityColors[p] }} />
+                  ) : null)}
+                </div>
+              ) : (
+                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <DateLabels days={days} />
+      <ChartLegend items={priorityOrder.map(p => ({ color: priorityColors[p], label: p.charAt(0).toUpperCase() + p.slice(1) }))} />
+    </div>
+  );
+}
+
+const statusColors: Record<string, string> = {
+  todo: "#3b82f6",
+  in_progress: "#8b5cf6",
+  in_review: "#a855f7",
+  done: "#10b981",
+  blocked: "#ef4444",
+  cancelled: "#6b7280",
+  backlog: "#64748b",
+};
+
+const statusLabels: Record<string, string> = {
+  todo: "To Do",
+  in_progress: "In Progress",
+  in_review: "In Review",
+  done: "Done",
+  blocked: "Blocked",
+  cancelled: "Cancelled",
+  backlog: "Backlog",
+};
+
+function IssueStatusChart({ issues }: { issues: { status: string; createdAt: Date }[] }) {
+  const days = getLast14Days();
+  const allStatuses = new Set<string>();
+  const grouped = new Map<string, Record<string, number>>();
+  for (const day of days) grouped.set(day, {});
+  for (const issue of issues) {
+    const day = new Date(issue.createdAt).toISOString().slice(0, 10);
+    const entry = grouped.get(day);
+    if (!entry) continue;
+    entry[issue.status] = (entry[issue.status] ?? 0) + 1;
+    allStatuses.add(issue.status);
+  }
+
+  const statusOrder = ["todo", "in_progress", "in_review", "done", "blocked", "cancelled", "backlog"].filter(s => allStatuses.has(s));
+  const maxValue = Math.max(...Array.from(grouped.values()).map(v => Object.values(v).reduce((a, b) => a + b, 0)), 1);
+  const hasData = allStatuses.size > 0;
+
+  if (!hasData) return <p className="text-xs text-muted-foreground">No issues</p>;
+
+  return (
+    <div>
+      <div className="flex items-end gap-[3px] h-20">
+        {days.map(day => {
+          const entry = grouped.get(day)!;
+          const total = Object.values(entry).reduce((a, b) => a + b, 0);
+          const heightPct = (total / maxValue) * 100;
+          return (
+            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
+              {total > 0 ? (
+                <div className="flex flex-col-reverse gap-px rounded-t-sm overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
+                  {statusOrder.map(s => (entry[s] ?? 0) > 0 ? (
+                    <div key={s} style={{ flex: entry[s], backgroundColor: statusColors[s] ?? "#6b7280" }} />
+                  ) : null)}
+                </div>
+              ) : (
+                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <DateLabels days={days} />
+      <ChartLegend items={statusOrder.map(s => ({ color: statusColors[s] ?? "#6b7280", label: statusLabels[s] ?? s }))} />
+    </div>
+  );
+}
+
+function SuccessRateChart({ runs }: { runs: HeartbeatRun[] }) {
+  const days = getLast14Days();
+  const grouped = new Map<string, { succeeded: number; total: number }>();
+  for (const day of days) grouped.set(day, { succeeded: 0, total: 0 });
+  for (const run of runs) {
+    const day = new Date(run.createdAt).toISOString().slice(0, 10);
+    const entry = grouped.get(day);
+    if (!entry) continue;
+    entry.total++;
+    if (run.status === "succeeded") entry.succeeded++;
+  }
+
+  const hasData = Array.from(grouped.values()).some(v => v.total > 0);
+  if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
+
+  return (
+    <div>
+      <div className="flex items-end gap-[3px] h-20">
+        {days.map(day => {
+          const entry = grouped.get(day)!;
+          const rate = entry.total > 0 ? entry.succeeded / entry.total : 0;
+          const color = entry.total === 0 ? undefined : rate >= 0.8 ? "#10b981" : rate >= 0.5 ? "#eab308" : "#ef4444";
+          return (
+            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${entry.total > 0 ? Math.round(rate * 100) : 0}% (${entry.succeeded}/${entry.total})`}>
+              {entry.total > 0 ? (
+                <div className="rounded-t-sm" style={{ height: `${rate * 100}%`, minHeight: 2, backgroundColor: color }} />
+              ) : (
+                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <DateLabels days={days} />
+    </div>
+  );
+}
+
+/* ---- Configuration Summary ---- */
+
+function ConfigSummary({
+  agent,
+  agentId,
+  reportsToAgent,
+  directReports,
+}: {
+  agent: Agent;
+  agentId: string;
+  reportsToAgent: Agent | null;
+  directReports: Agent[];
+}) {
+  const navigate = useNavigate();
+  const config = agent.adapterConfig as Record<string, unknown>;
+  const promptText = typeof config?.promptTemplate === "string" ? config.promptTemplate : "";
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium">Configuration</h3>
+        <button
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => navigate(`/agents/${agentId}/configure`)}
+        >
+          <Settings className="h-3 w-3" />
+          Manage &rarr;
+        </button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="border border-border rounded-lg p-4 space-y-3">
+          <h4 className="text-xs text-muted-foreground font-medium">Agent Details</h4>
+          <div className="space-y-2 text-sm">
+            <SummaryRow label="Adapter">
+              <span className="font-mono">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span>
+              {String(config?.model ?? "") !== "" && (
+                <span className="text-muted-foreground ml-1">
+                  ({String(config.model)})
+                </span>
+              )}
+            </SummaryRow>
+            <SummaryRow label="Heartbeat">
+              {(agent.runtimeConfig as Record<string, unknown>)?.heartbeat
+                ? (() => {
+                    const hb = (agent.runtimeConfig as Record<string, unknown>).heartbeat as Record<string, unknown>;
+                    if (!hb.enabled) return <span className="text-muted-foreground">Disabled</span>;
+                    const sec = Number(hb.intervalSec) || 300;
+                    const maxConcurrentRuns = Math.max(1, Math.floor(Number(hb.maxConcurrentRuns) || 1));
+                    const intervalLabel = sec >= 60 ? `${Math.round(sec / 60)} min` : `${sec}s`;
+                    return (
+                      <span>
+                        Every {intervalLabel}
+                        {maxConcurrentRuns > 1 ? ` (max ${maxConcurrentRuns} concurrent)` : ""}
+                      </span>
+                    );
+                  })()
+                : <span className="text-muted-foreground">Not configured</span>
+              }
+            </SummaryRow>
+            <SummaryRow label="Last heartbeat">
+              {agent.lastHeartbeatAt
+                ? <span>{relativeTime(agent.lastHeartbeatAt)}</span>
+                : <span className="text-muted-foreground">Never</span>
+              }
+            </SummaryRow>
+            <SummaryRow label="Reports to">
+              {reportsToAgent ? (
+                <Link
+                  to={`/agents/${reportsToAgent.id}`}
+                  className="text-blue-400 hover:underline"
+                >
+                  <Identity name={reportsToAgent.name} size="sm" />
+                </Link>
+              ) : (
+                <span className="text-muted-foreground">Nobody (top-level)</span>
+              )}
+            </SummaryRow>
+          </div>
+          {directReports.length > 0 && (
+            <div className="pt-1">
+              <span className="text-xs text-muted-foreground">Direct reports</span>
+              <div className="mt-1 space-y-1">
+                {directReports.map((r) => (
+                  <Link
+                    key={r.id}
+                    to={`/agents/${r.id}`}
+                    className="flex items-center gap-2 text-sm text-blue-400 hover:underline"
+                  >
+                    <span className="relative flex h-2 w-2">
+                      <span className={`absolute inline-flex h-full w-full rounded-full ${
+                        r.status === "active"
+                          ? "bg-green-400"
+                          : r.status === "pending_approval"
+                            ? "bg-amber-400"
+                            : r.status === "error"
+                              ? "bg-red-400"
+                              : "bg-neutral-400"
+                      }`} />
+                    </span>
+                    {r.name}
+                    <span className="text-muted-foreground text-xs">({roleLabels[r.role] ?? r.role})</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+          {agent.capabilities && (
+            <div className="pt-1">
+              <span className="text-xs text-muted-foreground">Capabilities</span>
+              <p className="text-sm mt-0.5">{agent.capabilities}</p>
+            </div>
+          )}
+        </div>
+        {promptText && (
+          <div className="border border-border rounded-lg p-4 space-y-2">
+            <h4 className="text-xs text-muted-foreground font-medium">Prompt Template</h4>
+            <pre className="text-xs text-muted-foreground line-clamp-[12] font-mono whitespace-pre-wrap">{promptText}</pre>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Costs Section (inline) ---- */
+
+function CostsSection({
+  runtimeState,
+  runs,
+}: {
+  runtimeState?: AgentRuntimeState;
+  runs: HeartbeatRun[];
+}) {
+  const runsWithCost = runs
+    .filter((r) => {
+      const u = r.usageJson as Record<string, unknown> | null;
+      return u && (u.cost_usd || u.total_cost_usd || u.input_tokens);
+    })
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return (
+    <div className="space-y-4">
+      {runtimeState && (
+        <div className="border border-border rounded-lg p-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <span className="text-xs text-muted-foreground block">Input tokens</span>
+              <span className="text-lg font-semibold">{formatTokens(runtimeState.totalInputTokens)}</span>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground block">Output tokens</span>
+              <span className="text-lg font-semibold">{formatTokens(runtimeState.totalOutputTokens)}</span>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground block">Cached tokens</span>
+              <span className="text-lg font-semibold">{formatTokens(runtimeState.totalCachedInputTokens)}</span>
+            </div>
+            <div>
+              <span className="text-xs text-muted-foreground block">Total cost</span>
+              <span className="text-lg font-semibold">{formatCents(runtimeState.totalCostCents)}</span>
+            </div>
+          </div>
         </div>
       )}
+      {runsWithCost.length > 0 && (
+        <div className="border border-border rounded-lg overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-accent/20">
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Run</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Input</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Output</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runsWithCost.slice(0, 10).map((run) => {
+                const u = run.usageJson as Record<string, unknown>;
+                return (
+                  <tr key={run.id} className="border-b border-border last:border-b-0">
+                    <td className="px-3 py-2">{formatDate(run.createdAt)}</td>
+                    <td className="px-3 py-2 font-mono">{run.id.slice(0, 8)}</td>
+                    <td className="px-3 py-2 text-right">{formatTokens(Number(u.input_tokens ?? 0))}</td>
+                    <td className="px-3 py-2 text-right">{formatTokens(Number(u.output_tokens ?? 0))}</td>
+                    <td className="px-3 py-2 text-right">
+                      {(u.cost_usd || u.total_cost_usd)
+                        ? `$${Number(u.cost_usd ?? u.total_cost_usd ?? 0).toFixed(4)}`
+                        : "-"
+                      }
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---- Agent Configure Page ---- */
+
+function AgentConfigurePage({
+  agent,
+  agentId,
+  onDirtyChange,
+  onSaveActionChange,
+  onCancelActionChange,
+  onSavingChange,
+  updatePermissions,
+}: {
+  agent: Agent;
+  agentId: string;
+  onDirtyChange: (dirty: boolean) => void;
+  onSaveActionChange: (save: (() => void) | null) => void;
+  onCancelActionChange: (cancel: (() => void) | null) => void;
+  onSavingChange: (saving: boolean) => void;
+  updatePermissions: { mutate: (canCreate: boolean) => void; isPending: boolean };
+}) {
+  const queryClient = useQueryClient();
+  const [revisionsOpen, setRevisionsOpen] = useState(false);
+
+  const { data: configRevisions } = useQuery({
+    queryKey: queryKeys.agents.configRevisions(agent.id),
+    queryFn: () => agentsApi.listConfigRevisions(agent.id),
+  });
+
+  const rollbackConfig = useMutation({
+    mutationFn: (revisionId: string) => agentsApi.rollbackConfigRevision(agent.id, revisionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.configRevisions(agent.id) });
+    },
+  });
+
+  return (
+    <div className="max-w-3xl space-y-6">
+      <ConfigurationTab
+        agent={agent}
+        onDirtyChange={onDirtyChange}
+        onSaveActionChange={onSaveActionChange}
+        onCancelActionChange={onCancelActionChange}
+        onSavingChange={onSavingChange}
+        updatePermissions={updatePermissions}
+      />
+      <div>
+        <h3 className="text-sm font-medium mb-3">API Keys</h3>
+        <KeysTab agentId={agentId} />
+      </div>
+
+      {/* Configuration Revisions — collapsible at the bottom */}
+      <div>
+        <button
+          className="flex items-center gap-2 text-sm font-medium hover:text-foreground transition-colors"
+          onClick={() => setRevisionsOpen((v) => !v)}
+        >
+          {revisionsOpen
+            ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+          }
+          Configuration Revisions
+          <span className="text-xs font-normal text-muted-foreground">{configRevisions?.length ?? 0}</span>
+        </button>
+        {revisionsOpen && (
+          <div className="mt-3">
+            {(configRevisions ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No configuration revisions yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {(configRevisions ?? []).slice(0, 10).map((revision) => (
+                  <div key={revision.id} className="border border-border/70 rounded-md p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-xs text-muted-foreground">
+                        <span className="font-mono">{revision.id.slice(0, 8)}</span>
+                        <span className="mx-1">·</span>
+                        <span>{formatDate(revision.createdAt)}</span>
+                        <span className="mx-1">·</span>
+                        <span>{revision.source}</span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2.5 text-xs"
+                        onClick={() => rollbackConfig.mutate(revision.id)}
+                        disabled={rollbackConfig.isPending}
+                      >
+                        Restore
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Changed:{" "}
+                      {revision.changedKeys.length > 0 ? revision.changedKeys.join(", ") : "no tracked changes"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -828,92 +1348,43 @@ function ConfigurationTab({
     },
   });
 
-  const { data: configRevisions } = useQuery({
-    queryKey: queryKeys.agents.configRevisions(agent.id),
-    queryFn: () => agentsApi.listConfigRevisions(agent.id),
-  });
-
-  const rollbackConfig = useMutation({
-    mutationFn: (revisionId: string) => agentsApi.rollbackConfigRevision(agent.id, revisionId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.configRevisions(agent.id) });
-    },
-  });
-
   useEffect(() => {
     onSavingChange(updateAgent.isPending);
   }, [onSavingChange, updateAgent.isPending]);
 
   return (
-    <div className="space-y-4">
-      <div className="border border-border rounded-lg overflow-hidden">
-        <AgentConfigForm
-          mode="edit"
-          agent={agent}
-          onSave={(patch) => updateAgent.mutate(patch)}
-          isSaving={updateAgent.isPending}
-          adapterModels={adapterModels}
-          onDirtyChange={onDirtyChange}
-          onSaveActionChange={onSaveActionChange}
-          onCancelActionChange={onCancelActionChange}
-          hideInlineSave
-        />
-      </div>
-      <div className="border border-border rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-medium">Permissions</h3>
-        <div className="flex items-center justify-between text-sm">
-          <span>Can create new agents</span>
-          <Button
-            variant={agent.permissions?.canCreateAgents ? "default" : "outline"}
-            size="sm"
-            className="h-7 px-2.5 text-xs"
-            onClick={() =>
-              updatePermissions.mutate(!Boolean(agent.permissions?.canCreateAgents))
-            }
-            disabled={updatePermissions.isPending}
-          >
-            {agent.permissions?.canCreateAgents ? "Enabled" : "Disabled"}
-          </Button>
-        </div>
-      </div>
-      <div className="border border-border rounded-lg p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">Configuration Revisions</h3>
-          <span className="text-xs text-muted-foreground">{configRevisions?.length ?? 0}</span>
-        </div>
-        {(configRevisions ?? []).length === 0 ? (
-          <p className="text-sm text-muted-foreground">No configuration revisions yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {(configRevisions ?? []).slice(0, 10).map((revision) => (
-              <div key={revision.id} className="border border-border/70 rounded-md p-3 space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-xs text-muted-foreground">
-                    <span className="font-mono">{revision.id.slice(0, 8)}</span>
-                    <span className="mx-1">·</span>
-                    <span>{formatDate(revision.createdAt)}</span>
-                    <span className="mx-1">·</span>
-                    <span>{revision.source}</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 px-2.5 text-xs"
-                    onClick={() => rollbackConfig.mutate(revision.id)}
-                    disabled={rollbackConfig.isPending}
-                  >
-                    Restore
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Changed:{" "}
-                  {revision.changedKeys.length > 0 ? revision.changedKeys.join(", ") : "no tracked changes"}
-                </p>
-              </div>
-            ))}
+    <div className="space-y-6">
+      <AgentConfigForm
+        mode="edit"
+        agent={agent}
+        onSave={(patch) => updateAgent.mutate(patch)}
+        isSaving={updateAgent.isPending}
+        adapterModels={adapterModels}
+        onDirtyChange={onDirtyChange}
+        onSaveActionChange={onSaveActionChange}
+        onCancelActionChange={onCancelActionChange}
+        hideInlineSave
+        sectionLayout="cards"
+      />
+
+      <div>
+        <h3 className="text-sm font-medium mb-3">Permissions</h3>
+        <div className="border border-border rounded-lg p-4">
+          <div className="flex items-center justify-between text-sm">
+            <span>Can create new agents</span>
+            <Button
+              variant={agent.permissions?.canCreateAgents ? "default" : "outline"}
+              size="sm"
+              className="h-7 px-2.5 text-xs"
+              onClick={() =>
+                updatePermissions.mutate(!Boolean(agent.permissions?.canCreateAgents))
+              }
+              disabled={updatePermissions.isPending}
+            >
+              {agent.permissions?.canCreateAgents ? "Enabled" : "Disabled"}
+            </Button>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -1858,91 +2329,6 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
   );
 }
 
-/* ---- Costs Tab ---- */
-
-function CostsTab({
-  runtimeState,
-  runs,
-}: {
-  runtimeState?: AgentRuntimeState;
-  runs: HeartbeatRun[];
-}) {
-  const runsWithCost = runs
-    .filter((r) => {
-      const u = r.usageJson as Record<string, unknown> | null;
-      return u && (u.cost_usd || u.total_cost_usd || u.input_tokens);
-    })
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  return (
-    <div className="space-y-6">
-      {/* Cumulative totals */}
-      {runtimeState && (
-        <div className="border border-border rounded-lg p-4">
-          <h3 className="text-sm font-medium mb-3">Cumulative Totals</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <span className="text-xs text-muted-foreground block">Input tokens</span>
-              <span className="text-lg font-semibold">{formatTokens(runtimeState.totalInputTokens)}</span>
-            </div>
-            <div>
-              <span className="text-xs text-muted-foreground block">Output tokens</span>
-              <span className="text-lg font-semibold">{formatTokens(runtimeState.totalOutputTokens)}</span>
-            </div>
-            <div>
-              <span className="text-xs text-muted-foreground block">Cached tokens</span>
-              <span className="text-lg font-semibold">{formatTokens(runtimeState.totalCachedInputTokens)}</span>
-            </div>
-            <div>
-              <span className="text-xs text-muted-foreground block">Total cost</span>
-              <span className="text-lg font-semibold">{formatCents(runtimeState.totalCostCents)}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Per-run cost table */}
-      {runsWithCost.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium mb-3">Per-Run Costs</h3>
-          <div className="border border-border rounded-lg overflow-hidden">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border bg-accent/20">
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Run</th>
-                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Input</th>
-                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Output</th>
-                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runsWithCost.map((run) => {
-                  const u = run.usageJson as Record<string, unknown>;
-                  return (
-                    <tr key={run.id} className="border-b border-border last:border-b-0">
-                      <td className="px-3 py-2">{formatDate(run.createdAt)}</td>
-                      <td className="px-3 py-2 font-mono">{run.id.slice(0, 8)}</td>
-                      <td className="px-3 py-2 text-right">{formatTokens(Number(u.input_tokens ?? 0))}</td>
-                      <td className="px-3 py-2 text-right">{formatTokens(Number(u.output_tokens ?? 0))}</td>
-                      <td className="px-3 py-2 text-right">
-                        {(u.cost_usd || u.total_cost_usd)
-                          ? `$${Number(u.cost_usd ?? u.total_cost_usd ?? 0).toFixed(4)}`
-                          : "-"
-                        }
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /* ---- Keys Tab ---- */
 
 function KeysTab({ agentId }: { agentId: string }) {
@@ -2027,8 +2413,8 @@ function KeysTab({ agentId }: { agentId: string }) {
 
       {/* Create new key */}
       <div className="border border-border rounded-lg p-4 space-y-3">
-        <h3 className="text-sm font-medium flex items-center gap-2">
-          <Key className="h-4 w-4" />
+        <h3 className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+          <Key className="h-3.5 w-3.5" />
           Create API Key
         </h3>
         <p className="text-xs text-muted-foreground">
@@ -2064,10 +2450,10 @@ function KeysTab({ agentId }: { agentId: string }) {
 
       {activeKeys.length > 0 && (
         <div>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+          <h3 className="text-xs font-medium text-muted-foreground mb-2">
             Active Keys
           </h3>
-          <div className="border border-border divide-y divide-border">
+          <div className="border border-border rounded-lg divide-y divide-border">
             {activeKeys.map((key: AgentKey) => (
               <div key={key.id} className="flex items-center justify-between px-4 py-2.5">
                 <div>
@@ -2091,13 +2477,13 @@ function KeysTab({ agentId }: { agentId: string }) {
         </div>
       )}
 
-      {/* Revoked keys (collapsed) */}
+      {/* Revoked keys */}
       {revokedKeys.length > 0 && (
         <div>
-          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+          <h3 className="text-xs font-medium text-muted-foreground mb-2">
             Revoked Keys
           </h3>
-          <div className="border border-border divide-y divide-border opacity-50">
+          <div className="border border-border rounded-lg divide-y divide-border opacity-50">
             {revokedKeys.map((key: AgentKey) => (
               <div key={key.id} className="flex items-center justify-between px-4 py-2.5">
                 <div>

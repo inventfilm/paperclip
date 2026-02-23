@@ -151,9 +151,9 @@ export function NewGoalDialog() {
         </div>
 
         {/* Title */}
-        <div className="px-4 pt-3">
+        <div className="px-4 pt-4 pb-2 shrink-0">
           <input
-            className="w-full text-base font-medium bg-transparent outline-none placeholder:text-muted-foreground/50"
+            className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50"
             placeholder="Goal title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}

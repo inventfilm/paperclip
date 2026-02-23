@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
@@ -25,42 +25,54 @@ export function GoalDetail() {
   const { openNewGoal } = useDialog();
   const { openPanel, closePanel } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data: goal, isLoading, error } = useQuery({
+  const {
+    data: goal,
+    isLoading,
+    error
+  } = useQuery({
     queryKey: queryKeys.goals.detail(goalId!),
     queryFn: () => goalsApi.get(goalId!),
-    enabled: !!goalId,
+    enabled: !!goalId
   });
 
   const { data: allGoals } = useQuery({
     queryKey: queryKeys.goals.list(selectedCompanyId!),
     queryFn: () => goalsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId
   });
 
   const { data: allProjects } = useQuery({
     queryKey: queryKeys.projects.list(selectedCompanyId!),
     queryFn: () => projectsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId
   });
 
   const updateGoal = useMutation({
-    mutationFn: (data: Record<string, unknown>) => goalsApi.update(goalId!, data),
+    mutationFn: (data: Record<string, unknown>) =>
+      goalsApi.update(goalId!, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.goals.detail(goalId!) });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.goals.detail(goalId!)
+      });
       if (selectedCompanyId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.goals.list(selectedCompanyId) });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.goals.list(selectedCompanyId)
+        });
       }
-    },
+    }
   });
 
   const uploadImage = useMutation({
     mutationFn: async (file: File) => {
       if (!selectedCompanyId) throw new Error("No company selected");
-      return assetsApi.uploadImage(selectedCompanyId, file, `goals/${goalId ?? "draft"}`);
-    },
+      return assetsApi.uploadImage(
+        selectedCompanyId,
+        file,
+        `goals/${goalId ?? "draft"}`
+      );
+    }
   });
 
   const childGoals = (allGoals ?? []).filter((g) => g.parentId === goalId);
@@ -74,20 +86,24 @@ export function GoalDetail() {
   useEffect(() => {
     setBreadcrumbs([
       { label: "Goals", href: "/goals" },
-      { label: goal?.title ?? goalId ?? "Goal" },
+      { label: goal?.title ?? goalId ?? "Goal" }
     ]);
   }, [setBreadcrumbs, goal, goalId]);
 
   useEffect(() => {
     if (goal) {
       openPanel(
-        <GoalProperties goal={goal} onUpdate={(data) => updateGoal.mutate(data)} />
+        <GoalProperties
+          goal={goal}
+          onUpdate={(data) => updateGoal.mutate(data)}
+        />
       );
     }
     return () => closePanel();
   }, [goal]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (isLoading) return <p className="text-sm text-muted-foreground">Loading...</p>;
+  if (isLoading)
+    return <p className="text-sm text-muted-foreground">Loading...</p>;
   if (error) return <p className="text-sm text-destructive">{error.message}</p>;
   if (!goal) return null;
 
@@ -95,7 +111,9 @@ export function GoalDetail() {
     <div className="space-y-6">
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <span className="text-xs uppercase text-muted-foreground">{goal.level}</span>
+          <span className="text-xs uppercase text-muted-foreground">
+            {goal.level}
+          </span>
           <StatusBadge status={goal.status} />
         </div>
 
@@ -122,13 +140,21 @@ export function GoalDetail() {
 
       <Tabs defaultValue="children">
         <TabsList>
-          <TabsTrigger value="children">Sub-Goals ({childGoals.length})</TabsTrigger>
-          <TabsTrigger value="projects">Projects ({linkedProjects.length})</TabsTrigger>
+          <TabsTrigger value="children">
+            Sub-Goals ({childGoals.length})
+          </TabsTrigger>
+          <TabsTrigger value="projects">
+            Projects ({linkedProjects.length})
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="children" className="mt-4 space-y-3">
-          <div className="flex items-center justify-end">
-            <Button size="sm" variant="outline" onClick={() => openNewGoal({ parentId: goalId })}>
+          <div className="flex items-center justify-start">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => openNewGoal({ parentId: goalId })}
+            >
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               Sub Goal
             </Button>
@@ -136,10 +162,7 @@ export function GoalDetail() {
           {childGoals.length === 0 ? (
             <p className="text-sm text-muted-foreground">No sub-goals.</p>
           ) : (
-            <GoalTree
-              goals={childGoals}
-              onSelect={(g) => navigate(`/goals/${g.id}`)}
-            />
+            <GoalTree goals={childGoals} goalLink={(g) => `/goals/${g.id}`} />
           )}
         </TabsContent>
 
@@ -153,7 +176,7 @@ export function GoalDetail() {
                   key={project.id}
                   title={project.name}
                   subtitle={project.description ?? undefined}
-                  onClick={() => navigate(`/projects/${project.id}`)}
+                  to={`/projects/${project.id}`}
                   trailing={<StatusBadge status={project.status} />}
                 />
               ))}

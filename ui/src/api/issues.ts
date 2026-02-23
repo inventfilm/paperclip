@@ -2,7 +2,12 @@ import type { Approval, Issue, IssueAttachment, IssueComment } from "@paperclip/
 import { api } from "./client";
 
 export const issuesApi = {
-  list: (companyId: string) => api.get<Issue[]>(`/companies/${companyId}/issues`),
+  list: (companyId: string, filters?: { projectId?: string }) => {
+    const params = new URLSearchParams();
+    if (filters?.projectId) params.set("projectId", filters.projectId);
+    const qs = params.toString();
+    return api.get<Issue[]>(`/companies/${companyId}/issues${qs ? `?${qs}` : ""}`);
+  },
   get: (id: string) => api.get<Issue>(`/issues/${id}`),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Issue>(`/companies/${companyId}/issues`, data),

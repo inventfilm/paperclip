@@ -75,16 +75,49 @@ interface IssueToastContext {
   href: string;
 }
 
+function resolveIssueQueryRefs(
+  queryClient: QueryClient,
+  companyId: string,
+  issueId: string,
+  details: Record<string, unknown> | null,
+): string[] {
+  const refs = new Set<string>([issueId]);
+  const detailIssue = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issueId));
+  const listIssues = queryClient.getQueryData<Issue[]>(queryKeys.issues.list(companyId));
+  const detailsIdentifier =
+    readString(details?.identifier) ??
+    readString(details?.issueIdentifier);
+
+  if (detailsIdentifier) refs.add(detailsIdentifier);
+
+  if (detailIssue?.id) refs.add(detailIssue.id);
+  if (detailIssue?.identifier) refs.add(detailIssue.identifier);
+
+  const listIssue = listIssues?.find((issue) => {
+    if (issue.id === issueId) return true;
+    if (issue.identifier && issue.identifier === issueId) return true;
+    if (detailsIdentifier && issue.identifier === detailsIdentifier) return true;
+    return false;
+  });
+  if (listIssue?.id) refs.add(listIssue.id);
+  if (listIssue?.identifier) refs.add(listIssue.identifier);
+
+  return Array.from(refs);
+}
+
 function resolveIssueToastContext(
   queryClient: QueryClient,
   companyId: string,
   issueId: string,
   details: Record<string, unknown> | null,
 ): IssueToastContext {
-  const detailIssue = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issueId));
+  const issueRefs = resolveIssueQueryRefs(queryClient, companyId, issueId, details);
+  const detailIssue = issueRefs
+    .map((ref) => queryClient.getQueryData<Issue>(queryKeys.issues.detail(ref)))
+    .find((issue): issue is Issue => !!issue);
   const listIssue = queryClient
     .getQueryData<Issue[]>(queryKeys.issues.list(companyId))
-    ?.find((issue) => issue.id === issueId);
+    ?.find((issue) => issueRefs.some((ref) => issue.id === ref || issue.identifier === ref));
   const cachedIssue = detailIssue ?? listIssue ?? null;
   const ref =
     readString(details?.identifier) ??
@@ -290,12 +323,16 @@ function invalidateActivityQueries(
   if (entityType === "issue") {
     queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
     if (entityId) {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(entityId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(entityId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(entityId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(entityId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(entityId) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(entityId) });
+      const details = readRecord(payload.details);
+      const issueRefs = resolveIssueQueryRefs(queryClient, companyId, entityId, details);
+      for (const ref of issueRefs) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(ref) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(ref) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(ref) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.runs(ref) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(ref) });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.activeRun(ref) });
+      }
     }
     return;
   }

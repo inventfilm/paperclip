@@ -1,4 +1,5 @@
 import type { Goal } from "@paperclip/shared";
+import { Link } from "react-router-dom";
 import { StatusBadge } from "./StatusBadge";
 import { ChevronRight } from "lucide-react";
 import { cn } from "../lib/utils";
@@ -6,6 +7,7 @@ import { useState } from "react";
 
 interface GoalTreeProps {
   goals: Goal[];
+  goalLink?: (goal: Goal) => string;
   onSelect?: (goal: Goal) => void;
 }
 
@@ -14,41 +16,62 @@ interface GoalNodeProps {
   children: Goal[];
   allGoals: Goal[];
   depth: number;
+  goalLink?: (goal: Goal) => string;
   onSelect?: (goal: Goal) => void;
 }
 
-function GoalNode({ goal, children, allGoals, depth, onSelect }: GoalNodeProps) {
+function GoalNode({ goal, children, allGoals, depth, goalLink, onSelect }: GoalNodeProps) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = children.length > 0;
+  const link = goalLink?.(goal);
+
+  const inner = (
+    <>
+      {hasChildren ? (
+        <button
+          className="p-0.5"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setExpanded(!expanded);
+          }}
+        >
+          <ChevronRight
+            className={cn("h-3 w-3 transition-transform", expanded && "rotate-90")}
+          />
+        </button>
+      ) : (
+        <span className="w-4" />
+      )}
+      <span className="text-xs text-muted-foreground capitalize">{goal.level}</span>
+      <span className="flex-1 truncate">{goal.title}</span>
+      <StatusBadge status={goal.status} />
+    </>
+  );
+
+  const classes = cn(
+    "flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer hover:bg-accent/50",
+  );
 
   return (
     <div>
-      <div
-        className={cn(
-          "flex items-center gap-2 px-3 py-1.5 text-sm transition-colors cursor-pointer hover:bg-accent/50",
-        )}
-        style={{ paddingLeft: `${depth * 16 + 12}px` }}
-        onClick={() => onSelect?.(goal)}
-      >
-        {hasChildren ? (
-          <button
-            className="p-0.5"
-            onClick={(e) => {
-              e.stopPropagation();
-              setExpanded(!expanded);
-            }}
-          >
-            <ChevronRight
-              className={cn("h-3 w-3 transition-transform", expanded && "rotate-90")}
-            />
-          </button>
-        ) : (
-          <span className="w-4" />
-        )}
-        <span className="text-xs text-muted-foreground capitalize">{goal.level}</span>
-        <span className="flex-1 truncate">{goal.title}</span>
-        <StatusBadge status={goal.status} />
-      </div>
+      {link ? (
+        <Link
+          to={link}
+          className={cn(classes, "no-underline text-inherit")}
+          style={{ paddingLeft: `${depth * 16 + 12}px` }}
+        >
+          {inner}
+        </Link>
+      ) : (
+        <div
+          className={classes}
+          style={{ paddingLeft: `${depth * 16 + 12}px` }}
+          onClick={() => onSelect?.(goal)}
+        >
+          {inner}
+        </div>
+      )}
       {hasChildren && expanded && (
         <div>
           {children.map((child) => (
@@ -58,6 +81,7 @@ function GoalNode({ goal, children, allGoals, depth, onSelect }: GoalNodeProps) 
               children={allGoals.filter((g) => g.parentId === child.id)}
               allGoals={allGoals}
               depth={depth + 1}
+              goalLink={goalLink}
               onSelect={onSelect}
             />
           ))}
@@ -67,7 +91,7 @@ function GoalNode({ goal, children, allGoals, depth, onSelect }: GoalNodeProps) 
   );
 }
 
-export function GoalTree({ goals, onSelect }: GoalTreeProps) {
+export function GoalTree({ goals, goalLink, onSelect }: GoalTreeProps) {
   const roots = goals.filter((g) => !g.parentId);
 
   if (goals.length === 0) {
@@ -83,6 +107,7 @@ export function GoalTree({ goals, onSelect }: GoalTreeProps) {
           children={goals.filter((g) => g.parentId === goal.id)}
           allGoals={goals}
           depth={0}
+          goalLink={goalLink}
           onSelect={onSelect}
         />
       ))}

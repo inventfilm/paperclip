@@ -27,6 +27,7 @@ import { roleLabels } from "./agent-config-primitives";
 import { AgentConfigForm, type CreateConfigValues } from "./AgentConfigForm";
 import { defaultCreateValues } from "./agent-config-defaults";
 import { getUIAdapter } from "../adapters";
+import { AgentIcon } from "./AgentIconPicker";
 
 export function NewAgentDialog() {
   const { newAgentOpen, closeNewAgent } = useDialog();
@@ -163,9 +164,9 @@ export function NewAgentDialog() {
 
         <div className="overflow-y-auto max-h-[70vh]">
           {/* Name */}
-          <div className="px-4 pt-3">
+          <div className="px-4 pt-4 pb-2 shrink-0">
             <input
-              className="w-full text-base font-medium bg-transparent outline-none placeholder:text-muted-foreground/50"
+              className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50"
               placeholder="Agent name"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -225,13 +226,17 @@ export function NewAgentDialog() {
                   )}
                   disabled={isFirstAgent}
                 >
-                  <User className="h-3 w-3 text-muted-foreground" />
-                  {currentReportsTo
-                    ? `Reports to ${currentReportsTo.name}`
-                    : isFirstAgent
-                      ? "Reports to: N/A (CEO)"
-                      : "Reports to..."
-                  }
+                  {currentReportsTo ? (
+                    <>
+                      <AgentIcon icon={currentReportsTo.icon} className="h-3 w-3 text-muted-foreground" />
+                      {`Reports to ${currentReportsTo.name}`}
+                    </>
+                  ) : (
+                    <>
+                      <User className="h-3 w-3 text-muted-foreground" />
+                      {isFirstAgent ? "Reports to: N/A (CEO)" : "Reports to..."}
+                    </>
+                  )}
                 </button>
               </PopoverTrigger>
               <PopoverContent className="w-48 p-1" align="start">
@@ -253,6 +258,7 @@ export function NewAgentDialog() {
                     )}
                     onClick={() => { setReportsTo(a.id); setReportsToOpen(false); }}
                   >
+                    <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
                     {a.name}
                     <span className="text-muted-foreground ml-auto">{roleLabels[a.role] ?? a.role}</span>
                   </button>

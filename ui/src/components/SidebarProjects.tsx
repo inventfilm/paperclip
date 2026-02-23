@@ -70,7 +70,7 @@ export function SidebarProjects() {
           {visibleProjects.map((project: Project) => (
             <NavLink
               key={project.id}
-              to={`/projects/${project.id}`}
+              to={`/projects/${project.id}/issues`}
               onClick={() => {
                 if (isMobile) setSidebarOpen(false);
               }}
