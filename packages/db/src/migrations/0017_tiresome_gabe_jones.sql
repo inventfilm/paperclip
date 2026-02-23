@@ -16,7 +16,7 @@ WITH ranked_companies AS (
 UPDATE companies c
 SET issue_prefix = CASE
   WHEN ranked_companies.prefix_rank = 1 THEN ranked_companies.base_prefix
-  ELSE ranked_companies.base_prefix || REPEAT('A', ranked_companies.prefix_rank - 1)
+  ELSE ranked_companies.base_prefix || REPEAT('A', (ranked_companies.prefix_rank - 1)::integer)
 END
 FROM ranked_companies
 WHERE c.id = ranked_companies.id;--> statement-breakpoint
