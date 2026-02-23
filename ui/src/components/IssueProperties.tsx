@@ -25,7 +25,7 @@ function PropertyRow({ label, children }: { label: string; children: React.React
   return (
     <div className="flex items-center gap-3 py-1.5">
       <span className="text-xs text-muted-foreground shrink-0 w-20">{label}</span>
-      <div className="flex items-center gap-1.5 min-w-0">{children}</div>
+      <div className="flex items-center gap-1.5 min-w-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -151,14 +151,14 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
         <PropertyRow label="Project">
           <Popover open={projectOpen} onOpenChange={(open) => { setProjectOpen(open); if (!open) setProjectSearch(""); }}>
             <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
+              <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors min-w-0 max-w-full">
                 {issue.projectId ? (
                   <>
                     <span
                       className="shrink-0 h-3 w-3 rounded-sm"
                       style={{ backgroundColor: projects?.find((p) => p.id === issue.projectId)?.color ?? "#6366f1" }}
                     />
-                    <span className="text-sm">{projectName(issue.projectId)}</span>
+                    <span className="text-sm truncate">{projectName(issue.projectId)}</span>
                   </>
                 ) : (
                   <>
