@@ -88,19 +88,32 @@ Required integration points:
 
 This is required because user assignment paths validate active membership for `assigneeUserId`.
 
-## 7. Current Code Reality (As Of 2026-02-23)
+## 7. Local Trusted -> Authenticated Claim Flow
+
+When running `authenticated` mode, if the only instance admin is `local-board`, Paperclip emits a startup warning with a one-time high-entropy claim URL.
+
+- URL format: `/board-claim/<token>?code=<code>`
+- intended use: signed-in human claims board ownership
+- claim action:
+  - promotes current signed-in user to `instance_admin`
+  - demotes `local-board` admin role
+  - ensures active owner membership for the claiming user across existing companies
+
+This prevents lockout when a user migrates from long-running local trusted usage to authenticated mode.
+
+## 8. Current Code Reality (As Of 2026-02-23)
 
 - runtime values are `local_trusted | authenticated`
 - `authenticated` uses Better Auth sessions and bootstrap invite flow
 - `local_trusted` ensures a real local Board user principal in `authUsers` with `instance_user_roles` admin access
 - company creation ensures creator membership in `company_memberships` so user assignment/access flows remain consistent
 
-## 8. Naming and Compatibility Policy
+## 9. Naming and Compatibility Policy
 
 - canonical naming is `local_trusted` and `authenticated` with `private/public` exposure
 - no long-term compatibility alias layer for discarded naming variants
 
-## 9. Relationship to Other Docs
+## 10. Relationship to Other Docs
 
 - implementation plan: `doc/plans/deployment-auth-mode-consolidation.md`
 - V1 contract: `doc/SPEC-implementation.md`

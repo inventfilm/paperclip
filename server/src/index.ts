@@ -24,6 +24,7 @@ import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { heartbeatService } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
+import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import {
   createBetterAuthHandler,
   createBetterAuthInstance,
@@ -337,6 +338,7 @@ if (config.deploymentMode === "authenticated") {
   const auth = createBetterAuthInstance(db as any, config);
   betterAuthHandler = createBetterAuthHandler(auth);
   resolveSession = (req) => resolveBetterAuthSession(auth, req);
+  await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
   authReady = true;
 }
 
@@ -404,6 +406,22 @@ server.listen(listenPort, config.host, () => {
     heartbeatSchedulerEnabled: config.heartbeatSchedulerEnabled,
     heartbeatSchedulerIntervalMs: config.heartbeatSchedulerIntervalMs,
   });
+
+  const boardClaimUrl = getBoardClaimWarningUrl(config.host, listenPort);
+  if (boardClaimUrl) {
+    const red = "\x1b[41m\x1b[30m";
+    const yellow = "\x1b[33m";
+    const reset = "\x1b[0m";
+    console.log(
+      [
+        `${red}  BOARD CLAIM REQUIRED  ${reset}`,
+        `${yellow}This instance was previously local_trusted and still has local-board as the only admin.${reset}`,
+        `${yellow}Sign in with a real user and open this one-time URL to claim ownership:${reset}`,
+        `${yellow}${boardClaimUrl}${reset}`,
+        `${yellow}If you are connecting over Tailscale, replace the host in this URL with your Tailscale IP/MagicDNS name.${reset}`,
+      ].join("\n"),
+    );
+  }
 });
 
 if (embeddedPostgres && embeddedPostgresStartedByThisProcess) {

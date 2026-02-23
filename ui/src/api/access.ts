@@ -19,6 +19,13 @@ type AcceptInviteInput =
     agentDefaultsPayload?: Record<string, unknown> | null;
   };
 
+type BoardClaimStatus = {
+  status: "available" | "claimed" | "expired";
+  requiresSignIn: boolean;
+  expiresAt: string | null;
+  claimedByUserId: string | null;
+};
+
 export const accessApi = {
   createCompanyInvite: (
     companyId: string,
@@ -49,4 +56,10 @@ export const accessApi = {
 
   rejectJoinRequest: (companyId: string, requestId: string) =>
     api.post<JoinRequest>(`/companies/${companyId}/join-requests/${requestId}/reject`, {}),
+
+  getBoardClaimStatus: (token: string, code: string) =>
+    api.get<BoardClaimStatus>(`/board-claim/${token}?code=${encodeURIComponent(code)}`),
+
+  claimBoard: (token: string, code: string) =>
+    api.post<{ claimed: true; userId: string }>(`/board-claim/${token}/claim`, { code }),
 };

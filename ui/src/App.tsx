@@ -21,6 +21,7 @@ import { Inbox } from "./pages/Inbox";
 import { CompanySettings } from "./pages/CompanySettings";
 import { DesignGuide } from "./pages/DesignGuide";
 import { AuthPage } from "./pages/Auth";
+import { BoardClaimPage } from "./pages/BoardClaim";
 import { InviteLandingPage } from "./pages/InviteLanding";
 import { queryKeys } from "./lib/queryKeys";
 
@@ -85,6 +86,7 @@ export function App() {
   return (
     <Routes>
       <Route path="auth" element={<AuthPage />} />
+      <Route path="board-claim/:token" element={<BoardClaimPage />} />
       <Route path="invite/:token" element={<InviteLandingPage />} />
 
       <Route element={<CloudAccessGate />}>
