@@ -44,8 +44,14 @@ function defaultConfig(): PaperclipConfig {
       logDir: resolveDefaultLogsDir(instanceId),
     },
     server: {
+      deploymentMode: "local_trusted",
+      exposure: "private",
+      host: "127.0.0.1",
       port: 3100,
       serveUi: true,
+    },
+    auth: {
+      baseUrlMode: "auto",
     },
     storage: defaultStorageConfig(),
     secrets: defaultSecretsConfig(),
@@ -124,7 +130,11 @@ export async function configure(opts: {
         config.logging = await promptLogging();
         break;
       case "server":
-        config.server = await promptServer();
+        {
+          const { server, auth } = await promptServer();
+          config.server = server;
+          config.auth = auth;
+        }
         break;
       case "storage":
         config.storage = await promptStorage(config.storage);

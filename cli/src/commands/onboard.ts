@@ -11,6 +11,7 @@ import { defaultSecretsConfig } from "../prompts/secrets.js";
 import { defaultStorageConfig, promptStorage } from "../prompts/storage.js";
 import { promptServer } from "../prompts/server.js";
 import { describeLocalInstancePaths, resolvePaperclipInstanceId } from "../config/home.js";
+import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
 
 export async function onboard(opts: { config?: string }): Promise<void> {
   p.intro(pc.bgCyan(pc.black(" paperclip onboard ")));
@@ -106,7 +107,7 @@ export async function onboard(opts: { config?: string }): Promise<void> {
 
   // Server
   p.log.step(pc.bold("Server"));
-  const server = await promptServer();
+  const { server, auth } = await promptServer();
 
   // Storage
   p.log.step(pc.bold("Storage"));
@@ -142,6 +143,7 @@ export async function onboard(opts: { config?: string }): Promise<void> {
     database,
     logging,
     server,
+    auth,
     storage,
     secrets,
   };
@@ -160,7 +162,8 @@ export async function onboard(opts: { config?: string }): Promise<void> {
       `Database: ${database.mode}`,
       llm ? `LLM: ${llm.provider}` : "LLM: not configured",
       `Logging: ${logging.mode} → ${logging.logDir}`,
-      `Server: port ${server.port}`,
+      `Server: ${server.deploymentMode}/${server.exposure} @ ${server.host}:${server.port}`,
+      `Auth URL mode: ${auth.baseUrlMode}${auth.publicBaseUrl ? ` (${auth.publicBaseUrl})` : ""}`,
       `Storage: ${storage.provider}`,
       `Secrets: ${secrets.provider} (strict mode ${secrets.strictMode ? "on" : "off"})`,
       `Agent auth: PAPERCLIP_AGENT_JWT_SECRET configured`,
@@ -172,5 +175,9 @@ export async function onboard(opts: { config?: string }): Promise<void> {
   p.log.message(
     `Before starting Paperclip, export ${pc.cyan("PAPERCLIP_AGENT_JWT_SECRET")} from ${pc.dim(envFilePath)} (for example: ${pc.dim(`set -a; source ${envFilePath}; set +a`)})`,
   );
+  if (server.deploymentMode === "authenticated") {
+    p.log.step("Generating bootstrap CEO invite");
+    await bootstrapCeoInvite({ config: opts.config });
+  }
   p.outro("You're all set!");
 }

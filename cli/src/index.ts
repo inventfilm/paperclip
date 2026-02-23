@@ -6,6 +6,7 @@ import { envCommand } from "./commands/env.js";
 import { configure } from "./commands/configure.js";
 import { heartbeatRun } from "./commands/heartbeat-run.js";
 import { runCommand } from "./commands/run.js";
+import { bootstrapCeoInvite } from "./commands/auth-bootstrap-ceo.js";
 import { registerContextCommands } from "./commands/client/context.js";
 import { registerCompanyCommands } from "./commands/client/company.js";
 import { registerIssueCommands } from "./commands/client/issue.js";
@@ -89,6 +90,17 @@ registerAgentCommands(program);
 registerApprovalCommands(program);
 registerActivityCommands(program);
 registerDashboardCommands(program);
+
+const auth = program.command("auth").description("Authentication and bootstrap utilities");
+
+auth
+  .command("bootstrap-ceo")
+  .description("Create a one-time bootstrap invite URL for first instance admin")
+  .option("-c, --config <path>", "Path to config file")
+  .option("--force", "Create new invite even if admin already exists", false)
+  .option("--expires-hours <hours>", "Invite expiration window in hours", (value) => Number(value))
+  .option("--base-url <url>", "Public base URL used to print invite link")
+  .action(bootstrapCeoInvite);
 
 program.parseAsync().catch((err) => {
   console.error(err instanceof Error ? err.message : String(err));

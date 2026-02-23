@@ -6,6 +6,7 @@ import {
   agentJwtSecretCheck,
   configCheck,
   databaseCheck,
+  deploymentAuthCheck,
   llmCheck,
   logCheck,
   portCheck,
@@ -55,42 +56,47 @@ export async function doctor(opts: {
     return printSummary(results);
   }
 
-  // 2. Agent JWT check
+  // 2. Deployment/auth mode check
+  const deploymentAuthResult = deploymentAuthCheck(config);
+  results.push(deploymentAuthResult);
+  printResult(deploymentAuthResult);
+
+  // 3. Agent JWT check
   const jwtResult = agentJwtSecretCheck();
   results.push(jwtResult);
   printResult(jwtResult);
   await maybeRepair(jwtResult, opts);
 
-  // 3. Secrets adapter check
+  // 4. Secrets adapter check
   const secretsResult = secretsCheck(config, configPath);
   results.push(secretsResult);
   printResult(secretsResult);
   await maybeRepair(secretsResult, opts);
 
-  // 4. Storage check
+  // 5. Storage check
   const storageResult = storageCheck(config, configPath);
   results.push(storageResult);
   printResult(storageResult);
   await maybeRepair(storageResult, opts);
 
-  // 5. Database check
+  // 6. Database check
   const dbResult = await databaseCheck(config, configPath);
   results.push(dbResult);
   printResult(dbResult);
   await maybeRepair(dbResult, opts);
 
-  // 6. LLM check
+  // 7. LLM check
   const llmResult = await llmCheck(config);
   results.push(llmResult);
   printResult(llmResult);
 
-  // 7. Log directory check
+  // 8. Log directory check
   const logResult = logCheck(config, configPath);
   results.push(logResult);
   printResult(logResult);
   await maybeRepair(logResult, opts);
 
-  // 8. Port check
+  // 9. Port check
   const portResult = await portCheck(config);
   results.push(portResult);
   printResult(portResult);
