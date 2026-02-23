@@ -776,7 +776,7 @@ function DateLabels({ days }: { days: string[] }) {
   return (
     <div className="flex gap-[3px] mt-1.5">
       {days.map((day, i) => (
-        <div key={day} className="flex-1 text-center overflow-hidden">
+        <div key={day} className="flex-1 text-center">
           {(i === 0 || i === 6 || i === 13) ? (
             <span className="text-[9px] text-muted-foreground tabular-nums">{formatDayLabel(day)}</span>
           ) : null}
