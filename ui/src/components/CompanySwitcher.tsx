@@ -1,5 +1,5 @@
 import { ChevronsUpDown, Plus, Settings } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useCompany } from "../context/CompanyContext";
 import {
   DropdownMenu,
@@ -26,7 +26,6 @@ function statusDotColor(status?: string): string {
 
 export function CompanySwitcher() {
   const { companies, selectedCompany, setSelectedCompanyId } = useCompany();
-  const navigate = useNavigate();
 
   return (
     <DropdownMenu>
@@ -63,13 +62,17 @@ export function CompanySwitcher() {
           <DropdownMenuItem disabled>No companies</DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => navigate("/company/settings")}>
-          <Settings className="h-4 w-4 mr-2" />
-          Company Settings
+        <DropdownMenuItem asChild>
+          <Link to="/company/settings" className="no-underline text-inherit">
+            <Settings className="h-4 w-4 mr-2" />
+            Company Settings
+          </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => navigate("/companies")}>
-          <Plus className="h-4 w-4 mr-2" />
-          Manage Companies
+        <DropdownMenuItem asChild>
+          <Link to="/companies" className="no-underline text-inherit">
+            <Plus className="h-4 w-4 mr-2" />
+            Manage Companies
+          </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

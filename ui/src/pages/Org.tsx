@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
@@ -13,16 +13,16 @@ import { cn } from "../lib/utils";
 function OrgTree({
   nodes,
   depth = 0,
-  onSelect,
+  hrefFn,
 }: {
   nodes: OrgNode[];
   depth?: number;
-  onSelect: (id: string) => void;
+  hrefFn: (id: string) => string;
 }) {
   return (
     <div>
       {nodes.map((node) => (
-        <OrgTreeNode key={node.id} node={node} depth={depth} onSelect={onSelect} />
+        <OrgTreeNode key={node.id} node={node} depth={depth} hrefFn={hrefFn} />
       ))}
     </div>
   );
@@ -31,26 +31,27 @@ function OrgTree({
 function OrgTreeNode({
   node,
   depth,
-  onSelect,
+  hrefFn,
 }: {
   node: OrgNode;
   depth: number;
-  onSelect: (id: string) => void;
+  hrefFn: (id: string) => string;
 }) {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.reports.length > 0;
 
   return (
     <div>
-      <div
-        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer hover:bg-accent/50"
+      <Link
+        to={hrefFn(node.id)}
+        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer hover:bg-accent/50 no-underline text-inherit"
         style={{ paddingLeft: `${depth * 16 + 12}px` }}
-        onClick={() => onSelect(node.id)}
       >
         {hasChildren ? (
           <button
             className="p-0.5"
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               setExpanded(!expanded);
             }}
@@ -79,9 +80,9 @@ function OrgTreeNode({
         <span className="font-medium flex-1">{node.name}</span>
         <span className="text-xs text-muted-foreground">{node.role}</span>
         <StatusBadge status={node.status} />
-      </div>
+      </Link>
       {hasChildren && expanded && (
-        <OrgTree nodes={node.reports} depth={depth + 1} onSelect={onSelect} />
+        <OrgTree nodes={node.reports} depth={depth + 1} hrefFn={hrefFn} />
       )}
     </div>
   );
@@ -90,7 +91,6 @@ function OrgTreeNode({
 export function Org() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const navigate = useNavigate();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Org Chart" }]);
@@ -120,7 +120,7 @@ export function Org() {
 
       {data && data.length > 0 && (
         <div className="border border-border py-1">
-          <OrgTree nodes={data} onSelect={(id) => navigate(`/agents/${id}`)} />
+          <OrgTree nodes={data} hrefFn={(id) => `/agents/${id}`} />
         </div>
       )}
     </div>

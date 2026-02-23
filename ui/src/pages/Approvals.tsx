@@ -117,7 +117,7 @@ export function Approvals() {
               requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
               onApprove={() => approveMutation.mutate(approval.id)}
               onReject={() => rejectMutation.mutate(approval.id)}
-              onOpen={() => navigate(`/approvals/${approval.id}`)}
+              detailLink={`/approvals/${approval.id}`}
               isPending={approveMutation.isPending || rejectMutation.isPending}
             />
           ))}

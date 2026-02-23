@@ -604,8 +604,6 @@ function SummaryRow({ label, children }: { label: string; children: React.ReactN
 }
 
 function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: string }) {
-  const navigate = useNavigate();
-
   if (runs.length === 0) return null;
 
   const sorted = [...runs].sort(
@@ -687,8 +685,6 @@ function AgentOverview({
   directReports: Agent[];
   agentId: string;
 }) {
-  const navigate = useNavigate();
-
   return (
     <div className="space-y-8">
       {/* Latest Run */}
@@ -1023,7 +1019,6 @@ function ConfigSummary({
   reportsToAgent: Agent | null;
   directReports: Agent[];
 }) {
-  const navigate = useNavigate();
   const config = agent.adapterConfig as Record<string, unknown>;
   const promptText = typeof config?.promptTemplate === "string" ? config.promptTemplate : "";
 
@@ -1031,13 +1026,13 @@ function ConfigSummary({
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium">Configuration</h3>
-        <button
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          onClick={() => navigate(`/agents/${agentId}/configure`)}
+        <Link
+          to={`/agents/${agentId}/configure`}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors no-underline"
         >
           <Settings className="h-3 w-3" />
           Manage &rarr;
-        </button>
+        </Link>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="border border-border rounded-lg p-4 space-y-3">
@@ -1393,7 +1388,6 @@ function ConfigurationTab({
 /* ---- Runs Tab ---- */
 
 function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelected: boolean; agentId: string }) {
-  const navigate = useNavigate();
   const statusInfo = runStatusIcons[run.status] ?? { icon: Clock, color: "text-neutral-400" };
   const StatusIcon = statusInfo.icon;
   const metrics = runMetrics(run);
@@ -1402,12 +1396,12 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
     : run.error ?? "";
 
   return (
-    <button
+    <Link
+      to={isSelected ? `/agents/${agentId}/runs` : `/agents/${agentId}/runs/${run.id}`}
       className={cn(
-        "flex flex-col gap-1 w-full px-3 py-2.5 text-left border-b border-border last:border-b-0 transition-colors",
+        "flex flex-col gap-1 w-full px-3 py-2.5 text-left border-b border-border last:border-b-0 transition-colors no-underline text-inherit",
         isSelected ? "bg-accent/40" : "hover:bg-accent/20",
       )}
-      onClick={() => navigate(isSelected ? `/agents/${agentId}/runs` : `/agents/${agentId}/runs/${run.id}`)}
     >
       <div className="flex items-center gap-2">
         <StatusIcon className={cn("h-3.5 w-3.5 shrink-0", statusInfo.color, run.status === "running" && "animate-spin")} />
@@ -1438,12 +1432,11 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
           {metrics.cost > 0 && <span>${metrics.cost.toFixed(3)}</span>}
         </div>
       )}
-    </button>
+    </Link>
   );
 }
 
 function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { runs: HeartbeatRun[]; companyId: string; agentId: string; selectedRunId: string | null; adapterType: string }) {
-  const navigate = useNavigate();
   const { isMobile } = useSidebar();
 
   if (runs.length === 0) {
@@ -1464,13 +1457,13 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
     if (selectedRun) {
       return (
         <div className="space-y-3">
-          <button
-            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            onClick={() => navigate(`/agents/${agentId}/runs`)}
+          <Link
+            to={`/agents/${agentId}/runs`}
+            className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors no-underline"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Back to runs
-          </button>
+          </Link>
           <RunDetail key={selectedRun.id} run={selectedRun} adapterType={adapterType} />
         </div>
       );
@@ -1513,7 +1506,6 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
 
 function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: string }) {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const metrics = runMetrics(run);
   const [sessionOpen, setSessionOpen] = useState(false);
   const [claudeLoginResult, setClaudeLoginResult] = useState<ClaudeLoginResult | null>(null);
@@ -1758,17 +1750,17 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           <span className="text-xs font-medium text-muted-foreground">Issues Touched ({touchedIssues.length})</span>
           <div className="border border-border rounded-lg divide-y divide-border">
             {touchedIssues.map((issue) => (
-              <button
+              <Link
                 key={issue.issueId}
-                className="flex items-center justify-between w-full px-3 py-2 text-xs hover:bg-accent/20 transition-colors text-left"
-                onClick={() => navigate(`/issues/${issue.identifier ?? issue.issueId}`)}
+                to={`/issues/${issue.identifier ?? issue.issueId}`}
+                className="flex items-center justify-between w-full px-3 py-2 text-xs hover:bg-accent/20 transition-colors text-left no-underline text-inherit"
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <StatusBadge status={issue.status} />
                   <span className="truncate">{issue.title}</span>
                 </div>
                 <span className="font-mono text-muted-foreground shrink-0 ml-2">{issue.identifier ?? issue.issueId.slice(0, 8)}</span>
-              </button>
+              </Link>
             ))}
           </div>
         </div>
