@@ -74,6 +74,12 @@ export function Activity() {
     return map;
   }, [issues, agents, projects, goals]);
 
+  const entityTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
+    return map;
+  }, [issues]);
+
   if (!selectedCompanyId) {
     return <EmptyState icon={History} message="Select a company to view activity." />;
   }
@@ -120,6 +126,7 @@ export function Activity() {
               event={event}
               agentMap={agentMap}
               entityNameMap={entityNameMap}
+              entityTitleMap={entityTitleMap}
             />
           ))}
         </div>

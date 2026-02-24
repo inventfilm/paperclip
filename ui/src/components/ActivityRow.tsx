@@ -81,10 +81,11 @@ interface ActivityRowProps {
   event: ActivityEvent;
   agentMap: Map<string, Agent>;
   entityNameMap: Map<string, string>;
+  entityTitleMap?: Map<string, string>;
   className?: string;
 }
 
-export function ActivityRow({ event, agentMap, entityNameMap, className }: ActivityRowProps) {
+export function ActivityRow({ event, agentMap, entityNameMap, entityTitleMap, className }: ActivityRowProps) {
   const verb = formatVerb(event.action, event.details);
 
   const isHeartbeatEvent = event.entityType === "heartbeat_run";
@@ -95,6 +96,8 @@ export function ActivityRow({ event, agentMap, entityNameMap, className }: Activ
   const name = isHeartbeatEvent
     ? (heartbeatAgentId ? entityNameMap.get(`agent:${heartbeatAgentId}`) : null)
     : entityNameMap.get(`${event.entityType}:${event.entityId}`);
+
+  const entityTitle = entityTitleMap?.get(`${event.entityType}:${event.entityId}`);
 
   const link = isHeartbeatEvent && heartbeatAgentId
     ? `/agents/${heartbeatAgentId}/runs/${event.entityId}`
@@ -113,6 +116,7 @@ export function ActivityRow({ event, agentMap, entityNameMap, className }: Activ
         />
         <span className="text-muted-foreground ml-1">{verb} </span>
         {name && <span className="font-medium">{name}</span>}
+        {entityTitle && <span className="text-muted-foreground ml-1">— {entityTitle}</span>}
       </p>
       <span className="text-xs text-muted-foreground shrink-0 pt-0.5">{timeAgo(event.createdAt)}</span>
     </div>
