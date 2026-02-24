@@ -840,7 +840,7 @@ function RunActivityChart({ runs }: { runs: HeartbeatRun[] }) {
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} runs`}>
               {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px rounded-t-sm overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
+                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
                   {entry.succeeded > 0 && <div className="bg-emerald-500" style={{ flex: entry.succeeded }} />}
                   {entry.failed > 0 && <div className="bg-red-500" style={{ flex: entry.failed }} />}
                   {entry.other > 0 && <div className="bg-neutral-500" style={{ flex: entry.other }} />}
@@ -892,7 +892,7 @@ function PriorityChart({ issues }: { issues: { priority: string; createdAt: Date
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
               {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px rounded-t-sm overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
+                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
                   {priorityOrder.map(p => entry[p] > 0 ? (
                     <div key={p} style={{ flex: entry[p], backgroundColor: priorityColors[p] }} />
                   ) : null)}
@@ -959,7 +959,7 @@ function IssueStatusChart({ issues }: { issues: { status: string; createdAt: Dat
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
               {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px rounded-t-sm overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
+                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
                   {statusOrder.map(s => (entry[s] ?? 0) > 0 ? (
                     <div key={s} style={{ flex: entry[s], backgroundColor: statusColors[s] ?? "#6b7280" }} />
                   ) : null)}
@@ -1002,7 +1002,7 @@ function SuccessRateChart({ runs }: { runs: HeartbeatRun[] }) {
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${entry.total > 0 ? Math.round(rate * 100) : 0}% (${entry.succeeded}/${entry.total})`}>
               {entry.total > 0 ? (
-                <div className="rounded-t-sm" style={{ height: `${rate * 100}%`, minHeight: 2, backgroundColor: color }} />
+                <div style={{ height: `${rate * 100}%`, minHeight: 2, backgroundColor: color }} />
               ) : (
                 <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
               )}
