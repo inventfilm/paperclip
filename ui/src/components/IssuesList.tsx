@@ -1,6 +1,10 @@
 import { useMemo, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
+import { useCompany } from "../context/CompanyContext";
+import { issuesApi } from "../api/issues";
+import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
 import { formatDate } from "../lib/utils";
 import { StatusIcon } from "./StatusIcon";
@@ -11,7 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
-import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight } from "lucide-react";
+import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3 } from "lucide-react";
+import { KanbanBoard } from "./KanbanBoard";
 import type { Issue } from "@paperclip/shared";
 
 /* ── Helpers ── */
@@ -32,6 +37,7 @@ export type IssueViewState = {
   sortField: "status" | "priority" | "title" | "created" | "updated";
   sortDir: "asc" | "desc";
   groupBy: "status" | "priority" | "assignee" | "none";
+  viewMode: "list" | "board";
 };
 
 const defaultViewState: IssueViewState = {
@@ -41,6 +47,7 @@ const defaultViewState: IssueViewState = {
   sortField: "status",
   sortDir: "asc",
   groupBy: "status",
+  viewMode: "list",
 };
 
 const quickFilterPresets = [
@@ -215,6 +222,24 @@ export function IssuesList({
         </Button>
 
         <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+          {/* View mode toggle */}
+          <div className="flex items-center border border-border rounded-md overflow-hidden mr-1">
+            <button
+              className={`p-1.5 transition-colors ${viewState.viewMode === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => updateView({ viewMode: "list" })}
+              title="List view"
+            >
+              <List className="h-3.5 w-3.5" />
+            </button>
+            <button
+              className={`p-1.5 transition-colors ${viewState.viewMode === "board" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => updateView({ viewMode: "board" })}
+              title="Board view"
+            >
+              <Columns3 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
           {/* Filter */}
           <Popover>
             <PopoverTrigger asChild>
@@ -335,85 +360,89 @@ export function IssuesList({
             </PopoverContent>
           </Popover>
 
-          {/* Sort */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="text-xs">
-                <ArrowUpDown className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
-                <span className="hidden sm:inline">Sort</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-48 p-0">
-              <div className="p-2 space-y-0.5">
-                {([
-                  ["status", "Status"],
-                  ["priority", "Priority"],
-                  ["title", "Title"],
-                  ["created", "Created"],
-                  ["updated", "Updated"],
-                ] as const).map(([field, label]) => (
-                  <button
-                    key={field}
-                    className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
-                      viewState.sortField === field ? "bg-accent/50 text-foreground" : "hover:bg-accent/50 text-muted-foreground"
-                    }`}
-                    onClick={() => {
-                      if (viewState.sortField === field) {
-                        updateView({ sortDir: viewState.sortDir === "asc" ? "desc" : "asc" });
-                      } else {
-                        updateView({ sortField: field, sortDir: "asc" });
-                      }
-                    }}
-                  >
-                    <span>{label}</span>
-                    {viewState.sortField === field && (
-                      <span className="text-xs text-muted-foreground">
-                        {viewState.sortDir === "asc" ? "\u2191" : "\u2193"}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
+          {/* Sort (list view only) */}
+          {viewState.viewMode === "list" && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-xs">
+                  <ArrowUpDown className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
+                  <span className="hidden sm:inline">Sort</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-48 p-0">
+                <div className="p-2 space-y-0.5">
+                  {([
+                    ["status", "Status"],
+                    ["priority", "Priority"],
+                    ["title", "Title"],
+                    ["created", "Created"],
+                    ["updated", "Updated"],
+                  ] as const).map(([field, label]) => (
+                    <button
+                      key={field}
+                      className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
+                        viewState.sortField === field ? "bg-accent/50 text-foreground" : "hover:bg-accent/50 text-muted-foreground"
+                      }`}
+                      onClick={() => {
+                        if (viewState.sortField === field) {
+                          updateView({ sortDir: viewState.sortDir === "asc" ? "desc" : "asc" });
+                        } else {
+                          updateView({ sortField: field, sortDir: "asc" });
+                        }
+                      }}
+                    >
+                      <span>{label}</span>
+                      {viewState.sortField === field && (
+                        <span className="text-xs text-muted-foreground">
+                          {viewState.sortDir === "asc" ? "\u2191" : "\u2193"}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
 
-          {/* Group */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className="text-xs">
-                <Layers className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
-                <span className="hidden sm:inline">Group</span>
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-44 p-0">
-              <div className="p-2 space-y-0.5">
-                {([
-                  ["status", "Status"],
-                  ["priority", "Priority"],
-                  ["assignee", "Assignee"],
-                  ["none", "None"],
-                ] as const).map(([value, label]) => (
-                  <button
-                    key={value}
-                    className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
-                      viewState.groupBy === value ? "bg-accent/50 text-foreground" : "hover:bg-accent/50 text-muted-foreground"
-                    }`}
-                    onClick={() => updateView({ groupBy: value })}
-                  >
-                    <span>{label}</span>
-                    {viewState.groupBy === value && <Check className="h-3.5 w-3.5" />}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
+          {/* Group (list view only) */}
+          {viewState.viewMode === "list" && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="text-xs">
+                  <Layers className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
+                  <span className="hidden sm:inline">Group</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-44 p-0">
+                <div className="p-2 space-y-0.5">
+                  {([
+                    ["status", "Status"],
+                    ["priority", "Priority"],
+                    ["assignee", "Assignee"],
+                    ["none", "None"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      className={`flex items-center justify-between w-full px-2 py-1.5 text-sm rounded-sm ${
+                        viewState.groupBy === value ? "bg-accent/50 text-foreground" : "hover:bg-accent/50 text-muted-foreground"
+                      }`}
+                      onClick={() => updateView({ groupBy: value })}
+                    >
+                      <span>{label}</span>
+                      {viewState.groupBy === value && <Check className="h-3.5 w-3.5" />}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
         </div>
       </div>
 
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
-      {!isLoading && filtered.length === 0 && (
+      {!isLoading && filtered.length === 0 && viewState.viewMode === "list" && (
         <EmptyState
           icon={CircleDot}
           message="No issues match the current filters."
@@ -422,70 +451,79 @@ export function IssuesList({
         />
       )}
 
-      {groupedContent.map((group) => (
-        <Collapsible key={group.key} defaultOpen>
-          {group.label && (
-            <div className="flex items-center py-1.5 pl-1">
-              <CollapsibleTrigger className="flex items-center gap-1.5">
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
-                <span className="text-sm font-semibold uppercase tracking-wide">
-                  {group.label}
-                </span>
-              </CollapsibleTrigger>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="ml-auto text-muted-foreground"
-                onClick={() => openNewIssue(newIssueDefaults(group.key))}
-              >
-                <Plus className="h-3 w-3" />
-              </Button>
-            </div>
-          )}
-          <CollapsibleContent>
-            {group.items.map((issue) => (
-              <Link
-                key={issue.id}
-                to={`/issues/${issue.identifier ?? issue.id}`}
-                className="flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit"
-              >
-                {/* Spacer matching caret width so status icon aligns with group title */}
-                <div className="w-3.5 shrink-0" />
-                <div className="shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                  <StatusIcon
-                    status={issue.status}
-                    onChange={(s) => onUpdateIssue(issue.id, { status: s })}
-                  />
-                </div>
-                <span className="text-xs text-muted-foreground font-mono shrink-0">
-                  {issue.identifier ?? issue.id.slice(0, 8)}
-                </span>
-                <span className="truncate flex-1 min-w-0">{issue.title}</span>
-                <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
-                  {liveIssueIds?.has(issue.id) && (
-                    <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
-                      <span className="relative flex h-2 w-2">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-                      </span>
-                      <span className="text-[11px] font-medium text-blue-400 hidden sm:inline">Live</span>
-                    </span>
-                  )}
-                  {issue.assigneeAgentId && (() => {
-                    const name = agentName(issue.assigneeAgentId);
-                    return name
-                      ? <Identity name={name} size="sm" />
-                      : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
-                  })()}
-                  <span className="text-xs text-muted-foreground hidden sm:inline">
-                    {formatDate(issue.createdAt)}
+      {viewState.viewMode === "board" ? (
+        <KanbanBoard
+          issues={filtered}
+          agents={agents}
+          liveIssueIds={liveIssueIds}
+          onUpdateIssue={onUpdateIssue}
+        />
+      ) : (
+        groupedContent.map((group) => (
+          <Collapsible key={group.key} defaultOpen>
+            {group.label && (
+              <div className="flex items-center py-1.5 pl-1">
+                <CollapsibleTrigger className="flex items-center gap-1.5">
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
+                  <span className="text-sm font-semibold uppercase tracking-wide">
+                    {group.label}
                   </span>
-                </div>
-              </Link>
-            ))}
-          </CollapsibleContent>
-        </Collapsible>
-      ))}
+                </CollapsibleTrigger>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  className="ml-auto text-muted-foreground"
+                  onClick={() => openNewIssue(newIssueDefaults(group.key))}
+                >
+                  <Plus className="h-3 w-3" />
+                </Button>
+              </div>
+            )}
+            <CollapsibleContent>
+              {group.items.map((issue) => (
+                <Link
+                  key={issue.id}
+                  to={`/issues/${issue.identifier ?? issue.id}`}
+                  className="flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit"
+                >
+                  {/* Spacer matching caret width so status icon aligns with group title */}
+                  <div className="w-3.5 shrink-0" />
+                  <div className="shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                    <StatusIcon
+                      status={issue.status}
+                      onChange={(s) => onUpdateIssue(issue.id, { status: s })}
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground font-mono shrink-0">
+                    {issue.identifier ?? issue.id.slice(0, 8)}
+                  </span>
+                  <span className="truncate flex-1 min-w-0">{issue.title}</span>
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+                    {liveIssueIds?.has(issue.id) && (
+                      <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                        </span>
+                        <span className="text-[11px] font-medium text-blue-400 hidden sm:inline">Live</span>
+                      </span>
+                    )}
+                    {issue.assigneeAgentId && (() => {
+                      const name = agentName(issue.assigneeAgentId);
+                      return name
+                        ? <Identity name={name} size="sm" />
+                        : <span className="text-xs text-muted-foreground font-mono">{issue.assigneeAgentId.slice(0, 8)}</span>;
+                    })()}
+                    <span className="text-xs text-muted-foreground hidden sm:inline">
+                      {formatDate(issue.createdAt)}
+                    </span>
+                  </div>
+                </Link>
+              ))}
+            </CollapsibleContent>
+          </Collapsible>
+        ))
+      )}
     </div>
   );
 }
