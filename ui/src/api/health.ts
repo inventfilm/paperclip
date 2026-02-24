@@ -13,7 +13,8 @@ export const healthApi = {
       headers: { Accept: "application/json" },
     });
     if (!res.ok) {
-      throw new Error(`Failed to load health (${res.status})`);
+      const payload = await res.json().catch(() => null) as { error?: string } | null;
+      throw new Error(payload?.error ?? `Failed to load health (${res.status})`);
     }
     return res.json();
   },

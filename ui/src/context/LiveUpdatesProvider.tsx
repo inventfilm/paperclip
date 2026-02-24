@@ -39,18 +39,6 @@ function truncate(text: string, max: number): string {
   return text.slice(0, max - 1) + "\u2026";
 }
 
-function looksLikeUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function titleCase(value: string): string {
-  return value
-    .split(" ")
-    .filter((part) => part.length > 0)
-    .map((part) => part[0]!.toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function resolveActorLabel(
   queryClient: QueryClient,
   companyId: string,
@@ -62,8 +50,7 @@ function resolveActorLabel(
   }
   if (actorType === "system") return "System";
   if (actorType === "user" && actorId) {
-    if (looksLikeUuid(actorId)) return `User ${shortId(actorId)}`;
-    return titleCase(actorId.replace(/[_-]+/g, " "));
+    return "Board";
   }
   return "Someone";
 }

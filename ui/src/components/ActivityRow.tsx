@@ -101,12 +101,13 @@ export function ActivityRow({ event, agentMap, entityNameMap, className }: Activ
     : entityLink(event.entityType, event.entityId, name);
 
   const actor = event.actorType === "agent" ? agentMap.get(event.actorId) : null;
+  const actorName = actor?.name ?? (event.actorType === "system" ? "System" : event.actorType === "user" ? "Board" : event.actorId || "Unknown");
 
   const inner = (
     <div className="flex gap-3">
       <p className="flex-1 min-w-0">
         <Identity
-          name={actor?.name ?? (event.actorType === "system" ? "System" : event.actorId || "You")}
+          name={actorName}
           size="xs"
           className="align-baseline"
         />

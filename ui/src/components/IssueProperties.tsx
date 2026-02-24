@@ -106,35 +106,37 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                 onChange={(e) => setAssigneeSearch(e.target.value)}
                 autoFocus
               />
-              <button
-                className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                  !issue.assigneeAgentId && "bg-accent"
-                )}
-                onClick={() => { onUpdate({ assigneeAgentId: null }); setAssigneeOpen(false); }}
-              >
-                No assignee
-              </button>
-              {(agents ?? [])
-                .filter((a) => a.status !== "terminated")
-                .filter((a) => {
-                  if (!assigneeSearch.trim()) return true;
-                  const q = assigneeSearch.toLowerCase();
-                  return a.name.toLowerCase().includes(q);
-                })
-                .map((a) => (
+              <div className="max-h-48 overflow-y-auto overscroll-contain">
                 <button
-                  key={a.id}
                   className={cn(
                     "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    a.id === issue.assigneeAgentId && "bg-accent"
+                    !issue.assigneeAgentId && "bg-accent"
                   )}
-                  onClick={() => { onUpdate({ assigneeAgentId: a.id }); setAssigneeOpen(false); }}
+                  onClick={() => { onUpdate({ assigneeAgentId: null }); setAssigneeOpen(false); }}
                 >
-                  <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
-                  {a.name}
+                  No assignee
                 </button>
-              ))}
+                {(agents ?? [])
+                  .filter((a) => a.status !== "terminated")
+                  .filter((a) => {
+                    if (!assigneeSearch.trim()) return true;
+                    const q = assigneeSearch.toLowerCase();
+                    return a.name.toLowerCase().includes(q);
+                  })
+                  .map((a) => (
+                  <button
+                    key={a.id}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      a.id === issue.assigneeAgentId && "bg-accent"
+                    )}
+                    onClick={() => { onUpdate({ assigneeAgentId: a.id }); setAssigneeOpen(false); }}
+                  >
+                    <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
+                    {a.name}
+                  </button>
+                ))}
+              </div>
             </PopoverContent>
           </Popover>
           {issue.assigneeAgentId && (
@@ -176,37 +178,39 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                 onChange={(e) => setProjectSearch(e.target.value)}
                 autoFocus
               />
-              <button
-                className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
-                  !issue.projectId && "bg-accent"
-                )}
-                onClick={() => { onUpdate({ projectId: null }); setProjectOpen(false); }}
-              >
-                No project
-              </button>
-              {(projects ?? [])
-                .filter((p) => {
-                  if (!projectSearch.trim()) return true;
-                  const q = projectSearch.toLowerCase();
-                  return p.name.toLowerCase().includes(q);
-                })
-                .map((p) => (
+              <div className="max-h-48 overflow-y-auto overscroll-contain">
                 <button
-                  key={p.id}
                   className={cn(
                     "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
-                    p.id === issue.projectId && "bg-accent"
+                    !issue.projectId && "bg-accent"
                   )}
-                  onClick={() => { onUpdate({ projectId: p.id }); setProjectOpen(false); }}
+                  onClick={() => { onUpdate({ projectId: null }); setProjectOpen(false); }}
                 >
-                  <span
-                    className="shrink-0 h-3 w-3 rounded-sm"
-                    style={{ backgroundColor: p.color ?? "#6366f1" }}
-                  />
-                  {p.name}
+                  No project
                 </button>
-              ))}
+                {(projects ?? [])
+                  .filter((p) => {
+                    if (!projectSearch.trim()) return true;
+                    const q = projectSearch.toLowerCase();
+                    return p.name.toLowerCase().includes(q);
+                  })
+                  .map((p) => (
+                  <button
+                    key={p.id}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
+                      p.id === issue.projectId && "bg-accent"
+                    )}
+                    onClick={() => { onUpdate({ projectId: p.id }); setProjectOpen(false); }}
+                  >
+                    <span
+                      className="shrink-0 h-3 w-3 rounded-sm"
+                      style={{ backgroundColor: p.color ?? "#6366f1" }}
+                    />
+                    {p.name}
+                  </button>
+                ))}
+              </div>
             </PopoverContent>
           </Popover>
           {issue.projectId && (

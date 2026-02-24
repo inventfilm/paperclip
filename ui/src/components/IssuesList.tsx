@@ -214,7 +214,7 @@ export function IssuesList({
           <span className="hidden sm:inline">New Issue</span>
         </Button>
 
-        <div className="flex items-center gap-0.5 sm:gap-1">
+        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {/* Filter */}
           <Popover>
             <PopoverTrigger asChild>

@@ -110,7 +110,8 @@ function ActorIdentity({ evt, agentMap }: { evt: ActivityEvent; agentMap: Map<st
     return <Identity name={agent?.name ?? id.slice(0, 8)} size="sm" />;
   }
   if (evt.actorType === "system") return <Identity name="System" size="sm" />;
-  return <Identity name={id || "You"} size="sm" />;
+  if (evt.actorType === "user") return <Identity name="Board" size="sm" />;
+  return <Identity name={id || "Unknown"} size="sm" />;
 }
 
 export function IssueDetail() {
