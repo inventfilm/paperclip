@@ -4,6 +4,7 @@ import { onboard } from "./commands/onboard.js";
 import { doctor } from "./commands/doctor.js";
 import { envCommand } from "./commands/env.js";
 import { configure } from "./commands/configure.js";
+import { addAllowedHostname } from "./commands/allowed-hostname.js";
 import { heartbeatRun } from "./commands/heartbeat-run.js";
 import { runCommand } from "./commands/run.js";
 import { bootstrapCeoInvite } from "./commands/auth-bootstrap-ceo.js";
@@ -51,6 +52,13 @@ program
   .option("-c, --config <path>", "Path to config file")
   .option("-s, --section <section>", "Section to configure (llm, database, logging, server, storage, secrets)")
   .action(configure);
+
+program
+  .command("allowed-hostname")
+  .description("Allow a hostname for authenticated/private mode access")
+  .argument("<host>", "Hostname to allow (for example dotta-macbook-pro)")
+  .option("-c, --config <path>", "Path to config file")
+  .action(addAllowedHostname);
 
 program
   .command("run")

@@ -163,6 +163,7 @@ export async function onboard(opts: { config?: string }): Promise<void> {
       llm ? `LLM: ${llm.provider}` : "LLM: not configured",
       `Logging: ${logging.mode} → ${logging.logDir}`,
       `Server: ${server.deploymentMode}/${server.exposure} @ ${server.host}:${server.port}`,
+      `Allowed hosts: ${server.allowedHostnames.length > 0 ? server.allowedHostnames.join(", ") : "(loopback only)"}`,
       `Auth URL mode: ${auth.baseUrlMode}${auth.publicBaseUrl ? ` (${auth.publicBaseUrl})` : ""}`,
       `Storage: ${storage.provider}`,
       `Secrets: ${secrets.provider} (strict mode ${secrets.strictMode ? "on" : "off"})`,

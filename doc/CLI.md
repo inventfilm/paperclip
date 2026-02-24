@@ -2,7 +2,7 @@
 
 Paperclip CLI now supports both:
 
-- instance setup/diagnostics (`onboard`, `doctor`, `configure`, `env`)
+- instance setup/diagnostics (`onboard`, `doctor`, `configure`, `env`, `allowed-hostname`)
 - control-plane client operations (issues, approvals, agents, activity, dashboard)
 
 ## Base Usage
@@ -36,6 +36,12 @@ Current CLI behavior:
 - `paperclip run` and `paperclip doctor` do not yet expose a direct `--mode` flag
 
 Target behavior (planned) is documented in `doc/DEPLOYMENT-MODES.md` section 5.
+
+Allow an authenticated/private hostname (for example custom Tailscale DNS):
+
+```sh
+pnpm paperclip allowed-hostname dotta-macbook-pro
+```
 
 All client commands support:
 

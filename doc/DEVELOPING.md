@@ -37,6 +37,12 @@ pnpm dev --tailscale-auth
 
 This runs dev as `authenticated/private` and binds the server to `0.0.0.0` for private-network access.
 
+Allow additional private hostnames (for example custom Tailscale hostnames):
+
+```sh
+pnpm paperclip allowed-hostname dotta-macbook-pro
+```
+
 ## One-Command Local Run
 
 For a first-time local install, you can bootstrap and run in one command:

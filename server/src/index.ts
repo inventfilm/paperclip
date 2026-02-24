@@ -349,6 +349,8 @@ const app = await createApp(db as any, {
   storageService,
   deploymentMode: config.deploymentMode,
   deploymentExposure: config.deploymentExposure,
+  allowedHostnames: config.allowedHostnames,
+  bindHost: config.host,
   authReady,
   betterAuthHandler,
   resolveSession,

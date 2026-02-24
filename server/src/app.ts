@@ -8,6 +8,7 @@ import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
+import { privateHostnameGuard, resolvePrivateHostnameAllowSet } from "./middleware/private-hostname-guard.js";
 import { healthRoutes } from "./routes/health.js";
 import { companyRoutes } from "./routes/companies.js";
 import { agentRoutes } from "./routes/agents.js";
@@ -34,6 +35,8 @@ export async function createApp(
     storageService: StorageService;
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
+    allowedHostnames: string[];
+    bindHost: string;
     authReady: boolean;
     betterAuthHandler?: express.RequestHandler;
     resolveSession?: (req: ExpressRequest) => Promise<BetterAuthSessionResult | null>;
@@ -43,6 +46,19 @@ export async function createApp(
 
   app.use(express.json());
   app.use(httpLogger);
+  const privateHostnameGateEnabled =
+    opts.deploymentMode === "authenticated" && opts.deploymentExposure === "private";
+  const privateHostnameAllowSet = resolvePrivateHostnameAllowSet({
+    allowedHostnames: opts.allowedHostnames,
+    bindHost: opts.bindHost,
+  });
+  app.use(
+    privateHostnameGuard({
+      enabled: privateHostnameGateEnabled,
+      allowedHostnames: opts.allowedHostnames,
+      bindHost: opts.bindHost,
+    }),
+  );
   app.use(
     actorMiddleware(db, {
       deploymentMode: opts.deploymentMode,
@@ -98,6 +114,7 @@ export async function createApp(
       appType: "spa",
       server: {
         middlewareMode: true,
+        allowedHosts: privateHostnameGateEnabled ? Array.from(privateHostnameAllowSet) : undefined,
       },
     });
 

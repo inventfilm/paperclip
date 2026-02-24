@@ -33,6 +33,7 @@ export interface Config {
   deploymentExposure: DeploymentExposure;
   host: string;
   port: number;
+  allowedHostnames: string[];
   authBaseUrlMode: AuthBaseUrlMode;
   authPublicBaseUrl: string | undefined;
   databaseMode: DatabaseMode;
@@ -131,12 +132,23 @@ export function loadConfig(): Config {
     authBaseUrlModeFromEnv ??
     fileConfig?.auth?.baseUrlMode ??
     (authPublicBaseUrl ? "explicit" : "auto");
+  const allowedHostnamesFromEnvRaw = process.env.PAPERCLIP_ALLOWED_HOSTNAMES;
+  const allowedHostnamesFromEnv = allowedHostnamesFromEnvRaw
+    ? allowedHostnamesFromEnvRaw
+      .split(",")
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0)
+    : null;
+  const allowedHostnames = Array.from(
+    new Set((allowedHostnamesFromEnv ?? fileConfig?.server.allowedHostnames ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean)),
+  );
 
   return {
     deploymentMode,
     deploymentExposure,
     host: process.env.HOST ?? fileConfig?.server.host ?? "127.0.0.1",
     port: Number(process.env.PORT) || fileConfig?.server.port || 3100,
+    allowedHostnames,
     authBaseUrlMode,
     authPublicBaseUrl,
     databaseMode: fileDatabaseMode,

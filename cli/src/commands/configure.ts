@@ -48,6 +48,7 @@ function defaultConfig(): PaperclipConfig {
       exposure: "private",
       host: "127.0.0.1",
       port: 3100,
+      allowedHostnames: [],
       serveUi: true,
     },
     auth: {
@@ -131,7 +132,10 @@ export async function configure(opts: {
         break;
       case "server":
         {
-          const { server, auth } = await promptServer();
+          const { server, auth } = await promptServer({
+            currentServer: config.server,
+            currentAuth: config.auth,
+          });
           config.server = server;
           config.auth = auth;
         }

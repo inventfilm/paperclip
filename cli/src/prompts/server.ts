@@ -1,7 +1,14 @@
 import * as p from "@clack/prompts";
 import type { AuthConfig, ServerConfig } from "../config/schema.js";
+import { parseHostnameCsv } from "../config/hostnames.js";
 
-export async function promptServer(): Promise<{ server: ServerConfig; auth: AuthConfig }> {
+export async function promptServer(opts?: {
+  currentServer?: Partial<ServerConfig>;
+  currentAuth?: Partial<AuthConfig>;
+}): Promise<{ server: ServerConfig; auth: AuthConfig }> {
+  const currentServer = opts?.currentServer;
+  const currentAuth = opts?.currentAuth;
+
   const deploymentModeSelection = await p.select({
     message: "Deployment mode",
     options: [
@@ -16,7 +23,7 @@ export async function promptServer(): Promise<{ server: ServerConfig; auth: Auth
         hint: "Login required; use for private network or public hosting",
       },
     ],
-    initialValue: "local_trusted",
+    initialValue: currentServer?.deploymentMode ?? "local_trusted",
   });
 
   if (p.isCancel(deploymentModeSelection)) {
@@ -24,6 +31,7 @@ export async function promptServer(): Promise<{ server: ServerConfig; auth: Auth
     process.exit(0);
   }
   const deploymentMode = deploymentModeSelection as ServerConfig["deploymentMode"];
+
   let exposure: ServerConfig["exposure"] = "private";
   if (deploymentMode === "authenticated") {
     const exposureSelection = await p.select({
@@ -40,7 +48,7 @@ export async function promptServer(): Promise<{ server: ServerConfig; auth: Auth
           hint: "Internet-facing deployment with stricter requirements",
         },
       ],
-      initialValue: "private",
+      initialValue: currentServer?.exposure ?? "private",
     });
     if (p.isCancel(exposureSelection)) {
       p.cancel("Setup cancelled.");
@@ -52,7 +60,7 @@ export async function promptServer(): Promise<{ server: ServerConfig; auth: Auth
   const hostDefault = deploymentMode === "local_trusted" ? "127.0.0.1" : "0.0.0.0";
   const hostStr = await p.text({
     message: "Bind host",
-    defaultValue: hostDefault,
+    defaultValue: currentServer?.host ?? hostDefault,
     placeholder: hostDefault,
     validate: (val) => {
       if (!val.trim()) return "Host is required";
@@ -66,7 +74,7 @@ export async function promptServer(): Promise<{ server: ServerConfig; auth: Auth
 
   const portStr = await p.text({
     message: "Server port",
-    defaultValue: "3100",
+    defaultValue: String(currentServer?.port ?? 3100),
     placeholder: "3100",
     validate: (val) => {
       const n = Number(val);
@@ -81,11 +89,35 @@ export async function promptServer(): Promise<{ server: ServerConfig; auth: Auth
     process.exit(0);
   }
 
+  let allowedHostnames: string[] = [];
+  if (deploymentMode === "authenticated" && exposure === "private") {
+    const allowedHostnamesInput = await p.text({
+      message: "Allowed hostnames (comma-separated, optional)",
+      defaultValue: (currentServer?.allowedHostnames ?? []).join(", "),
+      placeholder: "dotta-macbook-pro, your-host.tailnet.ts.net",
+      validate: (val) => {
+        try {
+          parseHostnameCsv(val);
+          return;
+        } catch (err) {
+          return err instanceof Error ? err.message : "Invalid hostname list";
+        }
+      },
+    });
+
+    if (p.isCancel(allowedHostnamesInput)) {
+      p.cancel("Setup cancelled.");
+      process.exit(0);
+    }
+    allowedHostnames = parseHostnameCsv(allowedHostnamesInput);
+  }
+
   const port = Number(portStr) || 3100;
   let auth: AuthConfig = { baseUrlMode: "auto" };
   if (deploymentMode === "authenticated" && exposure === "public") {
     const urlInput = await p.text({
       message: "Public base URL",
+      defaultValue: currentAuth?.publicBaseUrl ?? "",
       placeholder: "https://paperclip.example.com",
       validate: (val) => {
         const candidate = val.trim();
@@ -109,10 +141,16 @@ export async function promptServer(): Promise<{ server: ServerConfig; auth: Auth
       baseUrlMode: "explicit",
       publicBaseUrl: urlInput.trim().replace(/\/+$/, ""),
     };
+  } else if (currentAuth?.baseUrlMode === "explicit" && currentAuth.publicBaseUrl) {
+    auth = {
+      baseUrlMode: "explicit",
+      publicBaseUrl: currentAuth.publicBaseUrl,
+    };
   }
 
   return {
-    server: { deploymentMode, exposure, host: hostStr.trim(), port, serveUi: true },
+    server: { deploymentMode, exposure, host: hostStr.trim(), port, allowedHostnames, serveUi: true },
     auth,
   };
 }
+
