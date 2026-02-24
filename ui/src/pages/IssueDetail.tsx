@@ -22,7 +22,9 @@ import { Identity } from "../components/Identity";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { ChevronRight, MoreHorizontal, EyeOff, Hexagon, Paperclip, Trash2 } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { ChevronRight, MoreHorizontal, EyeOff, Hexagon, Paperclip, Trash2, SlidersHorizontal } from "lucide-react";
 import type { ActivityEvent } from "@paperclip/shared";
 import type { Agent, IssueAttachment } from "@paperclip/shared";
 
@@ -123,6 +125,7 @@ export function IssueDetail() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -426,9 +429,40 @@ export function IssueDetail() {
             </span>
           )}
 
+          {(issue.labels ?? []).length > 0 && (
+            <div className="hidden sm:flex items-center gap-1">
+              {(issue.labels ?? []).slice(0, 4).map((label) => (
+                <span
+                  key={label.id}
+                  className="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium"
+                  style={{
+                    borderColor: label.color,
+                    color: label.color,
+                    backgroundColor: `${label.color}1f`,
+                  }}
+                >
+                  {label.name}
+                </span>
+              ))}
+              {(issue.labels ?? []).length > 4 && (
+                <span className="text-[10px] text-muted-foreground">+{(issue.labels ?? []).length - 4}</span>
+              )}
+            </div>
+          )}
+
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="ml-auto md:hidden"
+            onClick={() => setMobilePropsOpen(true)}
+            title="Properties"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </Button>
+
           <Popover open={moreOpen} onOpenChange={setMoreOpen}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon-xs" className="ml-auto">
+              <Button variant="ghost" size="icon-xs" className="md:ml-auto">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
@@ -694,6 +728,20 @@ export function IssueDetail() {
           </div>
         </>
       )}
+
+      {/* Mobile properties drawer */}
+      <Sheet open={mobilePropsOpen} onOpenChange={setMobilePropsOpen}>
+        <SheetContent side="bottom" className="max-h-[85vh]">
+          <SheetHeader>
+            <SheetTitle className="text-sm">Properties</SheetTitle>
+          </SheetHeader>
+          <ScrollArea className="flex-1 overflow-y-auto">
+            <div className="px-4 pb-4">
+              <IssueProperties issue={issue} onUpdate={(data) => updateIssue.mutate(data)} />
+            </div>
+          </ScrollArea>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
