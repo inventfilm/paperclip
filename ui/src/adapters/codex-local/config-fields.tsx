@@ -12,6 +12,9 @@ export function CodexLocalConfigFields({
   eff,
   mark,
 }: AdapterConfigFieldsProps) {
+  const bypassEnabled =
+    config.dangerouslyBypassApprovalsAndSandbox === true || config.dangerouslyBypassSandbox === true;
+
   return (
     <>
       <ToggleField
@@ -23,7 +26,7 @@ export function CodexLocalConfigFields({
             : eff(
                 "adapterConfig",
                 "dangerouslyBypassApprovalsAndSandbox",
-                config.dangerouslyBypassApprovalsAndSandbox !== false,
+                bypassEnabled,
               )
         }
         onChange={(v) =>

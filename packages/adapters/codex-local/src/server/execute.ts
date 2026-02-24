@@ -103,7 +103,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     asString(config.reasoningEffort, ""),
   );
   const search = asBoolean(config.search, false);
-  const bypass = asBoolean(config.dangerouslyBypassApprovalsAndSandbox, false);
+  const bypass = asBoolean(
+    config.dangerouslyBypassApprovalsAndSandbox,
+    asBoolean(config.dangerouslyBypassSandbox, false),
+  );
 
   const cwd = asString(config.cwd, process.cwd());
   await ensureAbsoluteDirectory(cwd);
