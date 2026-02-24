@@ -16,6 +16,7 @@ import { adapterLabels, roleLabels } from "../components/agent-config-primitives
 import { getUIAdapter, buildTranscript } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
+import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
 import { EntityRow } from "../components/EntityRow";
@@ -1103,15 +1104,7 @@ function ConfigSummary({
                     className="flex items-center gap-2 text-sm text-blue-400 hover:underline"
                   >
                     <span className="relative flex h-2 w-2">
-                      <span className={`absolute inline-flex h-full w-full rounded-full ${
-                        r.status === "active"
-                          ? "bg-green-400"
-                          : r.status === "pending_approval"
-                            ? "bg-amber-400"
-                            : r.status === "error"
-                              ? "bg-red-400"
-                              : "bg-neutral-400"
-                      }`} />
+                      <span className={`absolute inline-flex h-full w-full rounded-full ${agentStatusDot[r.status] ?? agentStatusDotDefault}`} />
                     </span>
                     {r.name}
                     <span className="text-muted-foreground text-xs">({roleLabels[r.role] ?? r.role})</span>

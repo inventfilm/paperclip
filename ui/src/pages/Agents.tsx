@@ -9,6 +9,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
 import { queryKeys } from "../lib/queryKeys";
 import { StatusBadge } from "../components/StatusBadge";
+import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
 import { relativeTime, cn } from "../lib/utils";
@@ -227,19 +228,7 @@ export function Agents() {
                 leading={
                   <span className="relative flex h-2.5 w-2.5">
                     <span
-                      className={`absolute inline-flex h-full w-full rounded-full ${
-                        agent.status === "running"
-                          ? "bg-cyan-400 animate-pulse"
-                          : agent.status === "active"
-                            ? "bg-green-400"
-                        : agent.status === "paused"
-                              ? "bg-yellow-400"
-                              : agent.status === "pending_approval"
-                                ? "bg-amber-400"
-                              : agent.status === "error"
-                                ? "bg-red-400"
-                                : "bg-neutral-400"
-                      }`}
+                      className={`absolute inline-flex h-full w-full rounded-full ${agentStatusDot[agent.status] ?? agentStatusDotDefault}`}
                     />
                   </span>
                 }
@@ -325,18 +314,7 @@ function OrgTreeNode({
 }) {
   const agent = agentMap.get(node.id);
 
-  const statusColor =
-    node.status === "running"
-      ? "bg-cyan-400 animate-pulse"
-      : node.status === "active"
-        ? "bg-green-400"
-        : node.status === "paused"
-          ? "bg-yellow-400"
-          : node.status === "pending_approval"
-            ? "bg-amber-400"
-          : node.status === "error"
-            ? "bg-red-400"
-            : "bg-neutral-400";
+  const statusColor = agentStatusDot[node.status] ?? agentStatusDotDefault;
 
   return (
     <div style={{ paddingLeft: depth * 24 }}>

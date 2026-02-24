@@ -34,6 +34,7 @@ export type IssueViewState = {
   statuses: string[];
   priorities: string[];
   assignees: string[];
+  labels: string[];
   sortField: "status" | "priority" | "title" | "created" | "updated";
   sortDir: "asc" | "desc";
   groupBy: "status" | "priority" | "assignee" | "none";
@@ -44,6 +45,7 @@ const defaultViewState: IssueViewState = {
   statuses: ["todo", "in_progress", "in_review", "blocked"],
   priorities: [],
   assignees: [],
+  labels: [],
   sortField: "status",
   sortDir: "asc",
   groupBy: "status",
@@ -85,6 +87,7 @@ function applyFilters(issues: Issue[], state: IssueViewState): Issue[] {
   if (state.statuses.length > 0) result = result.filter((i) => state.statuses.includes(i.status));
   if (state.priorities.length > 0) result = result.filter((i) => state.priorities.includes(i.priority));
   if (state.assignees.length > 0) result = result.filter((i) => i.assigneeAgentId != null && state.assignees.includes(i.assigneeAgentId));
+  if (state.labels.length > 0) result = result.filter((i) => (i.labelIds ?? []).some((id) => state.labels.includes(id)));
   return result;
 }
 
@@ -115,6 +118,7 @@ function countActiveFilters(state: IssueViewState): number {
   if (state.statuses.length > 0) count++;
   if (state.priorities.length > 0) count++;
   if (state.assignees.length > 0) count++;
+  if (state.labels.length > 0) count++;
   return count;
 }
 
@@ -148,6 +152,7 @@ export function IssuesList({
   initialAssignees,
   onUpdateIssue,
 }: IssuesListProps) {
+  const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialog();
 
   const [viewState, setViewState] = useState<IssueViewState>(() => {
@@ -173,6 +178,12 @@ export function IssuesList({
   const filtered = useMemo(() => {
     return sortIssues(applyFilters(issues, viewState), viewState);
   }, [issues, viewState]);
+
+  const { data: labels } = useQuery({
+    queryKey: queryKeys.issues.labels(selectedCompanyId!),
+    queryFn: () => issuesApi.listLabels(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
 
   const activeFilterCount = countActiveFilters(viewState);
 
@@ -254,7 +265,7 @@ export function IssuesList({
                     className="h-3 w-3 ml-1 hidden sm:block"
                     onClick={(e) => {
                       e.stopPropagation();
-                      updateView({ statuses: [], priorities: [], assignees: [] });
+                      updateView({ statuses: [], priorities: [], assignees: [], labels: [] });
                     }}
                   />
                 )}
@@ -267,7 +278,7 @@ export function IssuesList({
                   {activeFilterCount > 0 && (
                     <button
                       className="text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => updateView({ statuses: [], priorities: [], assignees: [] })}
+                      onClick={() => updateView({ statuses: [], priorities: [], assignees: [], labels: [] })}
                     >
                       Clear
                     </button>
@@ -349,6 +360,24 @@ export function IssuesList({
                                 onCheckedChange={() => updateView({ assignees: toggleInArray(viewState.assignees, agent.id) })}
                               />
                               <span className="text-sm">{agent.name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {labels && labels.length > 0 && (
+                      <div className="space-y-1">
+                        <span className="text-xs text-muted-foreground">Labels</span>
+                        <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                          {labels.map((label) => (
+                            <label key={label.id} className="flex items-center gap-2 px-2 py-1 rounded-sm hover:bg-accent/50 cursor-pointer">
+                              <Checkbox
+                                checked={viewState.labels.includes(label.id)}
+                                onCheckedChange={() => updateView({ labels: toggleInArray(viewState.labels, label.id) })}
+                              />
+                              <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: label.color }} />
+                              <span className="text-sm">{label.name}</span>
                             </label>
                           ))}
                         </div>
@@ -494,10 +523,30 @@ export function IssuesList({
                       onChange={(s) => onUpdateIssue(issue.id, { status: s })}
                     />
                   </div>
-                  <span className="text-xs text-muted-foreground font-mono shrink-0">
+                  <span className="text-sm text-muted-foreground font-mono shrink-0">
                     {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="truncate flex-1 min-w-0">{issue.title}</span>
+                  {(issue.labels ?? []).length > 0 && (
+                    <div className="hidden md:flex items-center gap-1 max-w-[240px] overflow-hidden">
+                      {(issue.labels ?? []).slice(0, 3).map((label) => (
+                        <span
+                          key={label.id}
+                          className="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{
+                            borderColor: label.color,
+                            color: label.color,
+                            backgroundColor: `${label.color}1f`,
+                          }}
+                        >
+                          {label.name}
+                        </span>
+                      ))}
+                      {(issue.labels ?? []).length > 3 && (
+                        <span className="text-[10px] text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
+                      )}
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
                     {liveIssueIds?.has(issue.id) && (
                       <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">

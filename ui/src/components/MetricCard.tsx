@@ -23,11 +23,11 @@ export function MetricCard({ icon: Icon, value, label, description, to, onClick 
             <p className={`text-lg sm:text-2xl font-bold${isClickable ? " cursor-pointer" : ""}`}>
               {value}
             </p>
-            <p className={`text-xs sm:text-sm text-muted-foreground${isClickable ? " cursor-pointer" : ""}`}>
+            <p className={`text-sm text-muted-foreground${isClickable ? " cursor-pointer" : ""}`}>
               {label}
             </p>
             {description && (
-              <div className="text-[11px] sm:text-xs text-muted-foreground mt-1 hidden sm:block">{description}</div>
+              <div className="text-xs sm:text-sm text-muted-foreground mt-1 hidden sm:block">{description}</div>
             )}
           </div>
           <div className="bg-muted p-1.5 sm:p-2 rounded-md h-fit shrink-0">

@@ -70,6 +70,11 @@ import {
   DropdownMenuShortcut,
 } from "@/components/ui/dropdown-menu";
 import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from "@/components/ui/popover";
+import {
   Sheet,
   SheetTrigger,
   SheetContent,
@@ -110,6 +115,7 @@ import {
 import { StatusBadge } from "@/components/StatusBadge";
 import { StatusIcon } from "@/components/StatusIcon";
 import { PriorityIcon } from "@/components/PriorityIcon";
+import { agentStatusDot, agentStatusDotDefault } from "@/lib/status-colors";
 import { EntityRow } from "@/components/EntityRow";
 import { EmptyState } from "@/components/EmptyState";
 import { MetricCard } from "@/components/MetricCard";
@@ -287,8 +293,8 @@ export function DesignGuide() {
           <p className="text-xs text-muted-foreground">
             Tiny label — text-xs text-muted-foreground
           </p>
-          <p className="text-xs font-mono text-muted-foreground">
-            Mono identifier — text-xs font-mono text-muted-foreground
+          <p className="text-sm font-mono text-muted-foreground">
+            Mono identifier — text-sm font-mono text-muted-foreground
           </p>
           <p className="text-2xl font-bold">Large stat — text-2xl font-bold</p>
           <p className="font-mono text-xs">Log/code text — font-mono text-xs</p>
@@ -435,16 +441,10 @@ export function DesignGuide() {
 
         <SubSection title="Agent status dots">
           <div className="flex items-center gap-4 flex-wrap">
-            {[
-              ["running", "bg-cyan-400 animate-pulse"],
-              ["active", "bg-green-400"],
-              ["paused", "bg-yellow-400"],
-              ["error", "bg-red-400"],
-              ["offline", "bg-neutral-400"],
-            ].map(([label, color]) => (
+            {(["running", "active", "paused", "error", "archived"] as const).map((label) => (
               <div key={label} className="flex items-center gap-2">
                 <span className="relative flex h-2.5 w-2.5">
-                  <span className={`inline-flex h-full w-full rounded-full ${color}`} />
+                  <span className={`inline-flex h-full w-full rounded-full ${agentStatusDot[label] ?? agentStatusDotDefault}`} />
                 </span>
                 <span className="text-xs text-muted-foreground">{label}</span>
               </div>

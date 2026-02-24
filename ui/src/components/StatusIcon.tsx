@@ -1,17 +1,8 @@
 import { useState } from "react";
 import { cn } from "../lib/utils";
+import { issueStatusIcon, issueStatusIconDefault } from "../lib/status-colors";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-
-const statusColors: Record<string, string> = {
-  backlog: "text-muted-foreground border-muted-foreground",
-  todo: "text-blue-400 border-blue-400",
-  in_progress: "text-yellow-400 border-yellow-400",
-  in_review: "text-violet-400 border-violet-400",
-  done: "text-green-400 border-green-400",
-  cancelled: "text-neutral-500 border-neutral-500",
-  blocked: "text-red-400 border-red-400",
-};
 
 const allStatuses = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled", "blocked"];
 
@@ -28,7 +19,7 @@ interface StatusIconProps {
 
 export function StatusIcon({ status, onChange, className, showLabel }: StatusIconProps) {
   const [open, setOpen] = useState(false);
-  const colorClass = statusColors[status] ?? "text-muted-foreground border-muted-foreground";
+  const colorClass = issueStatusIcon[status] ?? issueStatusIconDefault;
   const isDone = status === "done";
 
   const circle = (

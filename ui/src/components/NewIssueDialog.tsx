@@ -33,6 +33,7 @@ import {
   Calendar,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { AgentIcon } from "./AgentIconPicker";
 import type { Project, Agent } from "@paperclip/shared";
@@ -68,18 +69,18 @@ function clearDraft() {
 }
 
 const statuses = [
-  { value: "backlog", label: "Backlog", color: "text-muted-foreground" },
-  { value: "todo", label: "Todo", color: "text-blue-400" },
-  { value: "in_progress", label: "In Progress", color: "text-yellow-400" },
-  { value: "in_review", label: "In Review", color: "text-violet-400" },
-  { value: "done", label: "Done", color: "text-green-400" },
+  { value: "backlog", label: "Backlog", color: issueStatusText.backlog ?? issueStatusTextDefault },
+  { value: "todo", label: "Todo", color: issueStatusText.todo ?? issueStatusTextDefault },
+  { value: "in_progress", label: "In Progress", color: issueStatusText.in_progress ?? issueStatusTextDefault },
+  { value: "in_review", label: "In Review", color: issueStatusText.in_review ?? issueStatusTextDefault },
+  { value: "done", label: "Done", color: issueStatusText.done ?? issueStatusTextDefault },
 ];
 
 const priorities = [
-  { value: "critical", label: "Critical", icon: AlertTriangle, color: "text-red-400" },
-  { value: "high", label: "High", icon: ArrowUp, color: "text-orange-400" },
-  { value: "medium", label: "Medium", icon: Minus, color: "text-yellow-400" },
-  { value: "low", label: "Low", icon: ArrowDown, color: "text-blue-400" },
+  { value: "critical", label: "Critical", icon: AlertTriangle, color: priorityColor.critical ?? priorityColorDefault },
+  { value: "high", label: "High", icon: ArrowUp, color: priorityColor.high ?? priorityColorDefault },
+  { value: "medium", label: "Medium", icon: Minus, color: priorityColor.medium ?? priorityColorDefault },
+  { value: "low", label: "Low", icon: ArrowDown, color: priorityColor.low ?? priorityColorDefault },
 ];
 
 export function NewIssueDialog() {

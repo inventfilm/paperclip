@@ -412,7 +412,7 @@ export function IssueDetail() {
             priority={issue.priority}
             onChange={(priority) => updateIssue.mutate({ priority })}
           />
-          <span className="text-xs font-mono text-muted-foreground">{issue.identifier ?? issue.id.slice(0, 8)}</span>
+          <span className="text-sm font-mono text-muted-foreground">{issue.identifier ?? issue.id.slice(0, 8)}</span>
 
           {issue.projectId ? (
             <Link
@@ -606,7 +606,7 @@ export function IssueDetail() {
                 <Link
                   key={child.id}
                   to={`/issues/${child.identifier ?? child.id}`}
-                  className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors"
+                  className="flex items-center justify-between px-3 py-2 text-sm hover:bg-accent/20 transition-colors"
                 >
                   <div className="flex items-center gap-2 min-w-0">
                     <StatusIcon status={child.status} />
