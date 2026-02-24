@@ -1553,12 +1553,29 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     },
   });
 
+  const isRunning = run.status === "running" && !!run.startedAt && !run.finishedAt;
+  const [elapsedSec, setElapsedSec] = useState<number>(() => {
+    if (!run.startedAt) return 0;
+    return Math.max(0, Math.round((Date.now() - new Date(run.startedAt).getTime()) / 1000));
+  });
+
+  useEffect(() => {
+    if (!isRunning || !run.startedAt) return;
+    const startMs = new Date(run.startedAt).getTime();
+    setElapsedSec(Math.max(0, Math.round((Date.now() - startMs) / 1000)));
+    const id = setInterval(() => {
+      setElapsedSec(Math.max(0, Math.round((Date.now() - startMs) / 1000)));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isRunning, run.startedAt]);
+
   const timeFormat: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
   const startTime = run.startedAt ? new Date(run.startedAt).toLocaleTimeString("en-US", timeFormat) : null;
   const endTime = run.finishedAt ? new Date(run.finishedAt).toLocaleTimeString("en-US", timeFormat) : null;
   const durationSec = run.startedAt && run.finishedAt
     ? Math.round((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
     : null;
+  const displayDurationSec = durationSec ?? (isRunning ? elapsedSec : null);
   const hasMetrics = metrics.input > 0 || metrics.output > 0 || metrics.cached > 0 || metrics.cost > 0;
   const hasSession = !!(run.sessionIdBefore || run.sessionIdAfter);
   const sessionChanged = run.sessionIdBefore && run.sessionIdAfter && run.sessionIdBefore !== run.sessionIdAfter;
@@ -1597,9 +1614,9 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                   {relativeTime(run.startedAt!)}
                   {run.finishedAt && <> &rarr; {relativeTime(run.finishedAt)}</>}
                 </div>
-                {durationSec !== null && (
+                {displayDurationSec !== null && (
                   <div className="text-xs text-muted-foreground">
-                    Duration: {durationSec >= 60 ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : `${durationSec}s`}
+                    Duration: {displayDurationSec >= 60 ? `${Math.floor(displayDurationSec / 60)}m ${displayDurationSec % 60}s` : `${displayDurationSec}s`}
                   </div>
                 )}
               </div>
