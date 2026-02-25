@@ -1,6 +1,11 @@
 import { Router } from "express";
 import type { Db } from "@paperclip/db";
-import { createProjectSchema, updateProjectSchema } from "@paperclip/shared";
+import {
+  createProjectSchema,
+  createProjectWorkspaceSchema,
+  updateProjectSchema,
+  updateProjectWorkspaceSchema,
+} from "@paperclip/shared";
 import { validate } from "../middleware/validate.js";
 import { projectService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -72,6 +77,122 @@ export function projectRoutes(db: Db) {
     });
 
     res.json(project);
+  });
+
+  router.get("/projects/:id/workspaces", async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const workspaces = await svc.listWorkspaces(id);
+    res.json(workspaces);
+  });
+
+  router.post("/projects/:id/workspaces", validate(createProjectWorkspaceSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const workspace = await svc.createWorkspace(id, req.body);
+    if (!workspace) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: existing.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "project.workspace_created",
+      entityType: "project",
+      entityId: id,
+      details: {
+        workspaceId: workspace.id,
+        name: workspace.name,
+        cwd: workspace.cwd,
+        isPrimary: workspace.isPrimary,
+      },
+    });
+
+    res.status(201).json(workspace);
+  });
+
+  router.patch(
+    "/projects/:id/workspaces/:workspaceId",
+    validate(updateProjectWorkspaceSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const workspaceId = req.params.workspaceId as string;
+      const existing = await svc.getById(id);
+      if (!existing) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      assertCompanyAccess(req, existing.companyId);
+      const workspace = await svc.updateWorkspace(id, workspaceId, req.body);
+      if (!workspace) {
+        res.status(404).json({ error: "Project workspace not found" });
+        return;
+      }
+
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId: existing.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.workspace_updated",
+        entityType: "project",
+        entityId: id,
+        details: {
+          workspaceId: workspace.id,
+          changedKeys: Object.keys(req.body).sort(),
+        },
+      });
+
+      res.json(workspace);
+    },
+  );
+
+  router.delete("/projects/:id/workspaces/:workspaceId", async (req, res) => {
+    const id = req.params.id as string;
+    const workspaceId = req.params.workspaceId as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const workspace = await svc.removeWorkspace(id, workspaceId);
+    if (!workspace) {
+      res.status(404).json({ error: "Project workspace not found" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: existing.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "project.workspace_deleted",
+      entityType: "project",
+      entityId: id,
+      details: {
+        workspaceId: workspace.id,
+        name: workspace.name,
+      },
+    });
+
+    res.json(workspace);
   });
 
   router.delete("/projects/:id", async (req, res) => {

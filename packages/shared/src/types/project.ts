@@ -5,6 +5,20 @@ export interface ProjectGoalRef {
   title: string;
 }
 
+export interface ProjectWorkspace {
+  id: string;
+  companyId: string;
+  projectId: string;
+  name: string;
+  cwd: string;
+  repoUrl: string | null;
+  repoRef: string | null;
+  metadata: Record<string, unknown> | null;
+  isPrimary: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface Project {
   id: string;
   companyId: string;
@@ -18,6 +32,8 @@ export interface Project {
   leadAgentId: string | null;
   targetDate: string | null;
   color: string | null;
+  workspaces: ProjectWorkspace[];
+  primaryWorkspace: ProjectWorkspace | null;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
