@@ -28,18 +28,24 @@ export {
 export {
   createProjectSchema,
   updateProjectSchema,
+  createProjectWorkspaceSchema,
+  updateProjectWorkspaceSchema,
   type CreateProject,
   type UpdateProject,
+  type CreateProjectWorkspace,
+  type UpdateProjectWorkspace,
 } from "./project.js";
 
 export {
   createIssueSchema,
+  createIssueLabelSchema,
   updateIssueSchema,
   checkoutIssueSchema,
   addIssueCommentSchema,
   linkIssueApprovalSchema,
   createIssueAttachmentMetadataSchema,
   type CreateIssue,
+  type CreateIssueLabel,
   type UpdateIssue,
   type CheckoutIssue,
   type AddIssueComment,

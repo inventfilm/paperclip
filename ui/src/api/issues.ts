@@ -1,4 +1,4 @@
-import type { Approval, Issue, IssueAttachment, IssueComment } from "@paperclip/shared";
+import type { Approval, Issue, IssueAttachment, IssueComment, IssueLabel } from "@paperclip/shared";
 import { api } from "./client";
 
 export const issuesApi = {
@@ -8,6 +8,10 @@ export const issuesApi = {
     const qs = params.toString();
     return api.get<Issue[]>(`/companies/${companyId}/issues${qs ? `?${qs}` : ""}`);
   },
+  listLabels: (companyId: string) => api.get<IssueLabel[]>(`/companies/${companyId}/labels`),
+  createLabel: (companyId: string, data: { name: string; color: string }) =>
+    api.post<IssueLabel>(`/companies/${companyId}/labels`, data),
+  deleteLabel: (id: string) => api.delete<IssueLabel>(`/labels/${id}`),
   get: (id: string) => api.get<Issue>(`/issues/${id}`),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Issue>(`/companies/${companyId}/issues`, data),

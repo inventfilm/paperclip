@@ -10,7 +10,7 @@ export type {
   AdapterEnvironmentTestResult,
 } from "./agent.js";
 export type { AssetImage } from "./asset.js";
-export type { Project, ProjectGoalRef } from "./project.js";
+export type { Project, ProjectGoalRef, ProjectWorkspace } from "./project.js";
 export type {
   Issue,
   IssueComment,
@@ -18,6 +18,7 @@ export type {
   IssueAncestorProject,
   IssueAncestorGoal,
   IssueAttachment,
+  IssueLabel,
 } from "./issue.js";
 export type { Goal } from "./goal.js";
 export type { Approval, ApprovalComment } from "./approval.js";

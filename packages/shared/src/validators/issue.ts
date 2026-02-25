@@ -13,9 +13,17 @@ export const createIssueSchema = z.object({
   assigneeUserId: z.string().optional().nullable(),
   requestDepth: z.number().int().nonnegative().optional().default(0),
   billingCode: z.string().optional().nullable(),
+  labelIds: z.array(z.string().uuid()).optional(),
 });
 
 export type CreateIssue = z.infer<typeof createIssueSchema>;
+
+export const createIssueLabelSchema = z.object({
+  name: z.string().trim().min(1).max(48),
+  color: z.string().regex(/^#(?:[0-9a-fA-F]{6})$/, "Color must be a 6-digit hex value"),
+});
+
+export type CreateIssueLabel = z.infer<typeof createIssueLabelSchema>;
 
 export const updateIssueSchema = createIssueSchema.partial().extend({
   comment: z.string().min(1).optional(),

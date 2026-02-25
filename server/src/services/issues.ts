@@ -8,8 +8,11 @@ import {
   goals,
   heartbeatRuns,
   issueAttachments,
+  issueLabels,
   issueComments,
   issues,
+  labels,
+  projectWorkspaces,
   projects,
 } from "@paperclip/db";
 import { conflict, notFound, unprocessable } from "../errors.js";
@@ -45,7 +48,12 @@ export interface IssueFilters {
   status?: string;
   assigneeAgentId?: string;
   projectId?: string;
+  labelId?: string;
 }
+
+type IssueRow = typeof issues.$inferSelect;
+type IssueLabelRow = typeof labels.$inferSelect;
+type IssueWithLabels = IssueRow & { labels: IssueLabelRow[]; labelIds: string[] };
 
 function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
   if (actorRunId) return checkoutRunId === actorRunId;
@@ -53,6 +61,40 @@ function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
 }
 
 const TERMINAL_HEARTBEAT_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+
+async function labelMapForIssues(dbOrTx: any, issueIds: string[]): Promise<Map<string, IssueLabelRow[]>> {
+  const map = new Map<string, IssueLabelRow[]>();
+  if (issueIds.length === 0) return map;
+  const rows = await dbOrTx
+    .select({
+      issueId: issueLabels.issueId,
+      label: labels,
+    })
+    .from(issueLabels)
+    .innerJoin(labels, eq(issueLabels.labelId, labels.id))
+    .where(inArray(issueLabels.issueId, issueIds))
+    .orderBy(asc(labels.name), asc(labels.id));
+
+  for (const row of rows) {
+    const existing = map.get(row.issueId);
+    if (existing) existing.push(row.label);
+    else map.set(row.issueId, [row.label]);
+  }
+  return map;
+}
+
+async function withIssueLabels(dbOrTx: any, rows: IssueRow[]): Promise<IssueWithLabels[]> {
+  if (rows.length === 0) return [];
+  const labelsByIssueId = await labelMapForIssues(dbOrTx, rows.map((row) => row.id));
+  return rows.map((row) => {
+    const issueLabels = labelsByIssueId.get(row.id) ?? [];
+    return {
+      ...row,
+      labels: issueLabels,
+      labelIds: issueLabels.map((label) => label.id),
+    };
+  });
+}
 
 export function issueService(db: Db) {
   async function assertAssignableAgent(companyId: string, agentId: string) {
@@ -94,6 +136,36 @@ export function issueService(db: Db) {
     if (!membership) {
       throw notFound("Assignee user not found");
     }
+  }
+
+  async function assertValidLabelIds(companyId: string, labelIds: string[], dbOrTx: any = db) {
+    if (labelIds.length === 0) return;
+    const existing = await dbOrTx
+      .select({ id: labels.id })
+      .from(labels)
+      .where(and(eq(labels.companyId, companyId), inArray(labels.id, labelIds)));
+    if (existing.length !== new Set(labelIds).size) {
+      throw unprocessable("One or more labels are invalid for this company");
+    }
+  }
+
+  async function syncIssueLabels(
+    issueId: string,
+    companyId: string,
+    labelIds: string[],
+    dbOrTx: any = db,
+  ) {
+    const deduped = [...new Set(labelIds)];
+    await assertValidLabelIds(companyId, deduped, dbOrTx);
+    await dbOrTx.delete(issueLabels).where(eq(issueLabels.issueId, issueId));
+    if (deduped.length === 0) return;
+    await dbOrTx.insert(issueLabels).values(
+      deduped.map((labelId) => ({
+        issueId,
+        labelId,
+        companyId,
+      })),
+    );
   }
 
   async function isTerminalOrMissingHeartbeatRun(runId: string) {
@@ -155,27 +227,52 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
       }
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
+      if (filters?.labelId) {
+        const labeledIssueIds = await db
+          .select({ issueId: issueLabels.issueId })
+          .from(issueLabels)
+          .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId)));
+        if (labeledIssueIds.length === 0) return [];
+        conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
+      }
       conditions.push(isNull(issues.hiddenAt));
 
       const priorityOrder = sql`CASE ${issues.priority} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
-      return db.select().from(issues).where(and(...conditions)).orderBy(asc(priorityOrder), desc(issues.updatedAt));
+      const rows = await db
+        .select()
+        .from(issues)
+        .where(and(...conditions))
+        .orderBy(asc(priorityOrder), desc(issues.updatedAt));
+      return withIssueLabels(db, rows);
     },
 
-    getById: (id: string) =>
-      db
+    getById: async (id: string) => {
+      const row = await db
         .select()
         .from(issues)
         .where(eq(issues.id, id))
-        .then((rows) => rows[0] ?? null),
+        .then((rows) => rows[0] ?? null);
+      if (!row) return null;
+      const [enriched] = await withIssueLabels(db, [row]);
+      return enriched;
+    },
 
-    getByIdentifier: (identifier: string) =>
-      db
+    getByIdentifier: async (identifier: string) => {
+      const row = await db
         .select()
         .from(issues)
         .where(eq(issues.identifier, identifier.toUpperCase()))
-        .then((rows) => rows[0] ?? null),
+        .then((rows) => rows[0] ?? null);
+      if (!row) return null;
+      const [enriched] = await withIssueLabels(db, [row]);
+      return enriched;
+    },
 
-    create: async (companyId: string, data: Omit<typeof issues.$inferInsert, "companyId">) => {
+    create: async (
+      companyId: string,
+      data: Omit<typeof issues.$inferInsert, "companyId"> & { labelIds?: string[] },
+    ) => {
+      const { labelIds: inputLabelIds, ...issueData } = data;
       if (data.assigneeAgentId && data.assigneeUserId) {
         throw unprocessable("Issue can only have one assignee");
       }
@@ -198,7 +295,7 @@ export function issueService(db: Db) {
         const issueNumber = company.issueCounter;
         const identifier = `${company.issuePrefix}-${issueNumber}`;
 
-        const values = { ...data, companyId, issueNumber, identifier } as typeof issues.$inferInsert;
+        const values = { ...issueData, companyId, issueNumber, identifier } as typeof issues.$inferInsert;
         if (values.status === "in_progress" && !values.startedAt) {
           values.startedAt = new Date();
         }
@@ -210,11 +307,15 @@ export function issueService(db: Db) {
         }
 
         const [issue] = await tx.insert(issues).values(values).returning();
-        return issue;
+        if (inputLabelIds) {
+          await syncIssueLabels(issue.id, companyId, inputLabelIds, tx);
+        }
+        const [enriched] = await withIssueLabels(tx, [issue]);
+        return enriched;
       });
     },
 
-    update: async (id: string, data: Partial<typeof issues.$inferInsert>) => {
+    update: async (id: string, data: Partial<typeof issues.$inferInsert> & { labelIds?: string[] }) => {
       const existing = await db
         .select()
         .from(issues)
@@ -222,19 +323,21 @@ export function issueService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
 
-      if (data.status) {
-        assertTransition(existing.status, data.status);
+      const { labelIds: nextLabelIds, ...issueData } = data;
+
+      if (issueData.status) {
+        assertTransition(existing.status, issueData.status);
       }
 
       const patch: Partial<typeof issues.$inferInsert> = {
-        ...data,
+        ...issueData,
         updatedAt: new Date(),
       };
 
       const nextAssigneeAgentId =
-        data.assigneeAgentId !== undefined ? data.assigneeAgentId : existing.assigneeAgentId;
+        issueData.assigneeAgentId !== undefined ? issueData.assigneeAgentId : existing.assigneeAgentId;
       const nextAssigneeUserId =
-        data.assigneeUserId !== undefined ? data.assigneeUserId : existing.assigneeUserId;
+        issueData.assigneeUserId !== undefined ? issueData.assigneeUserId : existing.assigneeUserId;
 
       if (nextAssigneeAgentId && nextAssigneeUserId) {
         throw unprocessable("Issue can only have one assignee");
@@ -242,36 +345,44 @@ export function issueService(db: Db) {
       if (patch.status === "in_progress" && !nextAssigneeAgentId && !nextAssigneeUserId) {
         throw unprocessable("in_progress issues require an assignee");
       }
-      if (data.assigneeAgentId) {
-        await assertAssignableAgent(existing.companyId, data.assigneeAgentId);
+      if (issueData.assigneeAgentId) {
+        await assertAssignableAgent(existing.companyId, issueData.assigneeAgentId);
       }
-      if (data.assigneeUserId) {
-        await assertAssignableUser(existing.companyId, data.assigneeUserId);
+      if (issueData.assigneeUserId) {
+        await assertAssignableUser(existing.companyId, issueData.assigneeUserId);
       }
 
-      applyStatusSideEffects(data.status, patch);
-      if (data.status && data.status !== "done") {
+      applyStatusSideEffects(issueData.status, patch);
+      if (issueData.status && issueData.status !== "done") {
         patch.completedAt = null;
       }
-      if (data.status && data.status !== "cancelled") {
+      if (issueData.status && issueData.status !== "cancelled") {
         patch.cancelledAt = null;
       }
-      if (data.status && data.status !== "in_progress") {
+      if (issueData.status && issueData.status !== "in_progress") {
         patch.checkoutRunId = null;
       }
       if (
-        (data.assigneeAgentId !== undefined && data.assigneeAgentId !== existing.assigneeAgentId) ||
-        (data.assigneeUserId !== undefined && data.assigneeUserId !== existing.assigneeUserId)
+        (issueData.assigneeAgentId !== undefined && issueData.assigneeAgentId !== existing.assigneeAgentId) ||
+        (issueData.assigneeUserId !== undefined && issueData.assigneeUserId !== existing.assigneeUserId)
       ) {
         patch.checkoutRunId = null;
       }
 
-      return db
-        .update(issues)
-        .set(patch)
-        .where(eq(issues.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
+      return db.transaction(async (tx) => {
+        const updated = await tx
+          .update(issues)
+          .set(patch)
+          .where(eq(issues.id, id))
+          .returning()
+          .then((rows) => rows[0] ?? null);
+        if (!updated) return null;
+        if (nextLabelIds !== undefined) {
+          await syncIssueLabels(updated.id, existing.companyId, nextLabelIds, tx);
+        }
+        const [enriched] = await withIssueLabels(tx, [updated]);
+        return enriched;
+      });
     },
 
     remove: (id: string) =>
@@ -293,7 +404,9 @@ export function issueService(db: Db) {
             .where(inArray(assets.id, attachmentAssetIds.map((row) => row.assetId)));
         }
 
-        return removedIssue;
+        if (!removedIssue) return null;
+        const [enriched] = await withIssueLabels(tx, [removedIssue]);
+        return enriched;
       }),
 
     checkout: async (id: string, agentId: string, expectedStatuses: string[], checkoutRunId: string | null) => {
@@ -337,7 +450,10 @@ export function issueService(db: Db) {
         .returning()
         .then((rows) => rows[0] ?? null);
 
-      if (updated) return updated;
+      if (updated) {
+        const [enriched] = await withIssueLabels(db, [updated]);
+        return enriched;
+      }
 
       const current = await db
         .select({
@@ -394,7 +510,11 @@ export function issueService(db: Db) {
           actorRunId: checkoutRunId,
           expectedCheckoutRunId: current.checkoutRunId,
         });
-        if (adopted) return db.select().from(issues).where(eq(issues.id, id)).then((rows) => rows[0]!);
+        if (adopted) {
+          const row = await db.select().from(issues).where(eq(issues.id, id)).then((rows) => rows[0]!);
+          const [enriched] = await withIssueLabels(db, [row]);
+          return enriched;
+        }
       }
 
       // If this run already owns it and it's in_progress, return it (no self-409)
@@ -403,7 +523,9 @@ export function issueService(db: Db) {
         current.status === "in_progress" &&
         sameRunLock(current.checkoutRunId, checkoutRunId)
       ) {
-        return db.select().from(issues).where(eq(issues.id, id)).then((rows) => rows[0]!);
+        const row = await db.select().from(issues).where(eq(issues.id, id)).then((rows) => rows[0]!);
+        const [enriched] = await withIssueLabels(db, [row]);
+        return enriched;
       }
 
       throw conflict("Issue checkout conflict", {
@@ -495,7 +617,7 @@ export function issueService(db: Db) {
         });
       }
 
-      return db
+      const updated = await db
         .update(issues)
         .set({
           status: "todo",
@@ -506,7 +628,39 @@ export function issueService(db: Db) {
         .where(eq(issues.id, id))
         .returning()
         .then((rows) => rows[0] ?? null);
+      if (!updated) return null;
+      const [enriched] = await withIssueLabels(db, [updated]);
+      return enriched;
     },
+
+    listLabels: (companyId: string) =>
+      db.select().from(labels).where(eq(labels.companyId, companyId)).orderBy(asc(labels.name), asc(labels.id)),
+
+    getLabelById: (id: string) =>
+      db
+        .select()
+        .from(labels)
+        .where(eq(labels.id, id))
+        .then((rows) => rows[0] ?? null),
+
+    createLabel: async (companyId: string, data: Pick<typeof labels.$inferInsert, "name" | "color">) => {
+      const [created] = await db
+        .insert(labels)
+        .values({
+          companyId,
+          name: data.name.trim(),
+          color: data.color,
+        })
+        .returning();
+      return created;
+    },
+
+    deleteLabel: async (id: string) =>
+      db
+        .delete(labels)
+        .where(eq(labels.id, id))
+        .returning()
+        .then((rows) => rows[0] ?? null),
 
     listComments: (issueId: string) =>
       db
@@ -735,16 +889,79 @@ export function issueService(db: Db) {
       const projectIds = [...new Set(raw.map(a => a.projectId).filter((id): id is string => id != null))];
       const goalIds = [...new Set(raw.map(a => a.goalId).filter((id): id is string => id != null))];
 
-      const projectMap = new Map<string, { id: string; name: string; description: string | null; status: string; goalId: string | null }>();
+      const projectMap = new Map<string, {
+        id: string;
+        name: string;
+        description: string | null;
+        status: string;
+        goalId: string | null;
+        workspaces: Array<{
+          id: string;
+          companyId: string;
+          projectId: string;
+          name: string;
+          cwd: string;
+          repoUrl: string | null;
+          repoRef: string | null;
+          metadata: Record<string, unknown> | null;
+          isPrimary: boolean;
+          createdAt: Date;
+          updatedAt: Date;
+        }>;
+        primaryWorkspace: {
+          id: string;
+          companyId: string;
+          projectId: string;
+          name: string;
+          cwd: string;
+          repoUrl: string | null;
+          repoRef: string | null;
+          metadata: Record<string, unknown> | null;
+          isPrimary: boolean;
+          createdAt: Date;
+          updatedAt: Date;
+        } | null;
+      }>();
       const goalMap = new Map<string, { id: string; title: string; description: string | null; level: string; status: string }>();
 
       if (projectIds.length > 0) {
+        const workspaceRows = await db
+          .select()
+          .from(projectWorkspaces)
+          .where(inArray(projectWorkspaces.projectId, projectIds))
+          .orderBy(desc(projectWorkspaces.isPrimary), asc(projectWorkspaces.createdAt), asc(projectWorkspaces.id));
+        const workspaceMap = new Map<string, Array<(typeof workspaceRows)[number]>>();
+        for (const workspace of workspaceRows) {
+          const existing = workspaceMap.get(workspace.projectId);
+          if (existing) existing.push(workspace);
+          else workspaceMap.set(workspace.projectId, [workspace]);
+        }
+
         const rows = await db.select({
           id: projects.id, name: projects.name, description: projects.description,
           status: projects.status, goalId: projects.goalId,
         }).from(projects).where(inArray(projects.id, projectIds));
         for (const r of rows) {
-          projectMap.set(r.id, r);
+          const projectWorkspaceRows = workspaceMap.get(r.id) ?? [];
+          const workspaces = projectWorkspaceRows.map((workspace) => ({
+            id: workspace.id,
+            companyId: workspace.companyId,
+            projectId: workspace.projectId,
+            name: workspace.name,
+            cwd: workspace.cwd,
+            repoUrl: workspace.repoUrl ?? null,
+            repoRef: workspace.repoRef ?? null,
+            metadata: (workspace.metadata as Record<string, unknown> | null) ?? null,
+            isPrimary: workspace.isPrimary,
+            createdAt: workspace.createdAt,
+            updatedAt: workspace.updatedAt,
+          }));
+          const primaryWorkspace = workspaces.find((workspace) => workspace.isPrimary) ?? workspaces[0] ?? null;
+          projectMap.set(r.id, {
+            ...r,
+            workspaces,
+            primaryWorkspace,
+          });
           // Also collect goalIds from projects
           if (r.goalId && !goalIds.includes(r.goalId)) goalIds.push(r.goalId);
         }

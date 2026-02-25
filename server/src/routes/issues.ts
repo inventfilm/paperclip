@@ -4,6 +4,7 @@ import type { Db } from "@paperclip/db";
 import {
   addIssueCommentSchema,
   createIssueAttachmentMetadataSchema,
+  createIssueLabelSchema,
   checkoutIssueSchema,
   createIssueSchema,
   linkIssueApprovalSchema,
@@ -22,7 +23,7 @@ import {
   projectService,
 } from "../services/index.js";
 import { logger } from "../middleware/logger.js";
-import { forbidden, unauthorized } from "../errors.js";
+import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 
 const MAX_ATTACHMENT_BYTES = Number(process.env.PAPERCLIP_ATTACHMENT_MAX_BYTES) || 10 * 1024 * 1024;
@@ -189,8 +190,63 @@ export function issueRoutes(db: Db, storage: StorageService) {
       status: req.query.status as string | undefined,
       assigneeAgentId: req.query.assigneeAgentId as string | undefined,
       projectId: req.query.projectId as string | undefined,
+      labelId: req.query.labelId as string | undefined,
     });
     res.json(result);
+  });
+
+  router.get("/companies/:companyId/labels", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const result = await svc.listLabels(companyId);
+    res.json(result);
+  });
+
+  router.post("/companies/:companyId/labels", validate(createIssueLabelSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const label = await svc.createLabel(companyId, req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "label.created",
+      entityType: "label",
+      entityId: label.id,
+      details: { name: label.name, color: label.color },
+    });
+    res.status(201).json(label);
+  });
+
+  router.delete("/labels/:labelId", async (req, res) => {
+    const labelId = req.params.labelId as string;
+    const existing = await svc.getLabelById(labelId);
+    if (!existing) {
+      res.status(404).json({ error: "Label not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const removed = await svc.deleteLabel(labelId);
+    if (!removed) {
+      res.status(404).json({ error: "Label not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: removed.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "label.deleted",
+      entityType: "label",
+      entityId: removed.id,
+      details: { name: removed.name, color: removed.color },
+    });
+    res.json(removed);
   });
 
   router.get("/issues/:id", async (req, res) => {
@@ -343,7 +399,33 @@ export function issueRoutes(db: Db, storage: StorageService) {
     if (hiddenAtRaw !== undefined) {
       updateFields.hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
     }
-    const issue = await svc.update(id, updateFields);
+    let issue;
+    try {
+      issue = await svc.update(id, updateFields);
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 422) {
+        logger.warn(
+          {
+            issueId: id,
+            companyId: existing.companyId,
+            assigneePatch: {
+              assigneeAgentId:
+                req.body.assigneeAgentId === undefined ? "__omitted__" : req.body.assigneeAgentId,
+              assigneeUserId:
+                req.body.assigneeUserId === undefined ? "__omitted__" : req.body.assigneeUserId,
+            },
+            currentAssignee: {
+              assigneeAgentId: existing.assigneeAgentId,
+              assigneeUserId: existing.assigneeUserId,
+            },
+            error: err.message,
+            details: err.details,
+          },
+          "issue update rejected with 422",
+        );
+      }
+      throw err;
+    }
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;

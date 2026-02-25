@@ -1,4 +1,5 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
+import type { ProjectWorkspace } from "./project.js";
 
 export interface IssueAncestorProject {
   id: string;
@@ -6,6 +7,8 @@ export interface IssueAncestorProject {
   description: string | null;
   status: string;
   goalId: string | null;
+  workspaces: ProjectWorkspace[];
+  primaryWorkspace: ProjectWorkspace | null;
 }
 
 export interface IssueAncestorGoal {
@@ -29,6 +32,15 @@ export interface IssueAncestor {
   goalId: string | null;
   project: IssueAncestorProject | null;
   goal: IssueAncestorGoal | null;
+}
+
+export interface IssueLabel {
+  id: string;
+  companyId: string;
+  name: string;
+  color: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface Issue {
@@ -58,6 +70,8 @@ export interface Issue {
   completedAt: Date | null;
   cancelledAt: Date | null;
   hiddenAt: Date | null;
+  labelIds?: string[];
+  labels?: IssueLabel[];
   createdAt: Date;
   updatedAt: Date;
 }
