@@ -16,8 +16,8 @@ export function MetricCard({ icon: Icon, value, label, description, to, onClick 
   const isClickable = !!(to || onClick);
 
   const inner = (
-    <Card>
-      <CardContent className="p-3 sm:p-4">
+    <Card className="h-full">
+      <CardContent className="p-3 sm:p-4 h-full">
         <div className="flex gap-2 sm:gap-3">
           <div className="flex-1 min-w-0">
             <p className={`text-lg sm:text-2xl font-bold${isClickable ? " cursor-pointer" : ""}`}>
@@ -40,7 +40,7 @@ export function MetricCard({ icon: Icon, value, label, description, to, onClick 
 
   if (to) {
     return (
-      <Link to={to} className="no-underline text-inherit" onClick={onClick}>
+      <Link to={to} className="no-underline text-inherit h-full" onClick={onClick}>
         {inner}
       </Link>
     );
@@ -48,7 +48,7 @@ export function MetricCard({ icon: Icon, value, label, description, to, onClick 
 
   if (onClick) {
     return (
-      <div className="cursor-pointer" onClick={onClick}>
+      <div className="cursor-pointer h-full" onClick={onClick}>
         {inner}
       </div>
     );
