@@ -4,6 +4,7 @@
 
 - `GET /llms/agent-configuration.txt`
 - `GET /llms/agent-configuration/:adapterType.txt`
+- `GET /llms/agent-icons.txt`
 - `GET /api/companies/:companyId/agent-configurations`
 - `GET /api/agents/:agentId/configuration`
 - `POST /api/companies/:companyId/agent-hires`
@@ -30,6 +31,7 @@ Request body matches agent create shape:
   "name": "CTO",
   "role": "cto",
   "title": "Chief Technology Officer",
+  "icon": "crown",
   "reportsTo": "uuid-or-null",
   "capabilities": "Owns architecture and engineering execution",
   "adapterType": "claude_local",

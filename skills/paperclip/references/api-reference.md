@@ -55,7 +55,25 @@ Includes the issue's `project` and `goal` (with descriptions), plus each ancesto
     "name": "Auth System",
     "description": "End-to-end authentication and authorization",
     "status": "active",
-    "goalId": "goal-1"
+    "goalId": "goal-1",
+    "primaryWorkspace": {
+      "id": "ws-1",
+      "name": "auth-repo",
+      "cwd": "/Users/me/work/auth",
+      "repoUrl": "https://github.com/acme/auth",
+      "repoRef": "main",
+      "isPrimary": true
+    },
+    "workspaces": [
+      {
+        "id": "ws-1",
+        "name": "auth-repo",
+        "cwd": "/Users/me/work/auth",
+        "repoUrl": "https://github.com/acme/auth",
+        "repoRef": "main",
+        "isPrimary": true
+      }
+    ]
   },
   "goal": null,
   "ancestors": [

@@ -1,5 +1,6 @@
 import { Router, type Request } from "express";
 import type { Db } from "@paperclip/db";
+import { AGENT_ICON_NAMES } from "@paperclip/shared";
 import { forbidden } from "../errors.js";
 import { listServerAdapters } from "../adapters/index.js";
 import { agentService } from "../services/agents.js";
@@ -38,9 +39,27 @@ export function llmRoutes(db: Db) {
       "- GET /api/agents/:id/configuration",
       "- POST /api/companies/:companyId/agent-hires",
       "",
+      "Agent identity references:",
+      "- GET /llms/agent-icons.txt",
+      "",
       "Notes:",
       "- Sensitive values are redacted in configuration read APIs.",
       "- New hires may be created in pending_approval state depending on company settings.",
+      "",
+    ];
+    res.type("text/plain").send(lines.join("\n"));
+  });
+
+  router.get("/llms/agent-icons.txt", async (req, res) => {
+    await assertCanRead(req);
+    const lines = [
+      "# Paperclip Agent Icon Names",
+      "",
+      "Set the `icon` field on hire/create payloads to one of:",
+      ...AGENT_ICON_NAMES.map((name) => `- ${name}`),
+      "",
+      "Example:",
+      '{ "name": "SearchOps", "role": "researcher", "icon": "search" }',
       "",
     ];
     res.type("text/plain").send(lines.join("\n"));

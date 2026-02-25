@@ -512,6 +512,7 @@ export function agentRoutes(db: Db) {
           name: normalizedHireInput.name,
           role: normalizedHireInput.role,
           title: normalizedHireInput.title ?? null,
+          icon: normalizedHireInput.icon ?? null,
           reportsTo: normalizedHireInput.reportsTo ?? null,
           capabilities: normalizedHireInput.capabilities ?? null,
           adapterType: requestedAdapterType,

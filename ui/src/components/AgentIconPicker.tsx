@@ -43,6 +43,7 @@ import {
   Fingerprint,
   type LucideIcon,
 } from "lucide-react";
+import { AGENT_ICON_NAMES, type AgentIconName } from "@paperclip/shared";
 import {
   Popover,
   PopoverContent,
@@ -51,7 +52,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-export const AGENT_ICONS: Record<string, LucideIcon> = {
+export const AGENT_ICONS: Record<AgentIconName, LucideIcon> = {
   bot: Bot,
   cpu: Cpu,
   brain: Brain,
@@ -95,10 +96,13 @@ export const AGENT_ICONS: Record<string, LucideIcon> = {
   fingerprint: Fingerprint,
 };
 
-const DEFAULT_ICON = "bot";
+const DEFAULT_ICON: AgentIconName = "bot";
 
 export function getAgentIcon(iconName: string | null | undefined): LucideIcon {
-  return AGENT_ICONS[iconName ?? DEFAULT_ICON] ?? AGENT_ICONS[DEFAULT_ICON];
+  if (iconName && AGENT_ICON_NAMES.includes(iconName as AgentIconName)) {
+    return AGENT_ICONS[iconName as AgentIconName];
+  }
+  return AGENT_ICONS[DEFAULT_ICON];
 }
 
 interface AgentIconProps {
@@ -122,9 +126,10 @@ export function AgentIconPicker({ value, onChange, children }: AgentIconPickerPr
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
-    if (!search) return Object.entries(AGENT_ICONS);
+    const entries = AGENT_ICON_NAMES.map((name) => [name, AGENT_ICONS[name]] as const);
+    if (!search) return entries;
     const q = search.toLowerCase();
-    return Object.entries(AGENT_ICONS).filter(([name]) => name.includes(q));
+    return entries.filter(([name]) => name.includes(q));
   }, [search]);
 
   return (

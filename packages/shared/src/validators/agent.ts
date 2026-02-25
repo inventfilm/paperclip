@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   AGENT_ADAPTER_TYPES,
+  AGENT_ICON_NAMES,
   AGENT_ROLES,
   AGENT_STATUSES,
 } from "../constants.js";
@@ -27,7 +28,7 @@ export const createAgentSchema = z.object({
   name: z.string().min(1),
   role: z.enum(AGENT_ROLES).optional().default("general"),
   title: z.string().optional().nullable(),
-  icon: z.string().optional().nullable(),
+  icon: z.enum(AGENT_ICON_NAMES).optional().nullable(),
   reportsTo: z.string().uuid().optional().nullable(),
   capabilities: z.string().optional().nullable(),
   adapterType: z.enum(AGENT_ADAPTER_TYPES).optional().default("process"),

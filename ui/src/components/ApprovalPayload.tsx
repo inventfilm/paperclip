@@ -31,6 +31,7 @@ export function HireAgentPayload({ payload }: { payload: Record<string, unknown>
       </div>
       <PayloadField label="Role" value={payload.role} />
       <PayloadField label="Title" value={payload.title} />
+      <PayloadField label="Icon" value={payload.icon} />
       {!!payload.capabilities && (
         <div className="flex items-start gap-2">
           <span className="text-muted-foreground w-20 sm:w-24 shrink-0 text-xs pt-0.5">Capabilities</span>

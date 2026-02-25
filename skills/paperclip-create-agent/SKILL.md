@@ -49,8 +49,16 @@ curl -sS "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-configura
   -H "Authorization: Bearer $PAPERCLIP_API_KEY"
 ```
 
-5. Draft the new hire config:
+5. Discover allowed agent icons and pick one that matches the role.
+
+```sh
+curl -sS "$PAPERCLIP_API_URL/llms/agent-icons.txt" \
+  -H "Authorization: Bearer $PAPERCLIP_API_KEY"
+```
+
+6. Draft the new hire config:
 - role/title/name
+- icon (required in practice; use one from `/llms/agent-icons.txt`)
 - reporting line (`reportsTo`)
 - adapter type
 - adapter and runtime config aligned to this environment
@@ -58,7 +66,7 @@ curl -sS "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-configura
 - initial prompt in adapter config (`bootstrapPromptTemplate`/`promptTemplate` where applicable)
 - source issue linkage (`sourceIssueId` or `sourceIssueIds`) when this hire came from an issue
 
-6. Submit hire request.
+7. Submit hire request.
 
 ```sh
 curl -sS -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-hires" \
@@ -68,6 +76,7 @@ curl -sS -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-h
     "name": "CTO",
     "role": "cto",
     "title": "Chief Technology Officer",
+    "icon": "crown",
     "reportsTo": "<ceo-agent-id>",
     "capabilities": "Owns technical roadmap, architecture, staffing, execution",
     "adapterType": "codex_local",
@@ -77,7 +86,7 @@ curl -sS -X POST "$PAPERCLIP_API_URL/api/companies/$PAPERCLIP_COMPANY_ID/agent-h
   }'
 ```
 
-7. Handle governance state:
+8. Handle governance state:
 - if response has `approval`, hire is `pending_approval`
 - monitor and discuss on approval thread
 - when the board approves, you will be woken with `PAPERCLIP_APPROVAL_ID`; read linked issues and close/comment follow-up
@@ -120,6 +129,7 @@ For each linked issue, either:
 Before sending a hire request:
 
 - Reuse proven config patterns from related agents where possible.
+- Set a concrete `icon` from `/llms/agent-icons.txt` so the new hire is identifiable in org and task views.
 - Avoid secrets in plain text unless required by adapter behavior.
 - Ensure reporting line is correct and in-company.
 - Ensure prompt is role-specific and operationally scoped.
