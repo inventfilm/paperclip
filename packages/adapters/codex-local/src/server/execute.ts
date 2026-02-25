@@ -108,7 +108,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     asBoolean(config.dangerouslyBypassSandbox, false),
   );
 
-  const cwd = asString(config.cwd, process.cwd());
+  const workspaceContext = parseObject(context.paperclipWorkspace);
+  const workspaceCwd = asString(workspaceContext.cwd, "");
+  const workspaceSource = asString(workspaceContext.source, "");
+  const workspaceId = asString(workspaceContext.workspaceId, "");
+  const workspaceRepoUrl = asString(workspaceContext.repoUrl, "");
+  const workspaceRepoRef = asString(workspaceContext.repoRef, "");
+  const cwd = workspaceCwd || asString(config.cwd, process.cwd());
   await ensureAbsoluteDirectory(cwd);
   await ensureCodexSkillsInjected(onLog);
   const envConfig = parseObject(config.env);
@@ -156,6 +162,21 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   if (linkedIssueIds.length > 0) {
     env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  }
+  if (workspaceCwd) {
+    env.PAPERCLIP_WORKSPACE_CWD = workspaceCwd;
+  }
+  if (workspaceSource) {
+    env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
+  }
+  if (workspaceId) {
+    env.PAPERCLIP_WORKSPACE_ID = workspaceId;
+  }
+  if (workspaceRepoUrl) {
+    env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
+  }
+  if (workspaceRepoRef) {
+    env.PAPERCLIP_WORKSPACE_REPO_REF = workspaceRepoRef;
   }
   for (const [k, v] of Object.entries(envConfig)) {
     if (typeof v === "string") env[k] = v;
@@ -270,7 +291,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
     const resolvedSessionId = attempt.parsed.sessionId ?? runtimeSessionId ?? runtime.sessionId ?? null;
     const resolvedSessionParams = resolvedSessionId
-      ? ({ sessionId: resolvedSessionId, cwd } as Record<string, unknown>)
+      ? ({
+        sessionId: resolvedSessionId,
+        cwd,
+        ...(workspaceId ? { workspaceId } : {}),
+        ...(workspaceRepoUrl ? { repoUrl: workspaceRepoUrl } : {}),
+        ...(workspaceRepoRef ? { repoRef: workspaceRepoRef } : {}),
+      } as Record<string, unknown>)
       : null;
     const parsedError = typeof attempt.parsed.errorMessage === "string" ? attempt.parsed.errorMessage.trim() : "";
     const stderrLine = firstNonEmptyLine(attempt.proc.stderr);

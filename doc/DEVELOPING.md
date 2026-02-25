@@ -84,6 +84,14 @@ Configure storage provider/settings:
 pnpm paperclip configure --section storage
 ```
 
+## Default Agent Workspaces
+
+When a local agent run has no resolved project/session workspace, Paperclip falls back to an agent home workspace under the instance root:
+
+- `~/.paperclip/instances/default/workspaces/<agent-id>`
+
+This path honors `PAPERCLIP_HOME` and `PAPERCLIP_INSTANCE_ID` in non-default setups.
+
 ## Quick Health Checks
 
 In another terminal:

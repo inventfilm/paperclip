@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
 import {
@@ -9,6 +10,7 @@ import {
   heartbeatRuns,
   costEvents,
   issues,
+  projectWorkspaces,
 } from "@paperclip/db";
 import { conflict, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
@@ -19,6 +21,7 @@ import type { AdapterExecutionResult, AdapterInvocationMeta, AdapterSessionCodec
 import { createLocalAgentJwt } from "../agent-auth-jwt.js";
 import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } from "../adapters/utils.js";
 import { secretService } from "./secrets.js";
+import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
@@ -334,6 +337,74 @@ export function heartbeatService(db: Db) {
 
     const runtimeForRun = await getRuntimeState(agent.id);
     return runtimeForRun?.sessionId ?? null;
+  }
+
+  async function resolveWorkspaceForRun(
+    agent: typeof agents.$inferSelect,
+    context: Record<string, unknown>,
+    previousSessionParams: Record<string, unknown> | null,
+  ) {
+    const sessionCwd = readNonEmptyString(previousSessionParams?.cwd);
+    if (sessionCwd) {
+      const sessionCwdExists = await fs
+        .stat(sessionCwd)
+        .then((stats) => stats.isDirectory())
+        .catch(() => false);
+      if (sessionCwdExists) {
+        return {
+          cwd: sessionCwd,
+          source: "task_session" as const,
+          projectId: readNonEmptyString(context.projectId),
+          workspaceId: readNonEmptyString(previousSessionParams?.workspaceId),
+          repoUrl: readNonEmptyString(previousSessionParams?.repoUrl),
+          repoRef: readNonEmptyString(previousSessionParams?.repoRef),
+        };
+      }
+    }
+
+    const issueId = readNonEmptyString(context.issueId);
+    if (issueId) {
+      const issue = await db
+        .select({ id: issues.id, projectId: issues.projectId })
+        .from(issues)
+        .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (issue?.projectId) {
+        const workspace = await db
+          .select()
+          .from(projectWorkspaces)
+          .where(
+            and(
+              eq(projectWorkspaces.companyId, agent.companyId),
+              eq(projectWorkspaces.projectId, issue.projectId),
+            ),
+          )
+          .orderBy(desc(projectWorkspaces.isPrimary), asc(projectWorkspaces.createdAt), asc(projectWorkspaces.id))
+          .limit(1)
+          .then((rows) => rows[0] ?? null);
+        if (workspace) {
+          return {
+            cwd: workspace.cwd,
+            source: "project_primary" as const,
+            projectId: issue.projectId,
+            workspaceId: workspace.id,
+            repoUrl: workspace.repoUrl,
+            repoRef: workspace.repoRef,
+          };
+        }
+      }
+    }
+
+    const cwd = resolveDefaultAgentWorkspaceDir(agent.id);
+    await fs.mkdir(cwd, { recursive: true });
+    return {
+      cwd,
+      source: "agent_home" as const,
+      projectId: readNonEmptyString(context.projectId),
+      workspaceId: null,
+      repoUrl: null,
+      repoRef: null,
+    };
   }
 
   async function upsertTaskSession(input: {
@@ -786,6 +857,18 @@ export function heartbeatService(db: Db) {
     const previousSessionParams = normalizeSessionParams(
       sessionCodec.deserialize(taskSession?.sessionParamsJson ?? null),
     );
+    const resolvedWorkspace = await resolveWorkspaceForRun(agent, context, previousSessionParams);
+    context.paperclipWorkspace = {
+      cwd: resolvedWorkspace.cwd,
+      source: resolvedWorkspace.source,
+      projectId: resolvedWorkspace.projectId,
+      workspaceId: resolvedWorkspace.workspaceId,
+      repoUrl: resolvedWorkspace.repoUrl,
+      repoRef: resolvedWorkspace.repoRef,
+    };
+    if (resolvedWorkspace.projectId && !readNonEmptyString(context.projectId)) {
+      context.projectId = resolvedWorkspace.projectId;
+    }
     const runtimeSessionFallback = taskKey ? null : runtime.sessionId;
     const previousSessionDisplayId = truncateDisplayId(
       taskSession?.sessionDisplayId ??

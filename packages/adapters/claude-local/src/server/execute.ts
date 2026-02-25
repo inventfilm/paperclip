@@ -63,6 +63,9 @@ interface ClaudeExecutionInput {
 interface ClaudeRuntimeConfig {
   command: string;
   cwd: string;
+  workspaceId: string | null;
+  workspaceRepoUrl: string | null;
+  workspaceRepoRef: string | null;
   env: Record<string, string>;
   timeoutSec: number;
   graceSec: number;
@@ -87,7 +90,13 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   const { runId, agent, config, context, authToken } = input;
 
   const command = asString(config.command, "claude");
-  const cwd = asString(config.cwd, process.cwd());
+  const workspaceContext = parseObject(context.paperclipWorkspace);
+  const workspaceCwd = asString(workspaceContext.cwd, "");
+  const workspaceSource = asString(workspaceContext.source, "");
+  const workspaceId = asString(workspaceContext.workspaceId, "") || null;
+  const workspaceRepoUrl = asString(workspaceContext.repoUrl, "") || null;
+  const workspaceRepoRef = asString(workspaceContext.repoRef, "") || null;
+  const cwd = workspaceCwd || asString(config.cwd, process.cwd());
   await ensureAbsoluteDirectory(cwd);
 
   const envConfig = parseObject(config.env);
@@ -138,6 +147,21 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   if (linkedIssueIds.length > 0) {
     env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   }
+  if (workspaceCwd) {
+    env.PAPERCLIP_WORKSPACE_CWD = workspaceCwd;
+  }
+  if (workspaceSource) {
+    env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
+  }
+  if (workspaceId) {
+    env.PAPERCLIP_WORKSPACE_ID = workspaceId;
+  }
+  if (workspaceRepoUrl) {
+    env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
+  }
+  if (workspaceRepoRef) {
+    env.PAPERCLIP_WORKSPACE_REPO_REF = workspaceRepoRef;
+  }
 
   for (const [key, value] of Object.entries(envConfig)) {
     if (typeof value === "string") env[key] = value;
@@ -161,6 +185,9 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   return {
     command,
     cwd,
+    workspaceId,
+    workspaceRepoUrl,
+    workspaceRepoRef,
     env,
     timeoutSec,
     graceSec,
@@ -225,7 +252,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     context,
     authToken,
   });
-  const { command, cwd, env, timeoutSec, graceSec, extraArgs } = runtimeConfig;
+  const {
+    command,
+    cwd,
+    workspaceId,
+    workspaceRepoUrl,
+    workspaceRepoRef,
+    env,
+    timeoutSec,
+    graceSec,
+    extraArgs,
+  } = runtimeConfig;
   const skillsDir = await buildSkillsDir();
 
   const runtimeSessionParams = parseObject(runtime.sessionParams);
@@ -372,7 +409,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       parsedStream.sessionId ??
       (asString(parsed.session_id, opts.fallbackSessionId ?? "") || opts.fallbackSessionId);
     const resolvedSessionParams = resolvedSessionId
-      ? ({ sessionId: resolvedSessionId, cwd } as Record<string, unknown>)
+      ? ({
+        sessionId: resolvedSessionId,
+        cwd,
+        ...(workspaceId ? { workspaceId } : {}),
+        ...(workspaceRepoUrl ? { repoUrl: workspaceRepoUrl } : {}),
+        ...(workspaceRepoRef ? { repoRef: workspaceRepoRef } : {}),
+      } as Record<string, unknown>)
       : null;
 
     return {

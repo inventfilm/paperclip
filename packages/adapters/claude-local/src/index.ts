@@ -12,7 +12,7 @@ export const agentConfigurationDoc = `# claude_local agent configuration
 Adapter: claude_local
 
 Core fields:
-- cwd (string, required): absolute working directory for the agent process
+- cwd (string, optional): default absolute working directory fallback for the agent process
 - model (string, optional): Claude model id
 - effort (string, optional): reasoning effort passed via --effort (low|medium|high)
 - promptTemplate (string, optional): run prompt template

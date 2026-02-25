@@ -3,6 +3,7 @@ import path from "node:path";
 
 const DEFAULT_INSTANCE_ID = "default";
 const INSTANCE_ID_RE = /^[a-zA-Z0-9_-]+$/;
+const PATH_SEGMENT_RE = /^[a-zA-Z0-9_-]+$/;
 
 function expandHomePrefix(value: string): string {
   if (value === "~") return os.homedir();
@@ -46,6 +47,14 @@ export function resolveDefaultSecretsKeyFilePath(): string {
 
 export function resolveDefaultStorageDir(): string {
   return path.resolve(resolvePaperclipInstanceRoot(), "data", "storage");
+}
+
+export function resolveDefaultAgentWorkspaceDir(agentId: string): string {
+  const trimmed = agentId.trim();
+  if (!PATH_SEGMENT_RE.test(trimmed)) {
+    throw new Error(`Invalid agent id for workspace path '${agentId}'.`);
+  }
+  return path.resolve(resolvePaperclipInstanceRoot(), "workspaces", trimmed);
 }
 
 export function resolveHomeAwarePath(value: string): string {

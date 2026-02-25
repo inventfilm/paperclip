@@ -18,7 +18,7 @@ export const agentConfigurationDoc = `# codex_local agent configuration
 Adapter: codex_local
 
 Core fields:
-- cwd (string, required): absolute working directory for the agent process
+- cwd (string, optional): default absolute working directory fallback for the agent process
 - model (string, optional): Codex model id
 - modelReasoningEffort (string, optional): reasoning effort override (minimal|low|medium|high) passed via -c model_reasoning_effort=...
 - promptTemplate (string, optional): run prompt template
