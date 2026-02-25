@@ -231,7 +231,7 @@ export function Companies() {
               </div>
 
               {/* Stats row */}
-              <div className="flex items-center gap-5 mt-4 text-sm text-muted-foreground">
+              <div className="flex items-center gap-3 sm:gap-5 mt-4 text-sm text-muted-foreground flex-wrap">
                 <div className="flex items-center gap-1.5">
                   <Users className="h-3.5 w-3.5" />
                   <span>

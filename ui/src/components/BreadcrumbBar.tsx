@@ -33,9 +33,9 @@ export function BreadcrumbBar() {
   // Single breadcrumb = page title (uppercase)
   if (breadcrumbs.length === 1) {
     return (
-      <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center">
+      <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center min-w-0 overflow-hidden">
         {menuButton}
-        <h1 className="text-sm font-semibold uppercase tracking-wider">
+        <h1 className="text-sm font-semibold uppercase tracking-wider truncate">
           {breadcrumbs[0].label}
         </h1>
       </div>
@@ -44,18 +44,18 @@ export function BreadcrumbBar() {
 
   // Multiple breadcrumbs = breadcrumb trail
   return (
-    <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center">
+    <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center min-w-0 overflow-hidden">
       {menuButton}
-      <Breadcrumb>
-        <BreadcrumbList>
+      <Breadcrumb className="min-w-0 overflow-hidden">
+        <BreadcrumbList className="flex-nowrap">
           {breadcrumbs.map((crumb, i) => {
             const isLast = i === breadcrumbs.length - 1;
             return (
               <Fragment key={i}>
                 {i > 0 && <BreadcrumbSeparator />}
-                <BreadcrumbItem>
+                <BreadcrumbItem className={isLast ? "min-w-0" : "shrink-0"}>
                   {isLast || !crumb.href ? (
-                    <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                    <BreadcrumbPage className="truncate">{crumb.label}</BreadcrumbPage>
                   ) : (
                     <BreadcrumbLink asChild>
                       <Link to={crumb.href}>{crumb.label}</Link>

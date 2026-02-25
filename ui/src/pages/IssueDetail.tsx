@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
 import { activityApi } from "../api/activity";
+import { heartbeatsApi } from "../api/heartbeats";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
@@ -185,6 +186,15 @@ export function IssueDetail() {
     queryFn: () => issuesApi.listAttachments(issueId!),
     enabled: !!issueId,
   });
+
+  const { data: liveRuns } = useQuery({
+    queryKey: queryKeys.issues.liveRuns(issueId!),
+    queryFn: () => heartbeatsApi.liveRunsForIssue(issueId!),
+    enabled: !!issueId && !!selectedCompanyId,
+    refetchInterval: 3000,
+  });
+
+  const hasLiveRuns = (liveRuns ?? []).length > 0;
 
   const { data: allIssues } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
@@ -423,7 +433,7 @@ export function IssueDetail() {
       )}
 
       <div className="space-y-3">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <StatusIcon
             status={issue.status}
             onChange={(status) => updateIssue.mutate({ status })}
@@ -432,15 +442,25 @@ export function IssueDetail() {
             priority={issue.priority}
             onChange={(priority) => updateIssue.mutate({ priority })}
           />
-          <span className="text-sm font-mono text-muted-foreground">{issue.identifier ?? issue.id.slice(0, 8)}</span>
+          <span className="text-sm font-mono text-muted-foreground shrink-0">{issue.identifier ?? issue.id.slice(0, 8)}</span>
+
+          {hasLiveRuns && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-medium text-cyan-400 shrink-0">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+              </span>
+              Live
+            </span>
+          )}
 
           {issue.projectId ? (
             <Link
               to={`/projects/${issue.projectId}`}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 -mx-1 py-0.5"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded px-1 -mx-1 py-0.5 min-w-0"
             >
               <Hexagon className="h-3 w-3 shrink-0" />
-              {(projects ?? []).find((p) => p.id === issue.projectId)?.name ?? issue.projectId.slice(0, 8)}
+              <span className="truncate">{(projects ?? []).find((p) => p.id === issue.projectId)?.name ?? issue.projectId.slice(0, 8)}</span>
             </Link>
           ) : (
             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground opacity-50 px-1 -mx-1 py-0.5">
@@ -473,7 +493,7 @@ export function IssueDetail() {
           <Button
             variant="ghost"
             size="icon-xs"
-            className="ml-auto md:hidden"
+            className="ml-auto md:hidden shrink-0"
             onClick={() => setMobilePropsOpen(true)}
             title="Properties"
           >
@@ -482,7 +502,7 @@ export function IssueDetail() {
 
           <Popover open={moreOpen} onOpenChange={setMoreOpen}>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon-xs" className="md:ml-auto">
+              <Button variant="ghost" size="icon-xs" className="md:ml-auto shrink-0">
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
@@ -599,10 +619,6 @@ export function IssueDetail() {
 
       <Separator />
 
-      <LiveRunWidget issueId={issueId!} companyId={selectedCompanyId} />
-
-      <Separator />
-
       <Tabs value={detailTab} onValueChange={setDetailTab} className="space-y-3">
         <TabsList variant="line" className="w-full justify-start gap-1">
           <TabsTrigger value="comments" className="gap-1.5">
@@ -632,6 +648,10 @@ export function IssueDetail() {
               const attachment = await uploadAttachment.mutateAsync(file);
               return attachment.contentPath;
             }}
+            onAttachImage={async (file) => {
+              await uploadAttachment.mutateAsync(file);
+            }}
+            liveRunSlot={<LiveRunWidget issueId={issueId!} companyId={selectedCompanyId} />}
           />
         </TabsContent>
 
