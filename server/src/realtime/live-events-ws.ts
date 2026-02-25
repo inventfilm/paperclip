@@ -3,9 +3,10 @@ import type { IncomingMessage, Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclip/db";
-import { agentApiKeys } from "@paperclip/db";
+import { agentApiKeys, companyMemberships, instanceUserRoles } from "@paperclip/db";
 import type { DeploymentMode } from "@paperclip/shared";
 import { WebSocket, WebSocketServer } from "ws";
+import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "../middleware/logger.js";
 import { subscribeCompanyLiveEvents } from "../services/live-events.js";
 
@@ -48,26 +49,76 @@ function parseBearerToken(rawAuth: string | string[] | undefined) {
   return token.length > 0 ? token : null;
 }
 
+function headersFromIncomingMessage(req: IncomingMessage): Headers {
+  const headers = new Headers();
+  for (const [key, raw] of Object.entries(req.headers)) {
+    if (!raw) continue;
+    if (Array.isArray(raw)) {
+      for (const value of raw) headers.append(key, value);
+      continue;
+    }
+    headers.set(key, raw);
+  }
+  return headers;
+}
+
 async function authorizeUpgrade(
   db: Db,
   req: IncomingMessage,
   companyId: string,
   url: URL,
-  deploymentMode: DeploymentMode,
+  opts: {
+    deploymentMode: DeploymentMode;
+    resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
+  },
 ): Promise<UpgradeContext | null> {
   const queryToken = url.searchParams.get("token")?.trim() ?? "";
   const authToken = parseBearerToken(req.headers.authorization);
   const token = authToken ?? (queryToken.length > 0 ? queryToken : null);
 
-  // Local trusted browser board context has no bearer token in V1.
+  // Browser board context has no bearer token in local_trusted and authenticated modes.
   if (!token) {
-    if (deploymentMode !== "local_trusted") {
+    if (opts.deploymentMode === "local_trusted") {
+      return {
+        companyId,
+        actorType: "board",
+        actorId: "board",
+      };
+    }
+
+    if (opts.deploymentMode !== "authenticated" || !opts.resolveSessionFromHeaders) {
       return null;
     }
+
+    const session = await opts.resolveSessionFromHeaders(headersFromIncomingMessage(req));
+    const userId = session?.user?.id;
+    if (!userId) return null;
+
+    const [roleRow, memberships] = await Promise.all([
+      db
+        .select({ id: instanceUserRoles.id })
+        .from(instanceUserRoles)
+        .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({ companyId: companyMemberships.companyId })
+        .from(companyMemberships)
+        .where(
+          and(
+            eq(companyMemberships.principalType, "user"),
+            eq(companyMemberships.principalId, userId),
+            eq(companyMemberships.status, "active"),
+          ),
+        ),
+    ]);
+
+    const hasCompanyMembership = memberships.some((row) => row.companyId === companyId);
+    if (!roleRow && !hasCompanyMembership) return null;
+
     return {
       companyId,
       actorType: "board",
-      actorId: "board",
+      actorId: userId,
     };
   }
 
@@ -97,7 +148,10 @@ async function authorizeUpgrade(
 export function setupLiveEventsWebSocketServer(
   server: HttpServer,
   db: Db,
-  opts: { deploymentMode: DeploymentMode },
+  opts: {
+    deploymentMode: DeploymentMode;
+    resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
+  },
 ) {
   const wss = new WebSocketServer({ noServer: true });
   const cleanupByClient = new Map<WebSocket, () => void>();
@@ -162,7 +216,10 @@ export function setupLiveEventsWebSocketServer(
       return;
     }
 
-    void authorizeUpgrade(db, req, companyId, url, opts.deploymentMode)
+    void authorizeUpgrade(db, req, companyId, url, {
+      deploymentMode: opts.deploymentMode,
+      resolveSessionFromHeaders: opts.resolveSessionFromHeaders,
+    })
       .then((context) => {
         if (!context) {
           rejectUpgrade(socket, "403 Forbidden", "forbidden");

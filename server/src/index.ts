@@ -29,6 +29,7 @@ import {
   createBetterAuthHandler,
   createBetterAuthInstance,
   resolveBetterAuthSession,
+  resolveBetterAuthSessionFromHeaders,
 } from "./auth/better-auth.js";
 
 type EmbeddedPostgresInstance = {
@@ -324,6 +325,9 @@ let betterAuthHandler: ReturnType<typeof createBetterAuthHandler> | undefined;
 let resolveSession:
   | ((req: ExpressRequest) => Promise<Awaited<ReturnType<typeof resolveBetterAuthSession>>>)
   | undefined;
+let resolveSessionFromHeaders:
+  | ((headers: Headers) => Promise<Awaited<ReturnType<typeof resolveBetterAuthSession>>>)
+  | undefined;
 if (config.deploymentMode === "local_trusted") {
   await ensureLocalTrustedBoardPrincipal(db as any);
 }
@@ -338,6 +342,7 @@ if (config.deploymentMode === "authenticated") {
   const auth = createBetterAuthInstance(db as any, config);
   betterAuthHandler = createBetterAuthHandler(auth);
   resolveSession = (req) => resolveBetterAuthSession(auth, req);
+  resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
   await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
   authReady = true;
 }
@@ -362,7 +367,10 @@ if (listenPort !== config.port) {
   logger.warn({ requestedPort: config.port, selectedPort: listenPort }, "Requested port is busy; using next free port");
 }
 
-setupLiveEventsWebSocketServer(server, db as any, { deploymentMode: config.deploymentMode });
+setupLiveEventsWebSocketServer(server, db as any, {
+  deploymentMode: config.deploymentMode,
+  resolveSessionFromHeaders,
+});
 
 if (config.heartbeatSchedulerEnabled) {
   const heartbeat = heartbeatService(db as any);
