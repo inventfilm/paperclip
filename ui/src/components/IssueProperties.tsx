@@ -253,9 +253,9 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                 <button
                   className={cn(
                     "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    !issue.assigneeAgentId && "bg-accent"
+                    !issue.assigneeAgentId && !issue.assigneeUserId && "bg-accent"
                   )}
-                  onClick={() => { onUpdate({ assigneeAgentId: null }); setAssigneeOpen(false); }}
+                  onClick={() => { onUpdate({ assigneeAgentId: null, assigneeUserId: null }); setAssigneeOpen(false); }}
                 >
                   No assignee
                 </button>
@@ -273,7 +273,7 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                       "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
                       a.id === issue.assigneeAgentId && "bg-accent"
                     )}
-                    onClick={() => { onUpdate({ assigneeAgentId: a.id }); setAssigneeOpen(false); }}
+                    onClick={() => { onUpdate({ assigneeAgentId: a.id, assigneeUserId: null }); setAssigneeOpen(false); }}
                   >
                     <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
                     {a.name}

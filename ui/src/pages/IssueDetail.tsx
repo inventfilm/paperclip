@@ -22,9 +22,23 @@ import { Identity } from "../components/Identity";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronRight, MoreHorizontal, EyeOff, Hexagon, Paperclip, Trash2, SlidersHorizontal } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Activity as ActivityIcon,
+  ChevronDown,
+  ChevronRight,
+  EyeOff,
+  Hexagon,
+  ListTree,
+  MessageSquare,
+  MoreHorizontal,
+  Paperclip,
+  SlidersHorizontal,
+  Trash2,
+} from "lucide-react";
 import type { ActivityEvent } from "@paperclip/shared";
 import type { Agent, IssueAttachment } from "@paperclip/shared";
 
@@ -126,6 +140,12 @@ export function IssueDetail() {
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState("comments");
+  const [secondaryOpen, setSecondaryOpen] = useState({
+    approvals: false,
+    runs: false,
+    cost: false,
+  });
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -505,10 +525,6 @@ export function IssueDetail() {
         />
       </div>
 
-      <LiveRunWidget issueId={issueId!} companyId={selectedCompanyId} />
-
-      <Separator />
-
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-medium text-muted-foreground">Attachments</h3>
@@ -583,24 +599,46 @@ export function IssueDetail() {
 
       <Separator />
 
-      <CommentThread
-        comments={commentsWithRunMeta}
-        issueStatus={issue.status}
-        agentMap={agentMap}
-        onAdd={async (body, reopen) => {
-          await addComment.mutateAsync({ body, reopen });
-        }}
-        imageUploadHandler={async (file) => {
-          const attachment = await uploadAttachment.mutateAsync(file);
-          return attachment.contentPath;
-        }}
-      />
+      <LiveRunWidget issueId={issueId!} companyId={selectedCompanyId} />
 
-      {childIssues.length > 0 && (
-        <>
-          <Separator />
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-muted-foreground">Sub-issues</h3>
+      <Separator />
+
+      <Tabs value={detailTab} onValueChange={setDetailTab} className="space-y-3">
+        <TabsList variant="line" className="w-full justify-start gap-1">
+          <TabsTrigger value="comments" className="gap-1.5">
+            <MessageSquare className="h-3.5 w-3.5" />
+            Comments
+          </TabsTrigger>
+          <TabsTrigger value="subissues" className="gap-1.5">
+            <ListTree className="h-3.5 w-3.5" />
+            Sub-issues
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="gap-1.5">
+            <ActivityIcon className="h-3.5 w-3.5" />
+            Activity
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="comments">
+          <CommentThread
+            comments={commentsWithRunMeta}
+            issueStatus={issue.status}
+            agentMap={agentMap}
+            draftKey={`paperclip:issue-comment-draft:${issue.id}`}
+            onAdd={async (body, reopen) => {
+              await addComment.mutateAsync({ body, reopen });
+            }}
+            imageUploadHandler={async (file) => {
+              const attachment = await uploadAttachment.mutateAsync(file);
+              return attachment.contentPath;
+            }}
+          />
+        </TabsContent>
+
+        <TabsContent value="subissues">
+          {childIssues.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No sub-issues.</p>
+          ) : (
             <div className="border border-border rounded-lg divide-y divide-border">
               {childIssues.map((child) => (
                 <Link
@@ -625,16 +663,42 @@ export function IssueDetail() {
                 </Link>
               ))}
             </div>
-          </div>
-        </>
-      )}
+          )}
+        </TabsContent>
+
+        <TabsContent value="activity">
+          {!activity || activity.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No activity yet.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {activity.slice(0, 20).map((evt) => (
+                <div key={evt.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <ActorIdentity evt={evt} agentMap={agentMap} />
+                  <span>{formatAction(evt.action, evt.details)}</span>
+                  <span className="ml-auto shrink-0">{relativeTime(evt.createdAt)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {linkedApprovals && linkedApprovals.length > 0 && (
-        <>
-          <Separator />
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-muted-foreground">Linked Approvals</h3>
-            <div className="border border-border rounded-lg divide-y divide-border">
+        <Collapsible
+          open={secondaryOpen.approvals}
+          onOpenChange={(open) => setSecondaryOpen((prev) => ({ ...prev, approvals: open }))}
+          className="rounded-lg border border-border"
+        >
+          <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
+            <span className="text-sm font-medium text-muted-foreground">
+              Linked Approvals ({linkedApprovals.length})
+            </span>
+            <ChevronDown
+              className={cn("h-4 w-4 text-muted-foreground transition-transform", secondaryOpen.approvals && "rotate-180")}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t border-border divide-y divide-border">
               {linkedApprovals.map((approval) => (
                 <Link
                   key={approval.id}
@@ -652,17 +716,24 @@ export function IssueDetail() {
                 </Link>
               ))}
             </div>
-          </div>
-        </>
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
-      {/* Linked Runs */}
       {linkedRuns && linkedRuns.length > 0 && (
-        <>
-          <Separator />
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-muted-foreground">Linked Runs</h3>
-            <div className="border border-border rounded-lg divide-y divide-border">
+        <Collapsible
+          open={secondaryOpen.runs}
+          onOpenChange={(open) => setSecondaryOpen((prev) => ({ ...prev, runs: open }))}
+          className="rounded-lg border border-border"
+        >
+          <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
+            <span className="text-sm font-medium text-muted-foreground">Linked Runs ({linkedRuns.length})</span>
+            <ChevronDown
+              className={cn("h-4 w-4 text-muted-foreground transition-transform", secondaryOpen.runs && "rotate-180")}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t border-border divide-y divide-border">
               {linkedRuns.map((run) => (
                 <Link
                   key={run.runId}
@@ -678,55 +749,46 @@ export function IssueDetail() {
                 </Link>
               ))}
             </div>
-          </div>
-        </>
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
-      {/* Activity Log */}
-      {activity && activity.length > 0 && (
-        <>
-          <Separator />
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-muted-foreground">Activity</h3>
-            <div className="space-y-1.5">
-              {activity.slice(0, 20).map((evt) => (
-                <div key={evt.id} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <ActorIdentity evt={evt} agentMap={agentMap} />
-                  <span>{formatAction(evt.action, evt.details)}</span>
-                  <span className="ml-auto shrink-0">{relativeTime(evt.createdAt)}</span>
+      {linkedRuns && linkedRuns.length > 0 && (
+        <Collapsible
+          open={secondaryOpen.cost}
+          onOpenChange={(open) => setSecondaryOpen((prev) => ({ ...prev, cost: open }))}
+          className="rounded-lg border border-border"
+        >
+          <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
+            <span className="text-sm font-medium text-muted-foreground">Cost Summary</span>
+            <ChevronDown
+              className={cn("h-4 w-4 text-muted-foreground transition-transform", secondaryOpen.cost && "rotate-180")}
+            />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border-t border-border px-3 py-2">
+              {!issueCostSummary.hasCost && !issueCostSummary.hasTokens ? (
+                <div className="text-xs text-muted-foreground">No cost data yet.</div>
+              ) : (
+                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                  {issueCostSummary.hasCost && (
+                    <span className="font-medium text-foreground">
+                      ${issueCostSummary.cost.toFixed(4)}
+                    </span>
+                  )}
+                  {issueCostSummary.hasTokens && (
+                    <span>
+                      Tokens {formatTokens(issueCostSummary.totalTokens)}
+                      {issueCostSummary.cached > 0
+                        ? ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)}, cached ${formatTokens(issueCostSummary.cached)})`
+                        : ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)})`}
+                    </span>
+                  )}
                 </div>
-              ))}
+              )}
             </div>
-          </div>
-        </>
-      )}
-
-      {(linkedRuns && linkedRuns.length > 0) && (
-        <>
-          <Separator />
-          <div className="space-y-2">
-            <h3 className="text-sm font-medium text-muted-foreground">Cost</h3>
-            {!issueCostSummary.hasCost && !issueCostSummary.hasTokens ? (
-              <div className="text-xs text-muted-foreground">No cost data yet.</div>
-            ) : (
-              <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                {issueCostSummary.hasCost && (
-                  <span className="font-medium text-foreground">
-                    ${issueCostSummary.cost.toFixed(4)}
-                  </span>
-                )}
-                {issueCostSummary.hasTokens && (
-                  <span>
-                    Tokens {formatTokens(issueCostSummary.totalTokens)}
-                    {issueCostSummary.cached > 0
-                      ? ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)}, cached ${formatTokens(issueCostSummary.cached)})`
-                      : ` (in ${formatTokens(issueCostSummary.input)}, out ${formatTokens(issueCostSummary.output)})`}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-        </>
+          </CollapsibleContent>
+        </Collapsible>
       )}
 
       {/* Mobile properties drawer */}

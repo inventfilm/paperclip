@@ -20,6 +20,7 @@ import { Activity } from "./pages/Activity";
 import { Inbox } from "./pages/Inbox";
 import { CompanySettings } from "./pages/CompanySettings";
 import { DesignGuide } from "./pages/DesignGuide";
+import { OrgChart } from "./pages/OrgChart";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { InviteLandingPage } from "./pages/InviteLanding";
@@ -95,7 +96,7 @@ export function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="companies" element={<Companies />} />
           <Route path="company/settings" element={<CompanySettings />} />
-          <Route path="org" element={<Navigate to="/agents/all" replace />} />
+          <Route path="org" element={<OrgChart />} />
           <Route path="agents" element={<Navigate to="/agents/all" replace />} />
           <Route path="agents/all" element={<Agents />} />
           <Route path="agents/active" element={<Agents />} />

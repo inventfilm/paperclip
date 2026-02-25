@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { IssueComment, Agent } from "@paperclip/shared";
 import { Button } from "@/components/ui/button";
@@ -18,15 +18,46 @@ interface CommentThreadProps {
   issueStatus?: string;
   agentMap?: Map<string, Agent>;
   imageUploadHandler?: (file: File) => Promise<string>;
+  draftKey?: string;
 }
 
 const CLOSED_STATUSES = new Set(["done", "cancelled"]);
+const DRAFT_DEBOUNCE_MS = 800;
 
-export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUploadHandler }: CommentThreadProps) {
+function loadDraft(draftKey: string): string {
+  try {
+    return localStorage.getItem(draftKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function saveDraft(draftKey: string, value: string) {
+  try {
+    if (value.trim()) {
+      localStorage.setItem(draftKey, value);
+    } else {
+      localStorage.removeItem(draftKey);
+    }
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+function clearDraft(draftKey: string) {
+  try {
+    localStorage.removeItem(draftKey);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUploadHandler, draftKey }: CommentThreadProps) {
   const [body, setBody] = useState("");
   const [reopen, setReopen] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const editorRef = useRef<MarkdownEditorRef>(null);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isClosed = issueStatus ? CLOSED_STATUSES.has(issueStatus) : false;
 
@@ -47,6 +78,25 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUpl
       }));
   }, [agentMap]);
 
+  useEffect(() => {
+    if (!draftKey) return;
+    setBody(loadDraft(draftKey));
+  }, [draftKey]);
+
+  useEffect(() => {
+    if (!draftKey) return;
+    if (draftTimer.current) clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => {
+      saveDraft(draftKey, body);
+    }, DRAFT_DEBOUNCE_MS);
+  }, [body, draftKey]);
+
+  useEffect(() => {
+    return () => {
+      if (draftTimer.current) clearTimeout(draftTimer.current);
+    };
+  }, []);
+
   async function handleSubmit() {
     const trimmed = body.trim();
     if (!trimmed) return;
@@ -55,6 +105,7 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUpl
     try {
       await onAdd(trimmed, isClosed && reopen ? true : undefined);
       setBody("");
+      if (draftKey) clearDraft(draftKey);
       setReopen(false);
     } finally {
       setSubmitting(false);
