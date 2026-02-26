@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LiveEvent } from "@paperclip/shared";
 import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
 import { getUIAdapter } from "../adapters";
 import type { TranscriptEntry } from "../adapters";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, relativeTime } from "../lib/utils";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Square } from "lucide-react";
 import { Identity } from "./Identity";
 
 interface LiveRunWidgetProps {
@@ -142,12 +142,28 @@ function parseStderrChunk(
 }
 
 export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
+  const queryClient = useQueryClient();
   const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [cancellingRunIds, setCancellingRunIds] = useState(new Set<string>());
   const seenKeysRef = useRef(new Set<string>());
   const pendingByRunRef = useRef(new Map<string, string>());
   const runMetaByIdRef = useRef(new Map<string, { agentId: string; agentName: string }>());
   const nextIdRef = useRef(1);
   const bodyRef = useRef<HTMLDivElement>(null);
+
+  const handleCancelRun = async (runId: string) => {
+    setCancellingRunIds((prev) => new Set(prev).add(runId));
+    try {
+      await heartbeatsApi.cancel(runId);
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.liveRuns(issueId) });
+    } finally {
+      setCancellingRunIds((prev) => {
+        const next = new Set(prev);
+        next.delete(runId);
+        return next;
+      });
+    }
+  };
 
   const { data: liveRuns } = useQuery({
     queryKey: queryKeys.issues.liveRuns(issueId),
@@ -323,13 +339,25 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
           </span>
         </div>
         {headerRun && (
-          <Link
-            to={`/agents/${headerRun.agentId}/runs/${headerRun.id}`}
-            className="inline-flex items-center gap-1 text-[10px] text-cyan-300 hover:text-cyan-200"
-          >
-            Open run
-            <ExternalLink className="h-2.5 w-2.5" />
-          </Link>
+          <div className="flex items-center gap-2">
+            {runs.length > 0 && (
+              <button
+                onClick={() => handleCancelRun(headerRun.id)}
+                disabled={cancellingRunIds.has(headerRun.id)}
+                className="inline-flex items-center gap-1 text-[10px] text-red-400 hover:text-red-300 disabled:opacity-50"
+              >
+                <Square className="h-2 w-2" fill="currentColor" />
+                {cancellingRunIds.has(headerRun.id) ? "Stopping…" : "Stop"}
+              </button>
+            )}
+            <Link
+              to={`/agents/${headerRun.agentId}/runs/${headerRun.id}`}
+              className="inline-flex items-center gap-1 text-[10px] text-cyan-300 hover:text-cyan-200"
+            >
+              Open run
+              <ExternalLink className="h-2.5 w-2.5" />
+            </Link>
+          </div>
         )}
       </div>
 
@@ -362,17 +390,18 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
         ))}
       </div>
 
-      {runs.length > 0 && (
+      {runs.length > 1 && (
         <div className="border-t border-border/50 px-3 py-2 flex flex-wrap gap-2">
           {runs.map((run) => (
-            <Link
-              key={run.id}
-              to={`/agents/${run.agentId}/runs/${run.id}`}
-              className="inline-flex items-center gap-1 text-[10px] text-cyan-300 hover:text-cyan-200"
-            >
-              <Identity name={run.agentName} size="sm" /> {run.id.slice(0, 8)}
-              <ExternalLink className="h-2.5 w-2.5" />
-            </Link>
+            <div key={run.id} className="inline-flex items-center gap-1.5">
+              <Link
+                to={`/agents/${run.agentId}/runs/${run.id}`}
+                className="inline-flex items-center gap-1 text-[10px] text-cyan-300 hover:text-cyan-200"
+              >
+                <Identity name={run.agentName} size="sm" /> {run.id.slice(0, 8)}
+                <ExternalLink className="h-2.5 w-2.5" />
+              </Link>
+            </div>
           ))}
         </div>
       )}

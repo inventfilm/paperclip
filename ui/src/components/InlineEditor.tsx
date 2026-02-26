@@ -28,7 +28,7 @@ export function InlineEditor({
 }: InlineEditorProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setDraft(value);
@@ -44,11 +44,11 @@ export function InlineEditor({
     if (editing && inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
-      if (multiline && inputRef.current instanceof HTMLTextAreaElement) {
+      if (inputRef.current instanceof HTMLTextAreaElement) {
         autoSize(inputRef.current);
       }
     }
-  }, [editing, multiline, autoSize]);
+  }, [editing, autoSize]);
 
   function commit() {
     const trimmed = draft.trim();
@@ -101,25 +101,19 @@ export function InlineEditor({
       );
     }
 
-    const sharedProps = {
-      ref: inputRef as any,
-      value: draft,
-      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        setDraft(e.target.value);
-        if (multiline && e.target instanceof HTMLTextAreaElement) {
-          autoSize(e.target);
-        }
-      },
-      onBlur: commit,
-      onKeyDown: handleKeyDown,
-    };
-
     return (
-      <input
-        type="text"
-        {...sharedProps}
+      <textarea
+        ref={inputRef}
+        value={draft}
+        rows={1}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          autoSize(e.target);
+        }}
+        onBlur={commit}
+        onKeyDown={handleKeyDown}
         className={cn(
-          "w-full bg-transparent rounded outline-none",
+          "w-full bg-transparent rounded outline-none resize-none overflow-hidden",
           pad,
           className
         )}

@@ -117,8 +117,13 @@
   * {
     @apply border-border;
   }
+  html {
+    height: 100%;
+  }
   body {
     @apply bg-background text-foreground;
+    height: 100%;
+    overflow: hidden;
   }
   /* Prevent double-tap-to-zoom on interactive elements for mobile */
   a,

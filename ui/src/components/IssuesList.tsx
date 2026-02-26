@@ -499,7 +499,7 @@ export function IssuesList({
         groupedContent.map((group) => (
           <Collapsible key={group.key} defaultOpen>
             {group.label && (
-              <div className="flex items-center py-1.5 pl-1">
+              <div className="flex items-center py-1.5 pl-1 pr-3">
                 <CollapsibleTrigger className="flex items-center gap-1.5">
                   <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform [[data-state=open]>&]:rotate-90" />
                   <span className="text-sm font-semibold uppercase tracking-wide">
@@ -523,8 +523,8 @@ export function IssuesList({
                   to={`/issues/${issue.identifier ?? issue.id}`}
                   className="flex items-center gap-2 py-2 pl-1 pr-3 text-sm border-b border-border last:border-b-0 cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit"
                 >
-                  {/* Spacer matching caret width so status icon aligns with group title */}
-                  <div className="w-3.5 shrink-0" />
+                  {/* Spacer matching caret width so status icon aligns with group title (hidden on mobile) */}
+                  <div className="w-3.5 shrink-0 hidden sm:block" />
                   <div className="shrink-0" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
                     <StatusIcon
                       status={issue.status}
@@ -556,84 +556,86 @@ export function IssuesList({
                     </div>
                   )}
                   <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
-                    <Popover
-                      open={assigneePickerIssueId === issue.id}
-                      onOpenChange={(open) => {
-                        setAssigneePickerIssueId(open ? issue.id : null);
-                        if (!open) setAssigneeSearch("");
-                      }}
-                    >
-                      <PopoverTrigger asChild>
-                        <button
-                          className="flex w-[180px] shrink-0 items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                          }}
-                        >
-                          {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
-                            <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">
-                                <User className="h-3 w-3" />
-                              </span>
-                              Assignee
-                            </span>
-                          )}
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent
-                        className="w-56 p-1"
-                        align="end"
-                        onClick={(e) => e.stopPropagation()}
-                        onPointerDownOutside={() => setAssigneeSearch("")}
+                    <div className="hidden sm:block">
+                      <Popover
+                        open={assigneePickerIssueId === issue.id}
+                        onOpenChange={(open) => {
+                          setAssigneePickerIssueId(open ? issue.id : null);
+                          if (!open) setAssigneeSearch("");
+                        }}
                       >
-                        <input
-                          className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-                          placeholder="Search agents..."
-                          value={assigneeSearch}
-                          onChange={(e) => setAssigneeSearch(e.target.value)}
-                          autoFocus
-                        />
-                        <div className="max-h-48 overflow-y-auto overscroll-contain">
+                        <PopoverTrigger asChild>
                           <button
-                            className={cn(
-                              "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                              !issue.assigneeAgentId && "bg-accent"
-                            )}
+                            className="flex w-[180px] shrink-0 items-center rounded-md px-2 py-1 hover:bg-accent/50 transition-colors"
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              assignIssue(issue.id, null);
                             }}
                           >
-                            No assignee
+                            {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
+                              <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">
+                                  <User className="h-3 w-3" />
+                                </span>
+                                Assignee
+                              </span>
+                            )}
                           </button>
-                          {(agents ?? [])
-                            .filter((agent) => {
-                              if (!assigneeSearch.trim()) return true;
-                              return agent.name.toLowerCase().includes(assigneeSearch.toLowerCase());
-                            })
-                            .map((agent) => (
-                              <button
-                                key={agent.id}
-                                className={cn(
-                                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
-                                  issue.assigneeAgentId === agent.id && "bg-accent"
-                                )}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  assignIssue(issue.id, agent.id);
-                                }}
-                              >
-                                <Identity name={agent.name} size="sm" className="min-w-0" />
-                              </button>
-                            ))}
-                        </div>
-                      </PopoverContent>
-                    </Popover>
+                        </PopoverTrigger>
+                        <PopoverContent
+                          className="w-56 p-1"
+                          align="end"
+                          onClick={(e) => e.stopPropagation()}
+                          onPointerDownOutside={() => setAssigneeSearch("")}
+                        >
+                          <input
+                            className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+                            placeholder="Search agents..."
+                            value={assigneeSearch}
+                            onChange={(e) => setAssigneeSearch(e.target.value)}
+                            autoFocus
+                          />
+                          <div className="max-h-48 overflow-y-auto overscroll-contain">
+                            <button
+                              className={cn(
+                                "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                                !issue.assigneeAgentId && "bg-accent"
+                              )}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                assignIssue(issue.id, null);
+                              }}
+                            >
+                              No assignee
+                            </button>
+                            {(agents ?? [])
+                              .filter((agent) => {
+                                if (!assigneeSearch.trim()) return true;
+                                return agent.name.toLowerCase().includes(assigneeSearch.toLowerCase());
+                              })
+                              .map((agent) => (
+                                <button
+                                  key={agent.id}
+                                  className={cn(
+                                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
+                                    issue.assigneeAgentId === agent.id && "bg-accent"
+                                  )}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    assignIssue(issue.id, agent.id);
+                                  }}
+                                >
+                                  <Identity name={agent.name} size="sm" className="min-w-0" />
+                                </button>
+                              ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                     {liveIssueIds?.has(issue.id) && (
                       <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
                         <span className="relative flex h-2 w-2">

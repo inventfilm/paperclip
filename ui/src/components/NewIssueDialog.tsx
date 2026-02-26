@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type ChangeEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -31,6 +31,7 @@ import {
   Hexagon,
   Tag,
   Calendar,
+  Paperclip,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
@@ -105,6 +106,7 @@ export function NewIssueDialog() {
   const [projectOpen, setProjectOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
+  const attachInputRef = useRef<HTMLInputElement | null>(null);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -220,6 +222,21 @@ export function NewIssueDialog() {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSubmit();
+    }
+  }
+
+  async function handleAttachImage(evt: ChangeEvent<HTMLInputElement>) {
+    const file = evt.target.files?.[0];
+    if (!file) return;
+    try {
+      const asset = await uploadDescriptionImage.mutateAsync(file);
+      const name = file.name || "image";
+      setDescription((prev) => {
+        const suffix = `![${name}](${asset.contentPath})`;
+        return prev ? `${prev}\n\n${suffix}` : suffix;
+      });
+    } finally {
+      if (attachInputRef.current) attachInputRef.current.value = "";
     }
   }
 
@@ -486,6 +503,23 @@ export function NewIssueDialog() {
           <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
             <Tag className="h-3 w-3" />
             Labels
+          </button>
+
+          {/* Attach image chip */}
+          <input
+            ref={attachInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            className="hidden"
+            onChange={handleAttachImage}
+          />
+          <button
+            className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground"
+            onClick={() => attachInputRef.current?.click()}
+            disabled={uploadDescriptionImage.isPending}
+          >
+            <Paperclip className="h-3 w-3" />
+            {uploadDescriptionImage.isPending ? "Uploading..." : "Image"}
           </button>
 
           {/* More (dates) */}

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Link } from "react-router-dom";
 import type { IssueComment, Agent } from "@paperclip/shared";
 import { Button } from "@/components/ui/button";
+import { Paperclip } from "lucide-react";
 import { Identity } from "./Identity";
 import { MarkdownBody } from "./MarkdownBody";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
@@ -18,7 +19,10 @@ interface CommentThreadProps {
   issueStatus?: string;
   agentMap?: Map<string, Agent>;
   imageUploadHandler?: (file: File) => Promise<string>;
+  /** Callback to attach an image file to the parent issue (not inline in a comment). */
+  onAttachImage?: (file: File) => Promise<void>;
   draftKey?: string;
+  liveRunSlot?: React.ReactNode;
 }
 
 const CLOSED_STATUSES = new Set(["done", "cancelled"]);
@@ -52,11 +56,13 @@ function clearDraft(draftKey: string) {
   }
 }
 
-export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUploadHandler, draftKey }: CommentThreadProps) {
+export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUploadHandler, onAttachImage, draftKey, liveRunSlot }: CommentThreadProps) {
   const [body, setBody] = useState("");
   const [reopen, setReopen] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const editorRef = useRef<MarkdownEditorRef>(null);
+  const attachInputRef = useRef<HTMLInputElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isClosed = issueStatus ? CLOSED_STATUSES.has(issueStatus) : false;
@@ -112,6 +118,18 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUpl
     }
   }
 
+  async function handleAttachFile(evt: ChangeEvent<HTMLInputElement>) {
+    const file = evt.target.files?.[0];
+    if (!file || !onAttachImage) return;
+    setAttaching(true);
+    try {
+      await onAttachImage(file);
+    } finally {
+      setAttaching(false);
+      if (attachInputRef.current) attachInputRef.current.value = "";
+    }
+  }
+
   return (
     <div className="space-y-4">
       <h3 className="text-sm font-semibold">Comments ({comments.length})</h3>
@@ -122,7 +140,7 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUpl
 
       <div className="space-y-3">
         {sorted.map((comment) => (
-          <div key={comment.id} className="border border-border p-3">
+          <div key={comment.id} className="border border-border p-3 overflow-hidden min-w-0">
             <div className="flex items-center justify-between mb-1">
               {comment.authorAgentId ? (
                 <Link to={`/agents/${comment.authorAgentId}`} className="hover:underline">
@@ -153,6 +171,8 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUpl
         ))}
       </div>
 
+      {liveRunSlot}
+
       <div className="space-y-2">
         <MarkdownEditor
           ref={editorRef}
@@ -165,6 +185,27 @@ export function CommentThread({ comments, onAdd, issueStatus, agentMap, imageUpl
           contentClassName="min-h-[60px] text-sm"
         />
         <div className="flex items-center justify-end gap-3">
+          {onAttachImage && (
+            <>
+              <input
+                ref={attachInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                className="hidden"
+                onChange={handleAttachFile}
+              />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="mr-auto"
+                onClick={() => attachInputRef.current?.click()}
+                disabled={attaching}
+                title="Attach image"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+            </>
+          )}
           {isClosed && (
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
               <input

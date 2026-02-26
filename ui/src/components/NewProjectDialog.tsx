@@ -23,6 +23,9 @@ import {
   Calendar,
   Plus,
   X,
+  FolderOpen,
+  Github,
+  GitBranch,
 } from "lucide-react";
 import { PROJECT_COLORS } from "@paperclip/shared";
 import { cn } from "../lib/utils";
@@ -37,6 +40,9 @@ const projectStatuses = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+type WorkspaceSetup = "none" | "local" | "repo" | "both";
+const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
+
 export function NewProjectDialog() {
   const { newProjectOpen, closeNewProject } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
@@ -47,6 +53,10 @@ export function NewProjectDialog() {
   const [goalIds, setGoalIds] = useState<string[]>([]);
   const [targetDate, setTargetDate] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [workspaceSetup, setWorkspaceSetup] = useState<WorkspaceSetup>("none");
+  const [workspaceLocalPath, setWorkspaceLocalPath] = useState("");
+  const [workspaceRepoUrl, setWorkspaceRepoUrl] = useState("");
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null);
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
@@ -61,11 +71,6 @@ export function NewProjectDialog() {
   const createProject = useMutation({
     mutationFn: (data: Record<string, unknown>) =>
       projectsApi.create(selectedCompanyId!, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId!) });
-      reset();
-      closeNewProject();
-    },
   });
 
   const uploadDescriptionImage = useMutation({
@@ -82,18 +87,108 @@ export function NewProjectDialog() {
     setGoalIds([]);
     setTargetDate("");
     setExpanded(false);
+    setWorkspaceSetup("none");
+    setWorkspaceLocalPath("");
+    setWorkspaceRepoUrl("");
+    setWorkspaceError(null);
   }
 
-  function handleSubmit() {
+  const isAbsolutePath = (value: string) => value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value);
+
+  const isGitHubRepoUrl = (value: string) => {
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname.toLowerCase();
+      if (host !== "github.com" && host !== "www.github.com") return false;
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      return segments.length >= 2;
+    } catch {
+      return false;
+    }
+  };
+
+  const deriveWorkspaceNameFromPath = (value: string) => {
+    const normalized = value.trim().replace(/[\\/]+$/, "");
+    const segments = normalized.split(/[\\/]/).filter(Boolean);
+    return segments[segments.length - 1] ?? "Local folder";
+  };
+
+  const deriveWorkspaceNameFromRepo = (value: string) => {
+    try {
+      const parsed = new URL(value);
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      const repo = segments[segments.length - 1]?.replace(/\.git$/i, "") ?? "";
+      return repo || "GitHub repo";
+    } catch {
+      return "GitHub repo";
+    }
+  };
+
+  const toggleWorkspaceSetup = (next: WorkspaceSetup) => {
+    setWorkspaceSetup((prev) => (prev === next ? "none" : next));
+    setWorkspaceError(null);
+  };
+
+  async function handleSubmit() {
     if (!selectedCompanyId || !name.trim()) return;
-    createProject.mutate({
-      name: name.trim(),
-      description: description.trim() || undefined,
-      status,
-      color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
-      ...(goalIds.length > 0 ? { goalIds } : {}),
-      ...(targetDate ? { targetDate } : {}),
-    });
+    const localRequired = workspaceSetup === "local" || workspaceSetup === "both";
+    const repoRequired = workspaceSetup === "repo" || workspaceSetup === "both";
+    const localPath = workspaceLocalPath.trim();
+    const repoUrl = workspaceRepoUrl.trim();
+
+    if (localRequired && !isAbsolutePath(localPath)) {
+      setWorkspaceError("Local folder must be a full absolute path.");
+      return;
+    }
+    if (repoRequired && !isGitHubRepoUrl(repoUrl)) {
+      setWorkspaceError("Repo workspace must use a valid GitHub repo URL.");
+      return;
+    }
+
+    setWorkspaceError(null);
+
+    try {
+      const created = await createProject.mutateAsync({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        status,
+        color: PROJECT_COLORS[Math.floor(Math.random() * PROJECT_COLORS.length)],
+        ...(goalIds.length > 0 ? { goalIds } : {}),
+        ...(targetDate ? { targetDate } : {}),
+      });
+
+      const workspacePayloads: Array<Record<string, unknown>> = [];
+      if (localRequired && repoRequired) {
+        workspacePayloads.push({
+          name: deriveWorkspaceNameFromPath(localPath),
+          cwd: localPath,
+          repoUrl,
+        });
+      } else if (localRequired) {
+        workspacePayloads.push({
+          name: deriveWorkspaceNameFromPath(localPath),
+          cwd: localPath,
+        });
+      } else if (repoRequired) {
+        workspacePayloads.push({
+          name: deriveWorkspaceNameFromRepo(repoUrl),
+          cwd: REPO_ONLY_CWD_SENTINEL,
+          repoUrl,
+        });
+      }
+      for (const workspacePayload of workspacePayloads) {
+        await projectsApi.createWorkspace(created.id, {
+          ...workspacePayload,
+        });
+      }
+
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(selectedCompanyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(created.id) });
+      reset();
+      closeNewProject();
+    } catch {
+      // surface through createProject.isError
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -183,6 +278,83 @@ export function NewProjectDialog() {
               return asset.contentPath;
             }}
           />
+        </div>
+
+        <div className="px-4 pb-3 space-y-3 border-t border-border">
+          <div className="pt-3">
+            <p className="text-sm font-medium">Where will work be done on this project?</p>
+            <p className="text-xs text-muted-foreground">Add local folder and/or GitHub repo workspace hints.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              className={cn(
+                "rounded-lg border px-3 py-3 text-left transition-colors",
+                workspaceSetup === "local" ? "border-foreground bg-accent/40" : "border-border hover:bg-accent/30",
+              )}
+              onClick={() => toggleWorkspaceSetup("local")}
+            >
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <FolderOpen className="h-4 w-4" />
+                A local folder
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Use a full path on this machine.</p>
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "rounded-lg border px-3 py-3 text-left transition-colors",
+                workspaceSetup === "repo" ? "border-foreground bg-accent/40" : "border-border hover:bg-accent/30",
+              )}
+              onClick={() => toggleWorkspaceSetup("repo")}
+            >
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Github className="h-4 w-4" />
+                A github repo
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Paste a GitHub URL.</p>
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "rounded-lg border px-3 py-3 text-left transition-colors",
+                workspaceSetup === "both" ? "border-foreground bg-accent/40" : "border-border hover:bg-accent/30",
+              )}
+              onClick={() => toggleWorkspaceSetup("both")}
+            >
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <GitBranch className="h-4 w-4" />
+                Both
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">Configure local + repo hints.</p>
+            </button>
+          </div>
+
+          {(workspaceSetup === "local" || workspaceSetup === "both") && (
+            <div className="rounded-md border border-border p-2">
+              <label className="mb-1 block text-xs text-muted-foreground">Local folder (full path)</label>
+              <input
+                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs font-mono outline-none"
+                value={workspaceLocalPath}
+                onChange={(e) => setWorkspaceLocalPath(e.target.value)}
+                placeholder="/absolute/path/to/workspace"
+              />
+            </div>
+          )}
+          {(workspaceSetup === "repo" || workspaceSetup === "both") && (
+            <div className="rounded-md border border-border p-2">
+              <label className="mb-1 block text-xs text-muted-foreground">GitHub repo URL</label>
+              <input
+                className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                value={workspaceRepoUrl}
+                onChange={(e) => setWorkspaceRepoUrl(e.target.value)}
+                placeholder="https://github.com/org/repo"
+              />
+            </div>
+          )}
+          {workspaceError && (
+            <p className="text-xs text-destructive">{workspaceError}</p>
+          )}
         </div>
 
         {/* Property chips */}
@@ -281,7 +453,12 @@ export function NewProjectDialog() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end px-4 py-2.5 border-t border-border">
+        <div className="flex items-center justify-between px-4 py-2.5 border-t border-border">
+          {createProject.isError ? (
+            <p className="text-xs text-destructive">Failed to create project.</p>
+          ) : (
+            <span />
+          )}
           <Button
             size="sm"
             disabled={!name.trim() || createProject.isPending}

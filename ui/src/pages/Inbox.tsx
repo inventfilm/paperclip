@@ -326,12 +326,12 @@ export function Inbox() {
     showStaleSection ? "stale_work" : null,
   ].filter((key): key is SectionKey => key !== null);
 
-  const isLoading =
-    isJoinRequestsLoading ||
-    isApprovalsLoading ||
-    isDashboardLoading ||
-    isIssuesLoading ||
-    isRunsLoading;
+  const allLoaded =
+    !isJoinRequestsLoading &&
+    !isApprovalsLoading &&
+    !isDashboardLoading &&
+    !isIssuesLoading &&
+    !isRunsLoading;
 
   const showSeparatorBefore = (key: SectionKey) => visibleSections.indexOf(key) > 0;
 
@@ -397,11 +397,14 @@ export function Inbox() {
         )}
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {approvalsError && <p className="text-sm text-destructive">{approvalsError.message}</p>}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
-      {!isLoading && visibleSections.length === 0 && (
+      {!allLoaded && visibleSections.length === 0 && (
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      )}
+
+      {allLoaded && visibleSections.length === 0 && (
         <EmptyState
           icon={InboxIcon}
           message={tab === "new" ? "You're all caught up!" : "No inbox items match these filters."}

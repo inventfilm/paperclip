@@ -101,7 +101,7 @@ export function Layout() {
   );
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden pt-[env(safe-area-inset-top)]">
+    <div className="flex h-dvh bg-background text-foreground overflow-hidden pt-[env(safe-area-inset-top)]">
       {/* Mobile backdrop */}
       {isMobile && sidebarOpen && (
         <div
@@ -114,18 +114,16 @@ export function Layout() {
       {isMobile ? (
         <div
           className={cn(
-            "fixed inset-y-0 left-0 z-50 flex pt-[env(safe-area-inset-top)] transition-transform duration-200 ease-in-out",
+            "fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden pt-[env(safe-area-inset-top)] transition-transform duration-200 ease-in-out",
             sidebarOpen ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <div className="flex flex-col h-full">
-            <div className="flex flex-1 min-h-0">
-              <CompanyRail />
-              <Sidebar />
-            </div>
-            <div className="border-t border-r border-border px-3 py-2 bg-background">
-              <SidebarNavItem to="/docs" label="Documentation" icon={BookOpen} />
-            </div>
+          <div className="flex flex-1 min-h-0 overflow-hidden">
+            <CompanyRail />
+            <Sidebar />
+          </div>
+          <div className="border-t border-r border-border px-3 py-2 bg-background">
+            <SidebarNavItem to="/docs" label="Documentation" icon={BookOpen} />
           </div>
         </div>
       ) : (
@@ -152,7 +150,7 @@ export function Layout() {
         <BreadcrumbBar />
         <div className="flex flex-1 min-h-0">
           <main
-            className={cn("flex-1 overflow-auto p-4 md:p-6", isMobile && "pb-24")}
+            className={cn("flex-1 overflow-auto p-4 md:p-6", isMobile && "pb-[calc(5rem+env(safe-area-inset-bottom))]")}
             onScroll={handleMainScroll}
           >
             <Outlet />

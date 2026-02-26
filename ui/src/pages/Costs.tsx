@@ -5,7 +5,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
-import { formatCents } from "../lib/utils";
+import { formatCents, formatTokens } from "../lib/utils";
 import { Identity } from "../components/Identity";
 import { StatusBadge } from "../components/StatusBadge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -177,7 +177,7 @@ export function Costs() {
                     {data.byAgent.map((row) => (
                       <div
                         key={row.agentId}
-                        className="flex items-center justify-between text-sm"
+                        className="flex items-start justify-between text-sm"
                       >
                         <div className="flex items-center gap-2 min-w-0">
                           <Identity
@@ -188,9 +188,21 @@ export function Costs() {
                             <StatusBadge status="terminated" />
                           )}
                         </div>
-                        <span className="font-medium shrink-0 ml-2">
-                          {formatCents(row.costCents)}
-                        </span>
+                        <div className="text-right shrink-0 ml-2">
+                          <span className="font-medium block">{formatCents(row.costCents)}</span>
+                          <span className="text-xs text-muted-foreground block">
+                            in {formatTokens(row.inputTokens)} / out {formatTokens(row.outputTokens)} tok
+                          </span>
+                          {(row.apiRunCount > 0 || row.subscriptionRunCount > 0) && (
+                            <span className="text-xs text-muted-foreground block">
+                              {row.apiRunCount > 0 ? `api runs: ${row.apiRunCount}` : null}
+                              {row.apiRunCount > 0 && row.subscriptionRunCount > 0 ? " | " : null}
+                              {row.subscriptionRunCount > 0
+                                ? `subscription runs: ${row.subscriptionRunCount} (${formatTokens(row.subscriptionInputTokens)} in / ${formatTokens(row.subscriptionOutputTokens)} out tok)`
+                                : null}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>

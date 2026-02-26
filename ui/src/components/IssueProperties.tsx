@@ -154,7 +154,7 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                 )}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-64 p-1" align="end">
+            <PopoverContent className="w-64 p-1" align="end" collisionPadding={16}>
               <input
                 className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
                 placeholder="Search labels..."
@@ -241,7 +241,7 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                 )}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-52 p-1" align="end">
+            <PopoverContent className="w-52 p-1" align="end" collisionPadding={16}>
               <input
                 className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
                 placeholder="Search agents..."
@@ -313,7 +313,7 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
                 )}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-fit min-w-[11rem] p-1" align="end">
+            <PopoverContent className="w-fit min-w-[11rem] p-1" align="end" collisionPadding={16}>
               <input
                 className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
                 placeholder="Search projects..."
