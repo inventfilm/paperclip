@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { Issue } from "@paperclip/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi } from "../api/agents";
+import { authApi } from "../api/auth";
 import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
@@ -107,6 +108,12 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState("#6366f1");
 
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId;
+
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(companyId!),
     queryFn: () => agentsApi.list(companyId!),
@@ -166,6 +173,16 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const assignee = issue.assigneeAgentId
     ? agents?.find((a) => a.id === issue.assigneeAgentId)
     : null;
+  const userLabel = (userId: string | null | undefined) =>
+    userId
+      ? userId === "local-board"
+        ? "Board"
+        : currentUserId && userId === currentUserId
+          ? "Me"
+          : userId.slice(0, 5)
+      : null;
+  const assigneeUserLabel = userLabel(issue.assigneeUserId);
+  const creatorUserLabel = userLabel(issue.createdByUserId);
 
   const labelsTrigger = (issue.labels ?? []).length > 0 ? (
     <div className="flex items-center gap-1 flex-wrap">
@@ -268,6 +285,11 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
 
   const assigneeTrigger = assignee ? (
     <Identity name={assignee.name} size="sm" />
+  ) : assigneeUserLabel ? (
+    <>
+      <User className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-sm">{assigneeUserLabel}</span>
+    </>
   ) : (
     <>
       <User className="h-3.5 w-3.5 text-muted-foreground" />
@@ -279,7 +301,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
     <>
       <input
         className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-        placeholder="Search agents..."
+        placeholder="Search assignees..."
         value={assigneeSearch}
         onChange={(e) => setAssigneeSearch(e.target.value)}
         autoFocus={!inline}
@@ -294,6 +316,21 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
         >
           No assignee
         </button>
+        {issue.createdByUserId && (
+          <button
+            className={cn(
+              "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+              issue.assigneeUserId === issue.createdByUserId && "bg-accent",
+            )}
+            onClick={() => {
+              onUpdate({ assigneeAgentId: null, assigneeUserId: issue.createdByUserId });
+              setAssigneeOpen(false);
+            }}
+          >
+            <User className="h-3 w-3 shrink-0 text-muted-foreground" />
+            {creatorUserLabel ? `Assign to ${creatorUserLabel === "Me" ? "me" : creatorUserLabel}` : "Assign to requester"}
+          </button>
+        )}
         {(agents ?? [])
           .filter((a) => a.status !== "terminated")
           .filter((a) => {
