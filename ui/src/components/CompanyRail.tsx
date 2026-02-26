@@ -24,29 +24,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { Company } from "@paperclip/shared";
-
-const COMPANY_COLORS = [
-  "#6366f1", // indigo
-  "#8b5cf6", // violet
-  "#ec4899", // pink
-  "#f43f5e", // rose
-  "#f97316", // orange
-  "#eab308", // yellow
-  "#22c55e", // green
-  "#14b8a6", // teal
-  "#06b6d4", // cyan
-  "#3b82f6", // blue
-];
+import { CompanyPatternIcon } from "./CompanyPatternIcon";
 
 const ORDER_STORAGE_KEY = "paperclip.companyOrder";
-
-function companyColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return COMPANY_COLORS[Math.abs(hash) % COMPANY_COLORS.length]!;
-}
 
 function getStoredOrder(): string[] {
   try {
@@ -107,15 +87,16 @@ function SortableCompanyItem({
     opacity: isDragging ? 0.8 : 1,
   };
 
-  const color = companyColor(company.name);
-  const initial = company.name.charAt(0).toUpperCase();
-
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
       <Tooltip delayDuration={300}>
         <TooltipTrigger asChild>
-          <button
-            onClick={onSelect}
+          <a
+            href={`/dashboard?company=${company.id}`}
+            onClick={(e) => {
+              e.preventDefault();
+              onSelect();
+            }}
             className="relative flex items-center justify-center group"
           >
             {/* Selection indicator pill */}
@@ -128,18 +109,20 @@ function SortableCompanyItem({
               )}
             />
             <div
-              className={cn(
-                "flex items-center justify-center w-11 h-11 text-base font-semibold text-white transition-all duration-200",
-                isSelected
-                  ? "rounded-xl"
-                  : "rounded-[22px] group-hover:rounded-xl",
-                isDragging && "shadow-lg scale-105"
-              )}
-              style={{ backgroundColor: color }}
+              className={cn("transition-all duration-200", isDragging && "scale-105")}
             >
-              {initial}
+              <CompanyPatternIcon
+                companyName={company.name}
+                brandColor={company.brandColor}
+                className={cn(
+                  isSelected
+                    ? "rounded-xl"
+                    : "rounded-[22px] group-hover:rounded-xl",
+                  isDragging && "shadow-lg",
+                )}
+              />
             </div>
-          </button>
+          </a>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={8}>
           <p>{company.name}</p>

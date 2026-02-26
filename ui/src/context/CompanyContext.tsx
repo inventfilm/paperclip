@@ -35,7 +35,22 @@ const CompanyContext = createContext<CompanyContextValue | null>(null);
 export function CompanyProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [selectedCompanyId, setSelectedCompanyIdState] = useState<string | null>(
-    () => localStorage.getItem(STORAGE_KEY)
+    () => {
+      // Check URL param first (supports "open in new tab" from company rail)
+      const urlParams = new URLSearchParams(window.location.search);
+      const companyParam = urlParams.get("company");
+      if (companyParam) {
+        localStorage.setItem(STORAGE_KEY, companyParam);
+        // Clean up the URL param
+        urlParams.delete("company");
+        const newSearch = urlParams.toString();
+        const newUrl =
+          window.location.pathname + (newSearch ? `?${newSearch}` : "");
+        window.history.replaceState({}, "", newUrl);
+        return companyParam;
+      }
+      return localStorage.getItem(STORAGE_KEY);
+    }
   );
 
   const { data: companies = [], isLoading, error } = useQuery({
