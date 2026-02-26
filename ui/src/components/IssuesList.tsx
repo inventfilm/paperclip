@@ -12,10 +12,11 @@ import { PriorityIcon } from "./PriorityIcon";
 import { EmptyState } from "./EmptyState";
 import { Identity } from "./Identity";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
-import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User } from "lucide-react";
+import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import type { Issue } from "@paperclip/shared";
 
@@ -93,6 +94,25 @@ function applyFilters(issues: Issue[], state: IssueViewState): Issue[] {
   return result;
 }
 
+function applySearch(issues: Issue[], searchQuery: string, agentName: (id: string | null) => string | null): Issue[] {
+  const query = searchQuery.trim().toLowerCase();
+  if (!query) return issues;
+
+  return issues.filter((issue) => {
+    const fields = [
+      issue.identifier ?? "",
+      issue.title,
+      issue.description ?? "",
+      issue.status,
+      issue.priority,
+      agentName(issue.assigneeAgentId) ?? "",
+      ...(issue.labels ?? []).map((label) => label.name),
+    ];
+
+    return fields.some((field) => field.toLowerCase().includes(query));
+  });
+}
+
 function sortIssues(issues: Issue[], state: IssueViewState): Issue[] {
   const sorted = [...issues];
   const dir = state.sortDir === "asc" ? 1 : -1;
@@ -165,6 +185,7 @@ export function IssuesList({
   });
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState("");
+  const [issueSearch, setIssueSearch] = useState("");
 
   const updateView = useCallback((patch: Partial<IssueViewState>) => {
     setViewState((prev) => {
@@ -180,8 +201,10 @@ export function IssuesList({
   };
 
   const filtered = useMemo(() => {
-    return sortIssues(applyFilters(issues, viewState), viewState);
-  }, [issues, viewState]);
+    const filteredByControls = applyFilters(issues, viewState);
+    const filteredBySearch = applySearch(filteredByControls, issueSearch, agentName);
+    return sortIssues(filteredBySearch, viewState);
+  }, [issues, viewState, issueSearch, agents]);
 
   const { data: labels } = useQuery({
     queryKey: queryKeys.issues.labels(selectedCompanyId!),
@@ -237,10 +260,22 @@ export function IssuesList({
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 sm:gap-3">
-        <Button size="sm" variant="outline" onClick={() => openNewIssue(newIssueDefaults())}>
-          <Plus className="h-4 w-4 sm:mr-1" />
-          <span className="hidden sm:inline">New Issue</span>
-        </Button>
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <Button size="sm" variant="outline" onClick={() => openNewIssue(newIssueDefaults())}>
+            <Plus className="h-4 w-4 sm:mr-1" />
+            <span className="hidden sm:inline">New Issue</span>
+          </Button>
+          <div className="relative w-36 sm:w-52 md:w-64">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={issueSearch}
+              onChange={(e) => setIssueSearch(e.target.value)}
+              placeholder="Search issues..."
+              className="h-8 pl-7 text-xs sm:text-sm"
+              aria-label="Search issues"
+            />
+          </div>
+        </div>
 
         <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
           {/* View mode toggle */}
@@ -264,7 +299,7 @@ export function IssuesList({
           {/* Filter */}
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm" className={`text-xs ${activeFilterCount > 0 ? "text-blue-400" : ""}`}>
+              <Button variant="ghost" size="sm" className={`text-xs ${activeFilterCount > 0 ? "text-blue-600 dark:text-blue-400" : ""}`}>
                 <Filter className="h-3.5 w-3.5 sm:h-3 sm:w-3 sm:mr-1" />
                 <span className="hidden sm:inline">{activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : "Filter"}</span>
                 {activeFilterCount > 0 && (
@@ -484,7 +519,7 @@ export function IssuesList({
       {!isLoading && filtered.length === 0 && viewState.viewMode === "list" && (
         <EmptyState
           icon={CircleDot}
-          message="No issues match the current filters."
+          message="No issues match the current filters or search."
           action="Create Issue"
           onAction={() => openNewIssue(newIssueDefaults())}
         />
@@ -568,6 +603,15 @@ export function IssuesList({
                     </div>
                   )}
                   <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+                    {liveIssueIds?.has(issue.id) && (
+                      <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+                        </span>
+                        <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hidden sm:inline">Live</span>
+                      </span>
+                    )}
                     <div className="hidden sm:block">
                       <Popover
                         open={assigneePickerIssueId === issue.id}
@@ -648,15 +692,6 @@ export function IssuesList({
                         </PopoverContent>
                       </Popover>
                     </div>
-                    {liveIssueIds?.has(issue.id) && (
-                      <span className="inline-flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10">
-                        <span className="relative flex h-2 w-2">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-                        </span>
-                        <span className="text-[11px] font-medium text-blue-400 hidden sm:inline">Live</span>
-                      </span>
-                    )}
                     <span className="text-xs text-muted-foreground hidden sm:inline">
                       {formatDate(issue.createdAt)}
                     </span>
