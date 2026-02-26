@@ -17,7 +17,7 @@ export const projectWorkspaces = pgTable(
     companyId: uuid("company_id").notNull().references(() => companies.id),
     projectId: uuid("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    cwd: text("cwd").notNull(),
+    cwd: text("cwd"),
     repoUrl: text("repo_url"),
     repoRef: text("repo_ref"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),

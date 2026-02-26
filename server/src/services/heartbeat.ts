@@ -28,6 +28,7 @@ const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 10;
 const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
 const startLocksByAgent = new Map<string, Promise<void>>();
+const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
 
 function appendExcerpt(prev: string, chunk: string) {
   return appendWithCap(prev, chunk, MAX_EXCERPT_BYTES);
@@ -344,6 +345,73 @@ export function heartbeatService(db: Db) {
     context: Record<string, unknown>,
     previousSessionParams: Record<string, unknown> | null,
   ) {
+    const issueId = readNonEmptyString(context.issueId);
+    const contextProjectId = readNonEmptyString(context.projectId);
+    const issueProjectId = issueId
+      ? await db
+          .select({ projectId: issues.projectId })
+          .from(issues)
+          .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
+          .then((rows) => rows[0]?.projectId ?? null)
+      : null;
+    const resolvedProjectId = issueProjectId ?? contextProjectId;
+
+    const projectWorkspaceRows = resolvedProjectId
+      ? await db
+          .select()
+          .from(projectWorkspaces)
+          .where(
+            and(
+              eq(projectWorkspaces.companyId, agent.companyId),
+              eq(projectWorkspaces.projectId, resolvedProjectId),
+            ),
+          )
+          .orderBy(asc(projectWorkspaces.createdAt), asc(projectWorkspaces.id))
+      : [];
+
+    const workspaceHints = projectWorkspaceRows.map((workspace) => ({
+      workspaceId: workspace.id,
+      cwd: readNonEmptyString(workspace.cwd),
+      repoUrl: readNonEmptyString(workspace.repoUrl),
+      repoRef: readNonEmptyString(workspace.repoRef),
+    }));
+
+    if (projectWorkspaceRows.length > 0) {
+      for (const workspace of projectWorkspaceRows) {
+        const projectCwd = readNonEmptyString(workspace.cwd);
+        if (!projectCwd || projectCwd === REPO_ONLY_CWD_SENTINEL) {
+          continue;
+        }
+        const projectCwdExists = await fs
+          .stat(projectCwd)
+          .then((stats) => stats.isDirectory())
+          .catch(() => false);
+        if (projectCwdExists) {
+          return {
+            cwd: projectCwd,
+            source: "project_primary" as const,
+            projectId: resolvedProjectId,
+            workspaceId: workspace.id,
+            repoUrl: workspace.repoUrl,
+            repoRef: workspace.repoRef,
+            workspaceHints,
+          };
+        }
+      }
+
+      const fallbackCwd = resolveDefaultAgentWorkspaceDir(agent.id);
+      await fs.mkdir(fallbackCwd, { recursive: true });
+      return {
+        cwd: fallbackCwd,
+        source: "project_primary" as const,
+        projectId: resolvedProjectId,
+        workspaceId: projectWorkspaceRows[0]?.id ?? null,
+        repoUrl: projectWorkspaceRows[0]?.repoUrl ?? null,
+        repoRef: projectWorkspaceRows[0]?.repoRef ?? null,
+        workspaceHints,
+      };
+    }
+
     const sessionCwd = readNonEmptyString(previousSessionParams?.cwd);
     if (sessionCwd) {
       const sessionCwdExists = await fs
@@ -354,44 +422,12 @@ export function heartbeatService(db: Db) {
         return {
           cwd: sessionCwd,
           source: "task_session" as const,
-          projectId: readNonEmptyString(context.projectId),
+          projectId: resolvedProjectId,
           workspaceId: readNonEmptyString(previousSessionParams?.workspaceId),
           repoUrl: readNonEmptyString(previousSessionParams?.repoUrl),
           repoRef: readNonEmptyString(previousSessionParams?.repoRef),
+          workspaceHints,
         };
-      }
-    }
-
-    const issueId = readNonEmptyString(context.issueId);
-    if (issueId) {
-      const issue = await db
-        .select({ id: issues.id, projectId: issues.projectId })
-        .from(issues)
-        .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
-        .then((rows) => rows[0] ?? null);
-      if (issue?.projectId) {
-        const workspace = await db
-          .select()
-          .from(projectWorkspaces)
-          .where(
-            and(
-              eq(projectWorkspaces.companyId, agent.companyId),
-              eq(projectWorkspaces.projectId, issue.projectId),
-            ),
-          )
-          .orderBy(desc(projectWorkspaces.isPrimary), asc(projectWorkspaces.createdAt), asc(projectWorkspaces.id))
-          .limit(1)
-          .then((rows) => rows[0] ?? null);
-        if (workspace) {
-          return {
-            cwd: workspace.cwd,
-            source: "project_primary" as const,
-            projectId: issue.projectId,
-            workspaceId: workspace.id,
-            repoUrl: workspace.repoUrl,
-            repoRef: workspace.repoRef,
-          };
-        }
       }
     }
 
@@ -400,10 +436,11 @@ export function heartbeatService(db: Db) {
     return {
       cwd,
       source: "agent_home" as const,
-      projectId: readNonEmptyString(context.projectId),
+      projectId: resolvedProjectId,
       workspaceId: null,
       repoUrl: null,
       repoRef: null,
+      workspaceHints,
     };
   }
 
@@ -745,6 +782,7 @@ export function heartbeatService(db: Db) {
     const outputTokens = usage?.outputTokens ?? 0;
     const cachedInputTokens = usage?.cachedInputTokens ?? 0;
     const additionalCostCents = Math.max(0, Math.round((result.costUsd ?? 0) * 100));
+    const hasTokenUsage = inputTokens > 0 || outputTokens > 0 || cachedInputTokens > 0;
 
     await db
       .update(agentRuntimeState)
@@ -762,7 +800,7 @@ export function heartbeatService(db: Db) {
       })
       .where(eq(agentRuntimeState.agentId, agent.id));
 
-    if (additionalCostCents > 0) {
+    if (additionalCostCents > 0 || hasTokenUsage) {
       await db.insert(costEvents).values({
         companyId: agent.companyId,
         agentId: agent.id,
@@ -773,7 +811,9 @@ export function heartbeatService(db: Db) {
         costCents: additionalCostCents,
         occurredAt: new Date(),
       });
+    }
 
+    if (additionalCostCents > 0) {
       await db
         .update(agents)
         .set({
@@ -866,6 +906,7 @@ export function heartbeatService(db: Db) {
       repoUrl: resolvedWorkspace.repoUrl,
       repoRef: resolvedWorkspace.repoRef,
     };
+    context.paperclipWorkspaces = resolvedWorkspace.workspaceHints;
     if (resolvedWorkspace.projectId && !readNonEmptyString(context.projectId)) {
       context.projectId = resolvedWorkspace.projectId;
     }
@@ -1053,6 +1094,7 @@ export function heartbeatService(db: Db) {
           ? ({
               ...(adapterResult.usage ?? {}),
               ...(adapterResult.costUsd != null ? { costUsd: adapterResult.costUsd } : {}),
+              ...(adapterResult.billingType ? { billingType: adapterResult.billingType } : {}),
             } as Record<string, unknown>)
           : null;
 
@@ -1751,20 +1793,21 @@ export function heartbeatService(db: Db) {
   }
 
   return {
-    list: (companyId: string, agentId?: string) => {
-      if (!agentId) {
-        return db
-          .select()
-          .from(heartbeatRuns)
-          .where(eq(heartbeatRuns.companyId, companyId))
-          .orderBy(desc(heartbeatRuns.createdAt));
-      }
-
-      return db
+    list: (companyId: string, agentId?: string, limit?: number) => {
+      const query = db
         .select()
         .from(heartbeatRuns)
-        .where(and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.agentId, agentId)))
+        .where(
+          agentId
+            ? and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.agentId, agentId))
+            : eq(heartbeatRuns.companyId, companyId),
+        )
         .orderBy(desc(heartbeatRuns.createdAt));
+
+      if (limit) {
+        return query.limit(limit);
+      }
+      return query;
     },
 
     getRun,

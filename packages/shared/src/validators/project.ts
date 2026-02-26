@@ -20,17 +20,34 @@ export const updateProjectSchema = createProjectSchema.partial();
 
 export type UpdateProject = z.infer<typeof updateProjectSchema>;
 
-export const createProjectWorkspaceSchema = z.object({
-  name: z.string().min(1),
-  cwd: z.string().min(1),
+const projectWorkspaceFields = {
+  name: z.string().min(1).optional(),
+  cwd: z.string().min(1).optional().nullable(),
   repoUrl: z.string().url().optional().nullable(),
   repoRef: z.string().optional().nullable(),
   metadata: z.record(z.unknown()).optional().nullable(),
+};
+
+export const createProjectWorkspaceSchema = z.object({
+  ...projectWorkspaceFields,
   isPrimary: z.boolean().optional().default(false),
+}).superRefine((value, ctx) => {
+  const hasCwd = typeof value.cwd === "string" && value.cwd.trim().length > 0;
+  const hasRepo = typeof value.repoUrl === "string" && value.repoUrl.trim().length > 0;
+  if (!hasCwd && !hasRepo) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Workspace requires at least one of cwd or repoUrl.",
+      path: ["cwd"],
+    });
+  }
 });
 
 export type CreateProjectWorkspace = z.infer<typeof createProjectWorkspaceSchema>;
 
-export const updateProjectWorkspaceSchema = createProjectWorkspaceSchema.partial();
+export const updateProjectWorkspaceSchema = z.object({
+  ...projectWorkspaceFields,
+  isPrimary: z.boolean().optional(),
+}).partial();
 
 export type UpdateProjectWorkspace = z.infer<typeof updateProjectWorkspaceSchema>;

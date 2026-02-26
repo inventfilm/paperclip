@@ -900,7 +900,7 @@ export function issueService(db: Db) {
           companyId: string;
           projectId: string;
           name: string;
-          cwd: string;
+          cwd: string | null;
           repoUrl: string | null;
           repoRef: string | null;
           metadata: Record<string, unknown> | null;
@@ -913,7 +913,7 @@ export function issueService(db: Db) {
           companyId: string;
           projectId: string;
           name: string;
-          cwd: string;
+          cwd: string | null;
           repoUrl: string | null;
           repoRef: string | null;
           metadata: Record<string, unknown> | null;

@@ -5,6 +5,16 @@ import { PROJECT_COLORS, type ProjectGoalRef, type ProjectWorkspace } from "@pap
 
 type ProjectRow = typeof projects.$inferSelect;
 type ProjectWorkspaceRow = typeof projectWorkspaces.$inferSelect;
+const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
+type CreateWorkspaceInput = {
+  name?: string | null;
+  cwd?: string | null;
+  repoUrl?: string | null;
+  repoRef?: string | null;
+  metadata?: Record<string, unknown> | null;
+  isPrimary?: boolean;
+};
+type UpdateWorkspaceInput = Partial<CreateWorkspaceInput>;
 
 interface ProjectWithGoals extends ProjectRow {
   goalIds: string[];
@@ -120,6 +130,53 @@ function resolveGoalIds(data: { goalIds?: string[]; goalId?: string | null }): s
     return data.goalId ? [data.goalId] : [];
   }
   return undefined;
+}
+
+function readNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeWorkspaceCwd(value: unknown): string | null {
+  const cwd = readNonEmptyString(value);
+  if (!cwd) return null;
+  return cwd === REPO_ONLY_CWD_SENTINEL ? null : cwd;
+}
+
+function deriveNameFromCwd(cwd: string): string {
+  const normalized = cwd.replace(/[\\/]+$/, "");
+  const segments = normalized.split(/[\\/]/).filter(Boolean);
+  return segments[segments.length - 1] ?? "Local folder";
+}
+
+function deriveNameFromRepoUrl(repoUrl: string): string {
+  try {
+    const url = new URL(repoUrl);
+    const cleanedPath = url.pathname.replace(/\/+$/, "");
+    const lastSegment = cleanedPath.split("/").filter(Boolean).pop() ?? "";
+    const noGitSuffix = lastSegment.replace(/\.git$/i, "");
+    return noGitSuffix || repoUrl;
+  } catch {
+    return repoUrl;
+  }
+}
+
+function deriveWorkspaceName(input: {
+  name?: string | null;
+  cwd?: string | null;
+  repoUrl?: string | null;
+}) {
+  const explicit = readNonEmptyString(input.name);
+  if (explicit) return explicit;
+
+  const cwd = readNonEmptyString(input.cwd);
+  if (cwd) return deriveNameFromCwd(cwd);
+
+  const repoUrl = readNonEmptyString(input.repoUrl);
+  if (repoUrl) return deriveNameFromRepoUrl(repoUrl);
+
+  return "Workspace";
 }
 
 async function ensureSinglePrimaryWorkspace(
@@ -257,7 +314,7 @@ export function projectService(db: Db) {
 
     createWorkspace: async (
       projectId: string,
-      data: Omit<typeof projectWorkspaces.$inferInsert, "projectId" | "companyId">,
+      data: CreateWorkspaceInput,
     ): Promise<ProjectWorkspace | null> => {
       const project = await db
         .select()
@@ -265,6 +322,15 @@ export function projectService(db: Db) {
         .where(eq(projects.id, projectId))
         .then((rows) => rows[0] ?? null);
       if (!project) return null;
+
+      const cwd = normalizeWorkspaceCwd(data.cwd);
+      const repoUrl = readNonEmptyString(data.repoUrl);
+      if (!cwd && !repoUrl) return null;
+      const name = deriveWorkspaceName({
+        name: data.name,
+        cwd,
+        repoUrl,
+      });
 
       const existing = await db
         .select()
@@ -292,10 +358,10 @@ export function projectService(db: Db) {
           .values({
             companyId: project.companyId,
             projectId,
-            name: data.name,
-            cwd: data.cwd,
-            repoUrl: data.repoUrl ?? null,
-            repoRef: data.repoRef ?? null,
+            name,
+            cwd: cwd ?? null,
+            repoUrl: repoUrl ?? null,
+            repoRef: readNonEmptyString(data.repoRef),
             metadata: (data.metadata as Record<string, unknown> | null | undefined) ?? null,
             isPrimary: shouldBePrimary,
           })
@@ -310,7 +376,7 @@ export function projectService(db: Db) {
     updateWorkspace: async (
       projectId: string,
       workspaceId: string,
-      data: Partial<typeof projectWorkspaces.$inferInsert>,
+      data: UpdateWorkspaceInput,
     ): Promise<ProjectWorkspace | null> => {
       const existing = await db
         .select()
@@ -324,13 +390,26 @@ export function projectService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
 
+      const nextCwd =
+        data.cwd !== undefined
+          ? normalizeWorkspaceCwd(data.cwd)
+          : normalizeWorkspaceCwd(existing.cwd);
+      const nextRepoUrl =
+        data.repoUrl !== undefined
+          ? readNonEmptyString(data.repoUrl)
+          : readNonEmptyString(existing.repoUrl);
+      if (!nextCwd && !nextRepoUrl) return null;
+
       const patch: Partial<typeof projectWorkspaces.$inferInsert> = {
         updatedAt: new Date(),
       };
-      if (data.name !== undefined) patch.name = data.name;
-      if (data.cwd !== undefined) patch.cwd = data.cwd;
-      if (data.repoUrl !== undefined) patch.repoUrl = data.repoUrl;
-      if (data.repoRef !== undefined) patch.repoRef = data.repoRef;
+      if (data.name !== undefined) patch.name = deriveWorkspaceName({ name: data.name, cwd: nextCwd, repoUrl: nextRepoUrl });
+      if (data.name === undefined && (data.cwd !== undefined || data.repoUrl !== undefined)) {
+        patch.name = deriveWorkspaceName({ cwd: nextCwd, repoUrl: nextRepoUrl });
+      }
+      if (data.cwd !== undefined) patch.cwd = nextCwd ?? null;
+      if (data.repoUrl !== undefined) patch.repoUrl = nextRepoUrl ?? null;
+      if (data.repoRef !== undefined) patch.repoRef = readNonEmptyString(data.repoRef);
       if (data.metadata !== undefined) patch.metadata = data.metadata;
 
       const updated = await db.transaction(async (tx) => {
