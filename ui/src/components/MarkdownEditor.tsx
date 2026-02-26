@@ -10,6 +10,8 @@ import {
 } from "react";
 import {
   MDXEditor,
+  codeBlockPlugin,
+  codeMirrorPlugin,
   type MDXEditorMethods,
   headingsPlugin,
   imagePlugin,
@@ -18,6 +20,7 @@ import {
   listsPlugin,
   markdownShortcutPlugin,
   quotePlugin,
+  tablePlugin,
   thematicBreakPlugin,
   type RealmPlugin,
 } from "@mdxeditor/editor";
@@ -61,6 +64,26 @@ interface MentionState {
   atPos: number;
   endPos: number;
 }
+
+const CODE_BLOCK_LANGUAGES: Record<string, string> = {
+  txt: "Text",
+  md: "Markdown",
+  js: "JavaScript",
+  jsx: "JavaScript (JSX)",
+  ts: "TypeScript",
+  tsx: "TypeScript (TSX)",
+  json: "JSON",
+  bash: "Bash",
+  sh: "Shell",
+  python: "Python",
+  go: "Go",
+  rust: "Rust",
+  sql: "SQL",
+  html: "HTML",
+  css: "CSS",
+  yaml: "YAML",
+  yml: "YAML",
+};
 
 function detectMention(container: HTMLElement): MentionState | null {
   const sel = window.getSelection();
@@ -174,9 +197,12 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       headingsPlugin(),
       listsPlugin(),
       quotePlugin(),
+      tablePlugin(),
       linkPlugin(),
       linkDialogPlugin(),
       thematicBreakPlugin(),
+      codeBlockPlugin(),
+      codeMirrorPlugin({ codeBlockLanguages: CODE_BLOCK_LANGUAGES }),
       markdownShortcutPlugin(),
     ];
     if (imageHandler) {

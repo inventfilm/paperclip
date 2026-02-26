@@ -42,6 +42,16 @@ import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySel
 const DRAFT_KEY = "paperclip:issue-draft";
 const DEBOUNCE_MS = 800;
 
+/** Return black or white hex based on background luminance (WCAG perceptual weights). */
+function getContrastTextColor(hexColor: string): string {
+  const hex = hexColor.replace("#", "");
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.5 ? "#000000" : "#ffffff";
+}
+
 interface IssueDraft {
   title: string;
   description: string;
@@ -51,6 +61,7 @@ interface IssueDraft {
   projectId: string;
   assigneeModelOverride: string;
   assigneeThinkingEffort: string;
+  assigneeChrome: boolean;
   assigneeUseProjectWorkspace: boolean;
 }
 
@@ -76,6 +87,7 @@ function buildAssigneeAdapterOverrides(input: {
   adapterType: string | null | undefined;
   modelOverride: string;
   thinkingEffortOverride: string;
+  chrome: boolean;
   useProjectWorkspace: boolean;
 }): Record<string, unknown> | null {
   const adapterType = input.adapterType ?? null;
@@ -91,6 +103,9 @@ function buildAssigneeAdapterOverrides(input: {
     } else if (adapterType === "claude_local") {
       adapterConfig.effort = input.thinkingEffortOverride;
     }
+  }
+  if (adapterType === "claude_local" && input.chrome) {
+    adapterConfig.chrome = true;
   }
 
   const overrides: Record<string, unknown> = {};
@@ -138,7 +153,7 @@ const priorities = [
 
 export function NewIssueDialog() {
   const { newIssueOpen, newIssueDefaults, closeNewIssue } = useDialog();
-  const { selectedCompanyId, selectedCompany } = useCompany();
+  const { companies, selectedCompanyId, selectedCompany } = useCompany();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const [title, setTitle] = useState("");
@@ -150,29 +165,35 @@ export function NewIssueDialog() {
   const [assigneeOptionsOpen, setAssigneeOptionsOpen] = useState(false);
   const [assigneeModelOverride, setAssigneeModelOverride] = useState("");
   const [assigneeThinkingEffort, setAssigneeThinkingEffort] = useState("");
+  const [assigneeChrome, setAssigneeChrome] = useState(false);
   const [assigneeUseProjectWorkspace, setAssigneeUseProjectWorkspace] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [dialogCompanyId, setDialogCompanyId] = useState<string | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const effectiveCompanyId = dialogCompanyId ?? selectedCompanyId;
+  const dialogCompany = companies.find((c) => c.id === effectiveCompanyId) ?? selectedCompany;
 
   // Popover states
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [companyOpen, setCompanyOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const assigneeSelectorRef = useRef<HTMLButtonElement | null>(null);
   const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
 
   const { data: agents } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId!),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && newIssueOpen,
+    queryKey: queryKeys.agents.list(effectiveCompanyId!),
+    queryFn: () => agentsApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newIssueOpen,
   });
 
   const { data: projects } = useQuery({
-    queryKey: queryKeys.projects.list(selectedCompanyId!),
-    queryFn: () => projectsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && newIssueOpen,
+    queryKey: queryKeys.projects.list(effectiveCompanyId!),
+    queryFn: () => projectsApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newIssueOpen,
   });
 
   const assigneeAdapterType = (agents ?? []).find((agent) => agent.id === assigneeId)?.adapterType ?? null;
@@ -183,14 +204,14 @@ export function NewIssueDialog() {
   const { data: assigneeAdapterModels } = useQuery({
     queryKey: ["adapter-models", assigneeAdapterType],
     queryFn: () => agentsApi.adapterModels(assigneeAdapterType!),
-    enabled: !!selectedCompanyId && newIssueOpen && supportsAssigneeOverrides,
+    enabled: !!effectiveCompanyId && newIssueOpen && supportsAssigneeOverrides,
   });
 
   const createIssue = useMutation({
-    mutationFn: (data: Record<string, unknown>) =>
-      issuesApi.create(selectedCompanyId!, data),
+    mutationFn: ({ companyId, ...data }: { companyId: string } & Record<string, unknown>) =>
+      issuesApi.create(companyId, data),
     onSuccess: (issue) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(effectiveCompanyId!) });
       if (draftTimer.current) clearTimeout(draftTimer.current);
       clearDraft();
       reset();
@@ -207,8 +228,8 @@ export function NewIssueDialog() {
 
   const uploadDescriptionImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedCompanyId) throw new Error("No company selected");
-      return assetsApi.uploadImage(selectedCompanyId, file, "issues/drafts");
+      if (!effectiveCompanyId) throw new Error("No company selected");
+      return assetsApi.uploadImage(effectiveCompanyId, file, "issues/drafts");
     },
   });
 
@@ -235,6 +256,7 @@ export function NewIssueDialog() {
       projectId,
       assigneeModelOverride,
       assigneeThinkingEffort,
+      assigneeChrome,
       assigneeUseProjectWorkspace,
     });
   }, [
@@ -246,6 +268,7 @@ export function NewIssueDialog() {
     projectId,
     assigneeModelOverride,
     assigneeThinkingEffort,
+    assigneeChrome,
     assigneeUseProjectWorkspace,
     newIssueOpen,
     scheduleSave,
@@ -254,6 +277,7 @@ export function NewIssueDialog() {
   // Restore draft or apply defaults when dialog opens
   useEffect(() => {
     if (!newIssueOpen) return;
+    setDialogCompanyId(selectedCompanyId);
 
     const draft = loadDraft();
     if (draft && draft.title.trim()) {
@@ -265,6 +289,7 @@ export function NewIssueDialog() {
       setProjectId(newIssueDefaults.projectId ?? draft.projectId);
       setAssigneeModelOverride(draft.assigneeModelOverride ?? "");
       setAssigneeThinkingEffort(draft.assigneeThinkingEffort ?? "");
+      setAssigneeChrome(draft.assigneeChrome ?? false);
       setAssigneeUseProjectWorkspace(draft.assigneeUseProjectWorkspace ?? true);
     } else {
       setStatus(newIssueDefaults.status ?? "todo");
@@ -273,6 +298,7 @@ export function NewIssueDialog() {
       setAssigneeId(newIssueDefaults.assigneeAgentId ?? "");
       setAssigneeModelOverride("");
       setAssigneeThinkingEffort("");
+      setAssigneeChrome(false);
       setAssigneeUseProjectWorkspace(true);
     }
   }, [newIssueOpen, newIssueDefaults]);
@@ -282,6 +308,7 @@ export function NewIssueDialog() {
       setAssigneeOptionsOpen(false);
       setAssigneeModelOverride("");
       setAssigneeThinkingEffort("");
+      setAssigneeChrome(false);
       setAssigneeUseProjectWorkspace(true);
       return;
     }
@@ -312,8 +339,22 @@ export function NewIssueDialog() {
     setAssigneeOptionsOpen(false);
     setAssigneeModelOverride("");
     setAssigneeThinkingEffort("");
+    setAssigneeChrome(false);
     setAssigneeUseProjectWorkspace(true);
     setExpanded(false);
+    setDialogCompanyId(null);
+    setCompanyOpen(false);
+  }
+
+  function handleCompanyChange(companyId: string) {
+    if (companyId === effectiveCompanyId) return;
+    setDialogCompanyId(companyId);
+    setAssigneeId("");
+    setProjectId("");
+    setAssigneeModelOverride("");
+    setAssigneeThinkingEffort("");
+    setAssigneeChrome(false);
+    setAssigneeUseProjectWorkspace(true);
   }
 
   function discardDraft() {
@@ -323,14 +364,16 @@ export function NewIssueDialog() {
   }
 
   function handleSubmit() {
-    if (!selectedCompanyId || !title.trim()) return;
+    if (!effectiveCompanyId || !title.trim()) return;
     const assigneeAdapterOverrides = buildAssigneeAdapterOverrides({
       adapterType: assigneeAdapterType,
       modelOverride: assigneeModelOverride,
       thinkingEffortOverride: assigneeThinkingEffort,
+      chrome: assigneeChrome,
       useProjectWorkspace: assigneeUseProjectWorkspace,
     });
     createIssue.mutate({
+      companyId: effectiveCompanyId,
       title: title.trim(),
       description: description.trim() || undefined,
       status,
@@ -429,11 +472,59 @@ export function NewIssueDialog() {
         {/* Header bar */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border shrink-0">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {selectedCompany && (
-              <span className="bg-muted px-1.5 py-0.5 rounded text-xs font-medium">
-                {selectedCompany.name.slice(0, 3).toUpperCase()}
-              </span>
-            )}
+            <Popover open={companyOpen} onOpenChange={setCompanyOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  className={cn(
+                    "px-1.5 py-0.5 rounded text-xs font-semibold cursor-pointer hover:opacity-80 transition-opacity",
+                    !dialogCompany?.brandColor && "bg-muted",
+                  )}
+                  style={
+                    dialogCompany?.brandColor
+                      ? {
+                          backgroundColor: dialogCompany.brandColor,
+                          color: getContrastTextColor(dialogCompany.brandColor),
+                        }
+                      : undefined
+                  }
+                >
+                  {(dialogCompany?.name ?? "").slice(0, 3).toUpperCase()}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-1" align="start">
+                {companies.map((c) => (
+                  <button
+                    key={c.id}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      c.id === effectiveCompanyId && "bg-accent",
+                    )}
+                    onClick={() => {
+                      handleCompanyChange(c.id);
+                      setCompanyOpen(false);
+                    }}
+                  >
+                    <span
+                      className={cn(
+                        "px-1 py-0.5 rounded text-[10px] font-semibold leading-none",
+                        !c.brandColor && "bg-muted",
+                      )}
+                      style={
+                        c.brandColor
+                          ? {
+                              backgroundColor: c.brandColor,
+                              color: getContrastTextColor(c.brandColor),
+                            }
+                          : undefined
+                      }
+                    >
+                      {c.name.slice(0, 3).toUpperCase()}
+                    </span>
+                    <span className="truncate">{c.name}</span>
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
             <span className="text-muted-foreground/60">&rsaquo;</span>
             <span>New issue</span>
           </div>
@@ -604,6 +695,25 @@ export function NewIssueDialog() {
                     ))}
                   </div>
                 </div>
+                {assigneeAdapterType === "claude_local" && (
+                  <div className="flex items-center justify-between rounded-md border border-border px-2 py-1.5">
+                    <div className="text-xs text-muted-foreground">Enable Chrome (--chrome)</div>
+                    <button
+                      className={cn(
+                        "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                        assigneeChrome ? "bg-green-600" : "bg-muted"
+                      )}
+                      onClick={() => setAssigneeChrome((value) => !value)}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                          assigneeChrome ? "translate-x-4.5" : "translate-x-0.5"
+                        )}
+                      />
+                    </button>
+                  </div>
+                )}
                 <div className="flex items-center justify-between rounded-md border border-border px-2 py-1.5">
                   <div className="text-xs text-muted-foreground">Use project workspace</div>
                   <button

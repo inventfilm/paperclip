@@ -133,8 +133,11 @@ function describeIssueUpdate(details: Record<string, unknown> | null): string | 
   const changes: string[] = [];
   if (typeof details.status === "string") changes.push(`status -> ${details.status.replace(/_/g, " ")}`);
   if (typeof details.priority === "string") changes.push(`priority -> ${details.priority}`);
-  if (typeof details.assigneeAgentId === "string") changes.push("reassigned");
-  else if (details.assigneeAgentId === null) changes.push("unassigned");
+  if (typeof details.assigneeAgentId === "string" || typeof details.assigneeUserId === "string") {
+    changes.push("reassigned");
+  } else if (details.assigneeAgentId === null || details.assigneeUserId === null) {
+    changes.push("unassigned");
+  }
   if (details.reopened === true) {
     const from = readString(details.reopenedFrom);
     changes.push(from ? `reopened from ${from.replace(/_/g, " ")}` : "reopened");

@@ -31,6 +31,7 @@ import {
   help,
   adapterLabels,
 } from "./agent-config-primitives";
+import { defaultCreateValues } from "./agent-config-defaults";
 import { getUIAdapter } from "../adapters";
 import { ClaudeLocalAdvancedFields } from "../adapters/claude-local/config-fields";
 import { MarkdownEditor } from "./MarkdownEditor";
@@ -210,8 +211,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     }
     if (overlay.adapterType !== undefined) {
       patch.adapterType = overlay.adapterType;
-    }
-    if (Object.keys(overlay.adapterConfig).length > 0) {
+      // When adapter type changes, send only the new config — don't merge
+      // with old config since old adapter fields are meaningless for the new type
+      patch.adapterConfig = overlay.adapterConfig;
+    } else if (Object.keys(overlay.adapterConfig).length > 0) {
       const existing = (agent.adapterConfig ?? {}) as Record<string, unknown>;
       patch.adapterConfig = { ...existing, ...overlay.adapterConfig };
     }
@@ -432,12 +435,20 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
               value={adapterType}
               onChange={(t) => {
                 if (isCreate) {
-                  set!({ adapterType: t, model: "", thinkingEffort: "" });
+                  // Reset all adapter-specific fields to defaults when switching adapter type
+                  const { adapterType: _at, ...defaults } = defaultCreateValues;
+                  set!({ ...defaults, adapterType: t });
                 } else {
+                  // Clear all adapter config and explicitly blank out model + both effort keys
+                  // so the old adapter's values don't bleed through via eff()
                   setOverlay((prev) => ({
                     ...prev,
                     adapterType: t,
-                    adapterConfig: {}, // clear adapter config when type changes
+                    adapterConfig: {
+                      model: "",
+                      effort: "",
+                      modelReasoningEffort: "",
+                    },
                   }));
                 }
               }}
@@ -794,10 +805,10 @@ function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestRe
     result.status === "pass" ? "Passed" : result.status === "warn" ? "Warnings" : "Failed";
   const statusClass =
     result.status === "pass"
-      ? "text-green-300 border-green-500/40 bg-green-500/10"
+      ? "text-green-700 dark:text-green-300 border-green-300 dark:border-green-500/40 bg-green-50 dark:bg-green-500/10"
       : result.status === "warn"
-        ? "text-amber-300 border-amber-500/40 bg-amber-500/10"
-        : "text-red-300 border-red-500/40 bg-red-500/10";
+        ? "text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10"
+        : "text-red-700 dark:text-red-300 border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10";
 
   return (
     <div className={`rounded-md border px-3 py-2 text-xs ${statusClass}`}>
@@ -1154,37 +1165,39 @@ function ModelDropdown({
             onChange={(e) => setModelSearch(e.target.value)}
             autoFocus
           />
-          <button
-            className={cn(
-              "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
-              !value && "bg-accent",
-            )}
-            onClick={() => {
-              onChange("");
-              onOpenChange(false);
-            }}
-          >
-            Default
-          </button>
-          {filteredModels.map((m) => (
+          <div className="max-h-[240px] overflow-y-auto">
             <button
-              key={m.id}
               className={cn(
-                "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
-                m.id === value && "bg-accent",
+                "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+                !value && "bg-accent",
               )}
               onClick={() => {
-                onChange(m.id);
+                onChange("");
                 onOpenChange(false);
               }}
             >
-              <span>{m.label}</span>
-              <span className="text-xs text-muted-foreground font-mono">{m.id}</span>
+              Default
             </button>
-          ))}
-          {filteredModels.length === 0 && (
-            <p className="px-2 py-1.5 text-xs text-muted-foreground">No models found.</p>
-          )}
+            {filteredModels.map((m) => (
+              <button
+                key={m.id}
+                className={cn(
+                  "flex items-center justify-between w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+                  m.id === value && "bg-accent",
+                )}
+                onClick={() => {
+                  onChange(m.id);
+                  onOpenChange(false);
+                }}
+              >
+                <span>{m.label}</span>
+                <span className="text-xs text-muted-foreground font-mono">{m.id}</span>
+              </button>
+            ))}
+            {filteredModels.length === 0 && (
+              <p className="px-2 py-1.5 text-xs text-muted-foreground">No models found.</p>
+            )}
+          </div>
         </PopoverContent>
       </Popover>
     </Field>

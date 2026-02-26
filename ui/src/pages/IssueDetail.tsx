@@ -5,6 +5,7 @@ import { issuesApi } from "../api/issues";
 import { activityApi } from "../api/activity";
 import { heartbeatsApi } from "../api/heartbeats";
 import { agentsApi } from "../api/agents";
+import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
 import { useToast } from "../context/ToastContext";
@@ -42,6 +43,11 @@ import {
 } from "lucide-react";
 import type { ActivityEvent } from "@paperclip/shared";
 import type { Agent, IssueAttachment } from "@paperclip/shared";
+
+type CommentReassignment = {
+  assigneeAgentId: string | null;
+  assigneeUserId: string | null;
+};
 
 const ACTION_LABELS: Record<string, string> = {
   "issue.created": "created the issue",
@@ -109,8 +115,12 @@ function formatAction(action: string, details?: Record<string, unknown> | null):
           : `changed the priority to ${humanizeValue(details.priority)}`
       );
     }
-    if (details.assigneeAgentId !== undefined) {
-      parts.push(details.assigneeAgentId ? "assigned the issue" : "unassigned the issue");
+    if (details.assigneeAgentId !== undefined || details.assigneeUserId !== undefined) {
+      parts.push(
+        details.assigneeAgentId || details.assigneeUserId
+          ? "assigned the issue"
+          : "unassigned the issue",
+      );
     }
     if (details.title !== undefined) parts.push("updated the title");
     if (details.description !== undefined) parts.push("updated the description");
@@ -144,7 +154,6 @@ export function IssueDetail() {
   const [detailTab, setDetailTab] = useState("comments");
   const [secondaryOpen, setSecondaryOpen] = useState({
     approvals: false,
-    runs: false,
     cost: false,
   });
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -208,6 +217,11 @@ export function IssueDetail() {
     enabled: !!selectedCompanyId,
   });
 
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(selectedCompanyId!),
     queryFn: () => projectsApi.list(selectedCompanyId!),
@@ -226,6 +240,33 @@ export function IssueDetail() {
       .filter((i) => i.parentId === issue.id)
       .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }, [allIssues, issue]);
+
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+
+  const canReassignFromComment = Boolean(
+    issue?.assigneeUserId &&
+    (issue.assigneeUserId === "local-board" || (currentUserId && issue.assigneeUserId === currentUserId)),
+  );
+
+  const commentReassignOptions = useMemo(() => {
+    const options: Array<{ value: string; label: string }> = [{ value: "__none__", label: "No assignee" }];
+    const activeAgents = [...(agents ?? [])]
+      .filter((agent) => agent.status !== "terminated")
+      .sort((a, b) => a.name.localeCompare(b.name));
+    for (const agent of activeAgents) {
+      options.push({ value: `agent:${agent.id}`, label: agent.name });
+    }
+    if (issue?.createdByUserId && issue.createdByUserId !== issue.assigneeUserId) {
+      const requesterLabel =
+        issue.createdByUserId === "local-board"
+          ? "Board"
+          : currentUserId && issue.createdByUserId === currentUserId
+            ? "Me"
+            : issue.createdByUserId.slice(0, 8);
+      options.push({ value: `user:${issue.createdByUserId}`, label: `Requester (${requesterLabel})` });
+    }
+    return options;
+  }, [agents, currentUserId, issue?.assigneeUserId, issue?.createdByUserId]);
 
   const commentsWithRunMeta = useMemo(() => {
     const runMetaByCommentId = new Map<string, { runId: string; runAgentId: string | null }>();
@@ -328,6 +369,36 @@ export function IssueDetail() {
       pushToast({
         dedupeKey: `activity:issue.comment_added:${issueId}:${comment.id}`,
         title: `Comment posted on ${issueRef}`,
+        body: issue?.title ? truncate(issue.title, 96) : undefined,
+        tone: "success",
+        action: issueId ? { label: `View ${issueRef}`, href: `/issues/${issue?.identifier ?? issueId}` } : undefined,
+      });
+    },
+  });
+
+  const addCommentAndReassign = useMutation({
+    mutationFn: ({
+      body,
+      reopen,
+      reassignment,
+    }: {
+      body: string;
+      reopen?: boolean;
+      reassignment: CommentReassignment;
+    }) =>
+      issuesApi.update(issueId!, {
+        comment: body,
+        assigneeAgentId: reassignment.assigneeAgentId,
+        assigneeUserId: reassignment.assigneeUserId,
+        ...(reopen ? { status: "todo" } : {}),
+      }),
+    onSuccess: (updated) => {
+      invalidateIssue();
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(issueId!) });
+      const issueRef = updated.identifier ?? (issueId ? `Issue ${issueId.slice(0, 8)}` : "Issue");
+      pushToast({
+        dedupeKey: `activity:issue.reassigned:${updated.id}`,
+        title: `${issueRef} reassigned`,
         body: issue?.title ? truncate(issue.title, 96) : undefined,
         tone: "success",
         action: issueId ? { label: `View ${issueRef}`, href: `/issues/${issue?.identifier ?? issueId}` } : undefined,
@@ -445,7 +516,7 @@ export function IssueDetail() {
           <span className="text-sm font-mono text-muted-foreground shrink-0">{issue.identifier ?? issue.id.slice(0, 8)}</span>
 
           {hasLiveRuns && (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-medium text-cyan-400 shrink-0">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-medium text-cyan-600 dark:text-cyan-400 shrink-0">
               <span className="relative flex h-1.5 w-1.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
@@ -638,10 +709,17 @@ export function IssueDetail() {
         <TabsContent value="comments">
           <CommentThread
             comments={commentsWithRunMeta}
+            linkedRuns={linkedRuns ?? []}
             issueStatus={issue.status}
             agentMap={agentMap}
             draftKey={`paperclip:issue-comment-draft:${issue.id}`}
-            onAdd={async (body, reopen) => {
+            enableReassign={canReassignFromComment}
+            reassignOptions={commentReassignOptions}
+            onAdd={async (body, reopen, reassignment) => {
+              if (reassignment) {
+                await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });
+                return;
+              }
               await addComment.mutateAsync({ body, reopen });
             }}
             imageUploadHandler={async (file) => {
@@ -733,39 +811,6 @@ export function IssueDetail() {
                     <span className="font-mono text-muted-foreground">{approval.id.slice(0, 8)}</span>
                   </div>
                   <span className="text-muted-foreground">{relativeTime(approval.createdAt)}</span>
-                </Link>
-              ))}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
-
-      {linkedRuns && linkedRuns.length > 0 && (
-        <Collapsible
-          open={secondaryOpen.runs}
-          onOpenChange={(open) => setSecondaryOpen((prev) => ({ ...prev, runs: open }))}
-          className="rounded-lg border border-border"
-        >
-          <CollapsibleTrigger className="flex w-full items-center justify-between px-3 py-2 text-left">
-            <span className="text-sm font-medium text-muted-foreground">Linked Runs ({linkedRuns.length})</span>
-            <ChevronDown
-              className={cn("h-4 w-4 text-muted-foreground transition-transform", secondaryOpen.runs && "rotate-180")}
-            />
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="border-t border-border divide-y divide-border">
-              {linkedRuns.map((run) => (
-                <Link
-                  key={run.runId}
-                  to={`/agents/${run.agentId}/runs/${run.runId}`}
-                  className="flex items-center justify-between px-3 py-2 text-xs hover:bg-accent/20 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <Identity name={agentMap.get(run.agentId)?.name ?? run.agentId.slice(0, 8)} size="sm" />
-                    <StatusBadge status={run.status} />
-                    <span className="font-mono text-muted-foreground">{run.runId.slice(0, 8)}</span>
-                  </div>
-                  <span className="text-muted-foreground">{relativeTime(run.createdAt)}</span>
                 </Link>
               ))}
             </div>

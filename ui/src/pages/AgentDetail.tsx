@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link, useBeforeUnload } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
+import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
 import { usePanel } from "../context/PanelContext";
@@ -56,12 +57,12 @@ import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
 import type { Agent, HeartbeatRun, HeartbeatRunEvent, AgentRuntimeState } from "@paperclip/shared";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
-  succeeded: { icon: CheckCircle2, color: "text-green-400" },
-  failed: { icon: XCircle, color: "text-red-400" },
-  running: { icon: Loader2, color: "text-cyan-400" },
-  queued: { icon: Clock, color: "text-yellow-400" },
-  timed_out: { icon: Timer, color: "text-orange-400" },
-  cancelled: { icon: Slash, color: "text-neutral-400" },
+  succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
+  failed: { icon: XCircle, color: "text-red-600 dark:text-red-400" },
+  running: { icon: Loader2, color: "text-cyan-600 dark:text-cyan-400" },
+  queued: { icon: Clock, color: "text-yellow-600 dark:text-yellow-400" },
+  timed_out: { icon: Timer, color: "text-orange-600 dark:text-orange-400" },
+  cancelled: { icon: Slash, color: "text-neutral-500 dark:text-neutral-400" },
 };
 
 const REDACTED_ENV_VALUE = "***REDACTED***";
@@ -453,7 +454,7 @@ export function AgentDetail() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
               </span>
-              <span className="text-[11px] font-medium text-blue-400">Live</span>
+              <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Live</span>
             </Link>
           )}
 
@@ -631,18 +632,18 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <h3 className="flex items-center gap-2 text-sm font-medium">
           {isLive && (
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
             </span>
           )}
-          <h3 className="text-sm font-medium">{isLive ? "Live Run" : "Latest Run"}</h3>
-        </div>
+          {isLive ? "Live Run" : "Latest Run"}
+        </h3>
         <Link
           to={`/agents/${agentId}/runs/${run.id}`}
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors no-underline"
+          className="shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors no-underline"
         >
           View details &rarr;
         </Link>
@@ -658,10 +659,10 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
           <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
           <span className={cn(
             "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium",
-            run.invocationSource === "timer" ? "bg-blue-900/50 text-blue-300"
-              : run.invocationSource === "assignment" ? "bg-violet-900/50 text-violet-300"
-              : run.invocationSource === "on_demand" ? "bg-cyan-900/50 text-cyan-300"
-              : "bg-neutral-800 text-neutral-400"
+            run.invocationSource === "timer" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+              : run.invocationSource === "assignment" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"
+              : run.invocationSource === "on_demand" ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300"
+              : "bg-muted text-muted-foreground"
           )}>
             {sourceLabels[run.invocationSource] ?? run.invocationSource}
           </span>
@@ -765,263 +766,7 @@ function AgentOverview({
   );
 }
 
-/* ---- Chart Components ---- */
-
-function getLast14Days(): string[] {
-  return Array.from({ length: 14 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (13 - i));
-    return d.toISOString().slice(0, 10);
-  });
-}
-
-function formatDayLabel(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00");
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-function DateLabels({ days }: { days: string[] }) {
-  return (
-    <div className="flex gap-[3px] mt-1.5">
-      {days.map((day, i) => (
-        <div key={day} className="flex-1 text-center">
-          {(i === 0 || i === 6 || i === 13) ? (
-            <span className="text-[9px] text-muted-foreground tabular-nums">{formatDayLabel(day)}</span>
-          ) : null}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ChartLegend({ items }: { items: { color: string; label: string }[] }) {
-  return (
-    <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-2">
-      {items.map(item => (
-        <span key={item.label} className="flex items-center gap-1 text-[9px] text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
-          {item.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-function ChartCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <div className="border border-border rounded-lg p-4 space-y-3">
-      <div>
-        <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
-        {subtitle && <span className="text-[10px] text-muted-foreground/60">{subtitle}</span>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function RunActivityChart({ runs }: { runs: HeartbeatRun[] }) {
-  const days = getLast14Days();
-
-  const grouped = new Map<string, { succeeded: number; failed: number; other: number }>();
-  for (const day of days) grouped.set(day, { succeeded: 0, failed: 0, other: 0 });
-  for (const run of runs) {
-    const day = new Date(run.createdAt).toISOString().slice(0, 10);
-    const entry = grouped.get(day);
-    if (!entry) continue;
-    if (run.status === "succeeded") entry.succeeded++;
-    else if (run.status === "failed" || run.status === "timed_out") entry.failed++;
-    else entry.other++;
-  }
-
-  const maxValue = Math.max(...Array.from(grouped.values()).map(v => v.succeeded + v.failed + v.other), 1);
-  const hasData = Array.from(grouped.values()).some(v => v.succeeded + v.failed + v.other > 0);
-
-  if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
-
-  return (
-    <div>
-      <div className="flex items-end gap-[3px] h-20">
-        {days.map(day => {
-          const entry = grouped.get(day)!;
-          const total = entry.succeeded + entry.failed + entry.other;
-          const heightPct = (total / maxValue) * 100;
-          return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} runs`}>
-              {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
-                  {entry.succeeded > 0 && <div className="bg-emerald-500" style={{ flex: entry.succeeded }} />}
-                  {entry.failed > 0 && <div className="bg-red-500" style={{ flex: entry.failed }} />}
-                  {entry.other > 0 && <div className="bg-neutral-500" style={{ flex: entry.other }} />}
-                </div>
-              ) : (
-                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <DateLabels days={days} />
-    </div>
-  );
-}
-
-const priorityColors: Record<string, string> = {
-  critical: "#ef4444",
-  high: "#f97316",
-  medium: "#eab308",
-  low: "#6b7280",
-};
-
-const priorityOrder = ["critical", "high", "medium", "low"] as const;
-
-function PriorityChart({ issues }: { issues: { priority: string; createdAt: Date }[] }) {
-  const days = getLast14Days();
-  const grouped = new Map<string, Record<string, number>>();
-  for (const day of days) grouped.set(day, { critical: 0, high: 0, medium: 0, low: 0 });
-  for (const issue of issues) {
-    const day = new Date(issue.createdAt).toISOString().slice(0, 10);
-    const entry = grouped.get(day);
-    if (!entry) continue;
-    if (issue.priority in entry) entry[issue.priority]++;
-  }
-
-  const maxValue = Math.max(...Array.from(grouped.values()).map(v => Object.values(v).reduce((a, b) => a + b, 0)), 1);
-  const hasData = Array.from(grouped.values()).some(v => Object.values(v).reduce((a, b) => a + b, 0) > 0);
-
-  if (!hasData) return <p className="text-xs text-muted-foreground">No issues</p>;
-
-  return (
-    <div>
-      <div className="flex items-end gap-[3px] h-20">
-        {days.map(day => {
-          const entry = grouped.get(day)!;
-          const total = Object.values(entry).reduce((a, b) => a + b, 0);
-          const heightPct = (total / maxValue) * 100;
-          return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
-              {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
-                  {priorityOrder.map(p => entry[p] > 0 ? (
-                    <div key={p} style={{ flex: entry[p], backgroundColor: priorityColors[p] }} />
-                  ) : null)}
-                </div>
-              ) : (
-                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <DateLabels days={days} />
-      <ChartLegend items={priorityOrder.map(p => ({ color: priorityColors[p], label: p.charAt(0).toUpperCase() + p.slice(1) }))} />
-    </div>
-  );
-}
-
-const statusColors: Record<string, string> = {
-  todo: "#3b82f6",
-  in_progress: "#8b5cf6",
-  in_review: "#a855f7",
-  done: "#10b981",
-  blocked: "#ef4444",
-  cancelled: "#6b7280",
-  backlog: "#64748b",
-};
-
-const statusLabels: Record<string, string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  in_review: "In Review",
-  done: "Done",
-  blocked: "Blocked",
-  cancelled: "Cancelled",
-  backlog: "Backlog",
-};
-
-function IssueStatusChart({ issues }: { issues: { status: string; createdAt: Date }[] }) {
-  const days = getLast14Days();
-  const allStatuses = new Set<string>();
-  const grouped = new Map<string, Record<string, number>>();
-  for (const day of days) grouped.set(day, {});
-  for (const issue of issues) {
-    const day = new Date(issue.createdAt).toISOString().slice(0, 10);
-    const entry = grouped.get(day);
-    if (!entry) continue;
-    entry[issue.status] = (entry[issue.status] ?? 0) + 1;
-    allStatuses.add(issue.status);
-  }
-
-  const statusOrder = ["todo", "in_progress", "in_review", "done", "blocked", "cancelled", "backlog"].filter(s => allStatuses.has(s));
-  const maxValue = Math.max(...Array.from(grouped.values()).map(v => Object.values(v).reduce((a, b) => a + b, 0)), 1);
-  const hasData = allStatuses.size > 0;
-
-  if (!hasData) return <p className="text-xs text-muted-foreground">No issues</p>;
-
-  return (
-    <div>
-      <div className="flex items-end gap-[3px] h-20">
-        {days.map(day => {
-          const entry = grouped.get(day)!;
-          const total = Object.values(entry).reduce((a, b) => a + b, 0);
-          const heightPct = (total / maxValue) * 100;
-          return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
-              {total > 0 ? (
-                <div className="flex flex-col-reverse gap-px overflow-hidden" style={{ height: `${heightPct}%`, minHeight: 2 }}>
-                  {statusOrder.map(s => (entry[s] ?? 0) > 0 ? (
-                    <div key={s} style={{ flex: entry[s], backgroundColor: statusColors[s] ?? "#6b7280" }} />
-                  ) : null)}
-                </div>
-              ) : (
-                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <DateLabels days={days} />
-      <ChartLegend items={statusOrder.map(s => ({ color: statusColors[s] ?? "#6b7280", label: statusLabels[s] ?? s }))} />
-    </div>
-  );
-}
-
-function SuccessRateChart({ runs }: { runs: HeartbeatRun[] }) {
-  const days = getLast14Days();
-  const grouped = new Map<string, { succeeded: number; total: number }>();
-  for (const day of days) grouped.set(day, { succeeded: 0, total: 0 });
-  for (const run of runs) {
-    const day = new Date(run.createdAt).toISOString().slice(0, 10);
-    const entry = grouped.get(day);
-    if (!entry) continue;
-    entry.total++;
-    if (run.status === "succeeded") entry.succeeded++;
-  }
-
-  const hasData = Array.from(grouped.values()).some(v => v.total > 0);
-  if (!hasData) return <p className="text-xs text-muted-foreground">No runs yet</p>;
-
-  return (
-    <div>
-      <div className="flex items-end gap-[3px] h-20">
-        {days.map(day => {
-          const entry = grouped.get(day)!;
-          const rate = entry.total > 0 ? entry.succeeded / entry.total : 0;
-          const color = entry.total === 0 ? undefined : rate >= 0.8 ? "#10b981" : rate >= 0.5 ? "#eab308" : "#ef4444";
-          return (
-            <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${entry.total > 0 ? Math.round(rate * 100) : 0}% (${entry.succeeded}/${entry.total})`}>
-              {entry.total > 0 ? (
-                <div style={{ height: `${rate * 100}%`, minHeight: 2, backgroundColor: color }} />
-              ) : (
-                <div className="bg-muted/30 rounded-sm" style={{ height: 2 }} />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <DateLabels days={days} />
-    </div>
-  );
-}
+/* Chart components imported from ../components/ActivityCharts */
 
 /* ---- Configuration Summary ---- */
 
@@ -1091,7 +836,7 @@ function ConfigSummary({
               {reportsToAgent ? (
                 <Link
                   to={`/agents/${reportsToAgent.id}`}
-                  className="text-blue-400 hover:underline"
+                  className="text-blue-600 hover:underline dark:text-blue-400"
                 >
                   <Identity name={reportsToAgent.name} size="sm" />
                 </Link>
@@ -1108,7 +853,7 @@ function ConfigSummary({
                   <Link
                     key={r.id}
                     to={`/agents/${r.id}`}
-                    className="flex items-center gap-2 text-sm text-blue-400 hover:underline"
+                    className="flex items-center gap-2 text-sm text-blue-600 hover:underline dark:text-blue-400"
                   >
                     <span className="relative flex h-2 w-2">
                       <span className={`absolute inline-flex h-full w-full rounded-full ${agentStatusDot[r.status] ?? agentStatusDotDefault}`} />
@@ -1419,10 +1164,10 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
         </span>
         <span className={cn(
           "inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium shrink-0",
-          run.invocationSource === "timer" ? "bg-blue-900/50 text-blue-300"
-            : run.invocationSource === "assignment" ? "bg-violet-900/50 text-violet-300"
-            : run.invocationSource === "on_demand" ? "bg-cyan-900/50 text-cyan-300"
-            : "bg-neutral-800 text-neutral-400"
+          run.invocationSource === "timer" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
+            : run.invocationSource === "assignment" ? "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"
+            : run.invocationSource === "on_demand" ? "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300"
+            : "bg-muted text-muted-foreground"
         )}>
           {sourceLabels[run.invocationSource] ?? run.invocationSource}
         </span>
@@ -1682,7 +1427,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             )}
             {run.error && (
               <div className="text-xs">
-                <span className="text-red-400">{run.error}</span>
+                <span className="text-red-600 dark:text-red-400">{run.error}</span>
                 {run.errorCode && <span className="text-muted-foreground ml-1">({run.errorCode})</span>}
               </div>
             )}
@@ -1709,7 +1454,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                     Login URL:
                     <a
                       href={claudeLoginResult.loginUrl}
-                      className="text-blue-400 underline underline-offset-2 ml-1 break-all"
+                      className="text-blue-600 underline underline-offset-2 ml-1 break-all dark:text-blue-400"
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -1720,12 +1465,12 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                 {claudeLoginResult && (
                   <>
                     {!!claudeLoginResult.stdout && (
-                      <pre className="bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">
+                      <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">
                         {claudeLoginResult.stdout}
                       </pre>
                     )}
                     {!!claudeLoginResult.stderr && (
-                      <pre className="bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-300 overflow-x-auto whitespace-pre-wrap">
+                      <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">
                         {claudeLoginResult.stderr}
                       </pre>
                     )}
@@ -1734,7 +1479,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
               </div>
             )}
             {hasNonZeroExit && (
-              <div className="text-xs text-red-400">
+              <div className="text-xs text-red-600 dark:text-red-400">
                 Exit code {run.exitCode}
                 {run.signal && <span className="text-muted-foreground ml-1">(signal: {run.signal})</span>}
               </div>
@@ -1848,8 +1593,8 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
       {/* stderr excerpt for failed runs */}
       {run.stderrExcerpt && (
         <div className="space-y-1">
-          <span className="text-xs font-medium text-red-400">stderr</span>
-          <pre className="bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
+          <span className="text-xs font-medium text-red-600 dark:text-red-400">stderr</span>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
         </div>
       )}
 
@@ -1857,7 +1602,7 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
       {run.stdoutExcerpt && !run.logRef && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground">stdout</span>
-          <pre className="bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
         </div>
       )}
 
@@ -2119,14 +1864,14 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 
   const levelColors: Record<string, string> = {
     info: "text-foreground",
-    warn: "text-yellow-400",
-    error: "text-red-400",
+    warn: "text-yellow-600 dark:text-yellow-400",
+    error: "text-red-600 dark:text-red-400",
   };
 
   const streamColors: Record<string, string> = {
     stdout: "text-foreground",
-    stderr: "text-red-300",
-    system: "text-blue-300",
+    stderr: "text-red-600 dark:text-red-300",
+    system: "text-blue-600 dark:text-blue-300",
   };
 
   return (
@@ -2156,7 +1901,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           {adapterInvokePayload.prompt !== undefined && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Prompt</div>
-              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
+              <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
                 {typeof adapterInvokePayload.prompt === "string"
                   ? adapterInvokePayload.prompt
                   : JSON.stringify(adapterInvokePayload.prompt, null, 2)}
@@ -2166,7 +1911,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           {adapterInvokePayload.context !== undefined && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Context</div>
-              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
+              <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">
                 {JSON.stringify(adapterInvokePayload.context, null, 2)}
               </pre>
             </div>
@@ -2174,7 +1919,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           {adapterInvokePayload.env !== undefined && (
             <div>
               <div className="text-xs text-muted-foreground mb-1">Environment</div>
-              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap font-mono">
+              <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap font-mono">
                 {formatEnvForDisplay(adapterInvokePayload.env)}
               </pre>
             </div>
@@ -2213,14 +1958,14 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
           )}
         </div>
       </div>
-      <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5 overflow-x-hidden">
+      <div className="bg-neutral-100 dark:bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5 overflow-x-hidden">
         {transcript.length === 0 && !run.logRef && (
           <div className="text-neutral-500">No persisted transcript for this run.</div>
         )}
         {transcript.map((entry, idx) => {
           const time = new Date(entry.ts).toLocaleTimeString("en-US", { hour12: false });
           const grid = "grid grid-cols-[auto_auto_1fr] gap-x-2 sm:gap-x-3 items-baseline";
-          const tsCell = "text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs";
+          const tsCell = "text-neutral-400 dark:text-neutral-600 select-none w-12 sm:w-16 text-[10px] sm:text-xs";
           const lblCell = "w-14 sm:w-20 text-[10px] sm:text-xs";
           const contentCell = "min-w-0 whitespace-pre-wrap break-words overflow-hidden";
           const expandCell = "col-span-full md:col-start-3 md:col-span-1";
@@ -2229,8 +1974,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             return (
               <div key={`${entry.ts}-assistant-${idx}`} className={cn(grid, "py-0.5")}>
                 <span className={tsCell}>{time}</span>
-                <span className={cn(lblCell, "text-green-300")}>assistant</span>
-                <span className={cn(contentCell, "text-green-100")}>{entry.text}</span>
+                <span className={cn(lblCell, "text-green-700 dark:text-green-300")}>assistant</span>
+                <span className={cn(contentCell, "text-green-900 dark:text-green-100")}>{entry.text}</span>
               </div>
             );
           }
@@ -2239,8 +1984,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             return (
               <div key={`${entry.ts}-thinking-${idx}`} className={cn(grid, "py-0.5")}>
                 <span className={tsCell}>{time}</span>
-                <span className={cn(lblCell, "text-green-300/60")}>thinking</span>
-                <span className={cn(contentCell, "text-green-100/60 italic")}>{entry.text}</span>
+                <span className={cn(lblCell, "text-green-600/60 dark:text-green-300/60")}>thinking</span>
+                <span className={cn(contentCell, "text-green-800/60 dark:text-green-100/60 italic")}>{entry.text}</span>
               </div>
             );
           }
@@ -2249,8 +1994,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             return (
               <div key={`${entry.ts}-user-${idx}`} className={cn(grid, "py-0.5")}>
                 <span className={tsCell}>{time}</span>
-                <span className={cn(lblCell, "text-neutral-400")}>user</span>
-                <span className={cn(contentCell, "text-neutral-300")}>{entry.text}</span>
+                <span className={cn(lblCell, "text-neutral-500 dark:text-neutral-400")}>user</span>
+                <span className={cn(contentCell, "text-neutral-700 dark:text-neutral-300")}>{entry.text}</span>
               </div>
             );
           }
@@ -2259,9 +2004,9 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             return (
               <div key={`${entry.ts}-tool-${idx}`} className={cn(grid, "gap-y-1 py-0.5")}>
                 <span className={tsCell}>{time}</span>
-                <span className={cn(lblCell, "text-yellow-300")}>tool_call</span>
-                <span className="text-yellow-100 min-w-0">{entry.name}</span>
-                <pre className={cn(expandCell, "bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-200")}>
+                <span className={cn(lblCell, "text-yellow-700 dark:text-yellow-300")}>tool_call</span>
+                <span className="text-yellow-900 dark:text-yellow-100 min-w-0">{entry.name}</span>
+                <pre className={cn(expandCell, "bg-neutral-200 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-800 dark:text-neutral-200")}>
                   {JSON.stringify(entry.input, null, 2)}
                 </pre>
               </div>
@@ -2272,9 +2017,9 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             return (
               <div key={`${entry.ts}-toolres-${idx}`} className={cn(grid, "gap-y-1 py-0.5")}>
                 <span className={tsCell}>{time}</span>
-                <span className={cn(lblCell, entry.isError ? "text-red-300" : "text-purple-300")}>tool_result</span>
-                {entry.isError ? <span className="text-red-400 min-w-0">error</span> : <span />}
-                <pre className={cn(expandCell, "bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-300 max-h-60 overflow-y-auto")}>
+                <span className={cn(lblCell, entry.isError ? "text-red-600 dark:text-red-300" : "text-purple-600 dark:text-purple-300")}>tool_result</span>
+                {entry.isError ? <span className="text-red-600 dark:text-red-400 min-w-0">error</span> : <span />}
+                <pre className={cn(expandCell, "bg-neutral-100 dark:bg-neutral-900 rounded p-2 text-[11px] overflow-x-auto whitespace-pre-wrap text-neutral-700 dark:text-neutral-300 max-h-60 overflow-y-auto")}>
                   {(() => { try { return JSON.stringify(JSON.parse(entry.content), null, 2); } catch { return entry.content; } })()}
                 </pre>
               </div>
@@ -2285,8 +2030,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             return (
               <div key={`${entry.ts}-init-${idx}`} className={grid}>
                 <span className={tsCell}>{time}</span>
-                <span className={cn(lblCell, "text-blue-300")}>init</span>
-                <span className={cn(contentCell, "text-blue-100")}>model: {entry.model}{entry.sessionId ? `, session: ${entry.sessionId}` : ""}</span>
+                <span className={cn(lblCell, "text-blue-700 dark:text-blue-300")}>init</span>
+                <span className={cn(contentCell, "text-blue-900 dark:text-blue-100")}>model: {entry.model}{entry.sessionId ? `, session: ${entry.sessionId}` : ""}</span>
               </div>
             );
           }
@@ -2295,18 +2040,18 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             return (
               <div key={`${entry.ts}-result-${idx}`} className={cn(grid, "gap-y-1 py-0.5")}>
                 <span className={tsCell}>{time}</span>
-                <span className={cn(lblCell, "text-cyan-300")}>result</span>
-                <span className={cn(contentCell, "text-cyan-100")}>
+                <span className={cn(lblCell, "text-cyan-700 dark:text-cyan-300")}>result</span>
+                <span className={cn(contentCell, "text-cyan-900 dark:text-cyan-100")}>
                   tokens in={formatTokens(entry.inputTokens)} out={formatTokens(entry.outputTokens)} cached={formatTokens(entry.cachedTokens)} cost=${entry.costUsd.toFixed(6)}
                 </span>
                 {(entry.subtype || entry.isError || entry.errors.length > 0) && (
-                  <div className={cn(expandCell, "text-red-300 whitespace-pre-wrap break-words")}>
+                  <div className={cn(expandCell, "text-red-600 dark:text-red-300 whitespace-pre-wrap break-words")}>
                     subtype={entry.subtype || "unknown"} is_error={entry.isError ? "true" : "false"}
                     {entry.errors.length > 0 ? ` errors=${entry.errors.join(" | ")}` : ""}
                   </div>
                 )}
                 {entry.text && (
-                  <div className={cn(expandCell, "whitespace-pre-wrap break-words text-neutral-100")}>{entry.text}</div>
+                  <div className={cn(expandCell, "whitespace-pre-wrap break-words text-neutral-800 dark:text-neutral-100")}>{entry.text}</div>
                 )}
               </div>
             );
@@ -2318,8 +2063,8 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             entry.kind === "system" ? "system" :
             "stdout";
           const color =
-            entry.kind === "stderr" ? "text-red-300" :
-            entry.kind === "system" ? "text-blue-300" :
+            entry.kind === "stderr" ? "text-red-600 dark:text-red-300" :
+            entry.kind === "system" ? "text-blue-600 dark:text-blue-300" :
             "text-neutral-500";
           return (
             <div key={`${entry.ts}-raw-${idx}`} className={grid}>
@@ -2329,39 +2074,39 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
             </div>
           )
         })}
-        {logError && <div className="text-red-300">{logError}</div>}
+        {logError && <div className="text-red-600 dark:text-red-300">{logError}</div>}
         <div ref={logEndRef} />
       </div>
 
       {(run.status === "failed" || run.status === "timed_out") && (
-        <div className="rounded-lg border border-red-500/30 bg-red-950/20 p-3 space-y-2">
-          <div className="text-xs font-medium text-red-300">Failure details</div>
+        <div className="rounded-lg border border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-950/20 p-3 space-y-2">
+          <div className="text-xs font-medium text-red-700 dark:text-red-300">Failure details</div>
           {run.error && (
-            <div className="text-xs text-red-200">
-              <span className="text-red-300">Error: </span>
+            <div className="text-xs text-red-600 dark:text-red-200">
+              <span className="text-red-700 dark:text-red-300">Error: </span>
               {run.error}
             </div>
           )}
           {run.stderrExcerpt && run.stderrExcerpt.trim() && (
             <div>
-              <div className="text-xs text-red-300 mb-1">stderr excerpt</div>
-              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-100">
+              <div className="text-xs text-red-700 dark:text-red-300 mb-1">stderr excerpt</div>
+              <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
                 {run.stderrExcerpt}
               </pre>
             </div>
           )}
           {run.resultJson && (
             <div>
-              <div className="text-xs text-red-300 mb-1">adapter result JSON</div>
-              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-100">
+              <div className="text-xs text-red-700 dark:text-red-300 mb-1">adapter result JSON</div>
+              <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
                 {JSON.stringify(run.resultJson, null, 2)}
               </pre>
             </div>
           )}
           {run.stdoutExcerpt && run.stdoutExcerpt.trim() && !run.resultJson && (
             <div>
-              <div className="text-xs text-red-300 mb-1">stdout excerpt</div>
-              <pre className="bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-100">
+              <div className="text-xs text-red-700 dark:text-red-300 mb-1">stdout excerpt</div>
+              <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
                 {run.stdoutExcerpt}
               </pre>
             </div>
@@ -2372,7 +2117,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
       {events.length > 0 && (
         <div>
           <div className="mb-2 text-xs font-medium text-muted-foreground">Events ({events.length})</div>
-          <div className="bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5">
+          <div className="bg-neutral-100 dark:bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5">
             {events.map((evt) => {
               const color = evt.color
                 ?? (evt.level ? levelColors[evt.level] : null)
@@ -2381,7 +2126,7 @@ function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
 
               return (
                 <div key={evt.id} className="flex gap-2">
-                  <span className="text-neutral-600 shrink-0 select-none w-16">
+                  <span className="text-neutral-400 dark:text-neutral-600 shrink-0 select-none w-16">
                     {new Date(evt.createdAt).toLocaleTimeString("en-US", { hour12: false })}
                   </span>
                   <span className={cn("shrink-0 w-14", evt.stream ? (streamColors[evt.stream] ?? "text-neutral-500") : "text-neutral-500")}>
@@ -2445,12 +2190,12 @@ function KeysTab({ agentId }: { agentId: string }) {
     <div className="space-y-6">
       {/* New token banner */}
       {newToken && (
-        <div className="border border-yellow-600/40 bg-yellow-500/5 rounded-lg p-4 space-y-2">
-          <p className="text-sm font-medium text-yellow-400">
+        <div className="border border-yellow-300 dark:border-yellow-600/40 bg-yellow-50 dark:bg-yellow-500/5 rounded-lg p-4 space-y-2">
+          <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">
             API key created — copy it now, it will not be shown again.
           </p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 bg-neutral-950 rounded px-3 py-1.5 text-xs font-mono text-green-300 truncate">
+            <code className="flex-1 bg-neutral-100 dark:bg-neutral-950 rounded px-3 py-1.5 text-xs font-mono text-green-700 dark:text-green-300 truncate">
               {tokenVisible ? newToken : newToken.replace(/./g, "•")}
             </code>
             <Button
