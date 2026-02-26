@@ -47,8 +47,10 @@ function applyStatusSideEffects(
 export interface IssueFilters {
   status?: string;
   assigneeAgentId?: string;
+  assigneeUserId?: string;
   projectId?: string;
   labelId?: string;
+  q?: string;
 }
 
 type IssueRow = typeof issues.$inferSelect;
@@ -61,6 +63,10 @@ function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
 }
 
 const TERMINAL_HEARTBEAT_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
 
 async function labelMapForIssues(dbOrTx: any, issueIds: string[]): Promise<Map<string, IssueLabelRow[]>> {
   const map = new Map<string, IssueLabelRow[]>();
@@ -219,12 +225,34 @@ export function issueService(db: Db) {
   return {
     list: async (companyId: string, filters?: IssueFilters) => {
       const conditions = [eq(issues.companyId, companyId)];
+      const rawSearch = filters?.q?.trim() ?? "";
+      const hasSearch = rawSearch.length > 0;
+      const escapedSearch = hasSearch ? escapeLikePattern(rawSearch) : "";
+      const startsWithPattern = `${escapedSearch}%`;
+      const containsPattern = `%${escapedSearch}%`;
+      const titleStartsWithMatch = sql<boolean>`${issues.title} ILIKE ${startsWithPattern} ESCAPE '\\'`;
+      const titleContainsMatch = sql<boolean>`${issues.title} ILIKE ${containsPattern} ESCAPE '\\'`;
+      const identifierStartsWithMatch = sql<boolean>`${issues.identifier} ILIKE ${startsWithPattern} ESCAPE '\\'`;
+      const identifierContainsMatch = sql<boolean>`${issues.identifier} ILIKE ${containsPattern} ESCAPE '\\'`;
+      const descriptionContainsMatch = sql<boolean>`${issues.description} ILIKE ${containsPattern} ESCAPE '\\'`;
+      const commentContainsMatch = sql<boolean>`
+        EXISTS (
+          SELECT 1
+          FROM ${issueComments}
+          WHERE ${issueComments.issueId} = ${issues.id}
+            AND ${issueComments.companyId} = ${companyId}
+            AND ${issueComments.body} ILIKE ${containsPattern} ESCAPE '\\'
+        )
+      `;
       if (filters?.status) {
         const statuses = filters.status.split(",").map((s) => s.trim());
         conditions.push(statuses.length === 1 ? eq(issues.status, statuses[0]) : inArray(issues.status, statuses));
       }
       if (filters?.assigneeAgentId) {
         conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
+      }
+      if (filters?.assigneeUserId) {
+        conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
       }
       if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
       if (filters?.labelId) {
@@ -235,14 +263,35 @@ export function issueService(db: Db) {
         if (labeledIssueIds.length === 0) return [];
         conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
       }
+      if (hasSearch) {
+        conditions.push(
+          or(
+            titleContainsMatch,
+            identifierContainsMatch,
+            descriptionContainsMatch,
+            commentContainsMatch,
+          )!,
+        );
+      }
       conditions.push(isNull(issues.hiddenAt));
 
       const priorityOrder = sql`CASE ${issues.priority} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`;
+      const searchOrder = sql<number>`
+        CASE
+          WHEN ${titleStartsWithMatch} THEN 0
+          WHEN ${titleContainsMatch} THEN 1
+          WHEN ${identifierStartsWithMatch} THEN 2
+          WHEN ${identifierContainsMatch} THEN 3
+          WHEN ${descriptionContainsMatch} THEN 4
+          WHEN ${commentContainsMatch} THEN 5
+          ELSE 6
+        END
+      `;
       const rows = await db
         .select()
         .from(issues)
         .where(and(...conditions))
-        .orderBy(asc(priorityOrder), desc(issues.updatedAt));
+        .orderBy(hasSearch ? asc(searchOrder) : asc(priorityOrder), asc(priorityOrder), desc(issues.updatedAt));
       return withIssueLabels(db, rows);
     },
 

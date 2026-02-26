@@ -2,7 +2,7 @@ import { Router, type Request } from "express";
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclip/db";
 import { agents as agentsTable, companies, heartbeatRuns } from "@paperclip/db";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import {
   createAgentKeySchema,
   createAgentHireSchema,
@@ -987,20 +987,25 @@ export function agentRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
 
+    const minCountParam = req.query.minCount as string | undefined;
+    const minCount = minCountParam ? Math.max(0, Math.min(20, parseInt(minCountParam, 10) || 0)) : 0;
+
+    const columns = {
+      id: heartbeatRuns.id,
+      status: heartbeatRuns.status,
+      invocationSource: heartbeatRuns.invocationSource,
+      triggerDetail: heartbeatRuns.triggerDetail,
+      startedAt: heartbeatRuns.startedAt,
+      finishedAt: heartbeatRuns.finishedAt,
+      createdAt: heartbeatRuns.createdAt,
+      agentId: heartbeatRuns.agentId,
+      agentName: agentsTable.name,
+      adapterType: agentsTable.adapterType,
+      issueId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`.as("issueId"),
+    };
+
     const liveRuns = await db
-      .select({
-        id: heartbeatRuns.id,
-        status: heartbeatRuns.status,
-        invocationSource: heartbeatRuns.invocationSource,
-        triggerDetail: heartbeatRuns.triggerDetail,
-        startedAt: heartbeatRuns.startedAt,
-        finishedAt: heartbeatRuns.finishedAt,
-        createdAt: heartbeatRuns.createdAt,
-        agentId: heartbeatRuns.agentId,
-        agentName: agentsTable.name,
-        adapterType: agentsTable.adapterType,
-        issueId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`.as("issueId"),
-      })
+      .select(columns)
       .from(heartbeatRuns)
       .innerJoin(agentsTable, eq(heartbeatRuns.agentId, agentsTable.id))
       .where(
@@ -1010,6 +1015,26 @@ export function agentRoutes(db: Db) {
         ),
       )
       .orderBy(desc(heartbeatRuns.createdAt));
+
+    if (minCount > 0 && liveRuns.length < minCount) {
+      const activeIds = liveRuns.map((r) => r.id);
+      const recentRuns = await db
+        .select(columns)
+        .from(heartbeatRuns)
+        .innerJoin(agentsTable, eq(heartbeatRuns.agentId, agentsTable.id))
+        .where(
+          and(
+            eq(heartbeatRuns.companyId, companyId),
+            not(inArray(heartbeatRuns.status, ["queued", "running"])),
+            ...(activeIds.length > 0 ? [not(inArray(heartbeatRuns.id, activeIds))] : []),
+          ),
+        )
+        .orderBy(desc(heartbeatRuns.createdAt))
+        .limit(minCount - liveRuns.length);
+
+      res.json([...liveRuns, ...recentRuns]);
+      return;
+    }
 
     res.json(liveRuns);
   });

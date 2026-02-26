@@ -1,10 +1,12 @@
 import { Router } from "express";
 import type { Db } from "@paperclip/db";
-import { and, eq, sql } from "drizzle-orm";
-import { joinRequests } from "@paperclip/db";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { issues, joinRequests } from "@paperclip/db";
 import { sidebarBadgeService } from "../services/sidebar-badges.js";
 import { accessService } from "../services/access.js";
 import { assertCompanyAccess } from "./authz.js";
+
+const INBOX_ISSUE_STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked"] as const;
 
 export function sidebarBadgeRoutes(db: Db) {
   const router = Router();
@@ -32,7 +34,26 @@ export function sidebarBadgeRoutes(db: Db) {
         .then((rows) => Number(rows[0]?.count ?? 0))
       : 0;
 
-    const badges = await svc.get(companyId, { joinRequests: joinRequestCount });
+    const assignedIssueCount =
+      req.actor.type === "board" && req.actor.userId
+        ? await db
+          .select({ count: sql<number>`count(*)` })
+          .from(issues)
+          .where(
+            and(
+              eq(issues.companyId, companyId),
+              eq(issues.assigneeUserId, req.actor.userId),
+              inArray(issues.status, [...INBOX_ISSUE_STATUSES]),
+              isNull(issues.hiddenAt),
+            ),
+          )
+          .then((rows) => Number(rows[0]?.count ?? 0))
+        : 0;
+
+    const badges = await svc.get(companyId, {
+      joinRequests: joinRequestCount,
+      assignedIssues: assignedIssueCount,
+    });
     res.json(badges);
   });
 

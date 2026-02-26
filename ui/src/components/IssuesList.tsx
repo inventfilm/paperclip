@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { useDeferredValue, useMemo, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
@@ -94,25 +94,6 @@ function applyFilters(issues: Issue[], state: IssueViewState): Issue[] {
   return result;
 }
 
-function applySearch(issues: Issue[], searchQuery: string, agentName: (id: string | null) => string | null): Issue[] {
-  const query = searchQuery.trim().toLowerCase();
-  if (!query) return issues;
-
-  return issues.filter((issue) => {
-    const fields = [
-      issue.identifier ?? "",
-      issue.title,
-      issue.description ?? "",
-      issue.status,
-      issue.priority,
-      agentName(issue.assigneeAgentId) ?? "",
-      ...(issue.labels ?? []).map((label) => label.name),
-    ];
-
-    return fields.some((field) => field.toLowerCase().includes(query));
-  });
-}
-
 function sortIssues(issues: Issue[], state: IssueViewState): Issue[] {
   const sorted = [...issues];
   const dir = state.sortDir === "asc" ? 1 : -1;
@@ -186,6 +167,8 @@ export function IssuesList({
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const [issueSearch, setIssueSearch] = useState("");
+  const deferredIssueSearch = useDeferredValue(issueSearch);
+  const normalizedIssueSearch = deferredIssueSearch.trim();
 
   const updateView = useCallback((patch: Partial<IssueViewState>) => {
     setViewState((prev) => {
@@ -195,16 +178,25 @@ export function IssuesList({
     });
   }, [viewStateKey]);
 
-  const agentName = (id: string | null) => {
+  const { data: searchedIssues = [] } = useQuery({
+    queryKey: queryKeys.issues.search(selectedCompanyId!, normalizedIssueSearch, projectId),
+    queryFn: () => issuesApi.list(selectedCompanyId!, { q: normalizedIssueSearch, projectId }),
+    enabled: !!selectedCompanyId && normalizedIssueSearch.length > 0,
+  });
+
+  const agentName = useCallback((id: string | null) => {
     if (!id || !agents) return null;
     return agents.find((a) => a.id === id)?.name ?? null;
-  };
+  }, [agents]);
 
   const filtered = useMemo(() => {
-    const filteredByControls = applyFilters(issues, viewState);
-    const filteredBySearch = applySearch(filteredByControls, issueSearch, agentName);
-    return sortIssues(filteredBySearch, viewState);
-  }, [issues, viewState, issueSearch, agents]);
+    const sourceIssues = normalizedIssueSearch.length > 0 ? searchedIssues : issues;
+    const filteredByControls = applyFilters(sourceIssues, viewState);
+    if (normalizedIssueSearch.length > 0) {
+      return filteredByControls;
+    }
+    return sortIssues(filteredByControls, viewState);
+  }, [issues, searchedIssues, viewState, normalizedIssueSearch]);
 
   const { data: labels } = useQuery({
     queryKey: queryKeys.issues.labels(selectedCompanyId!),

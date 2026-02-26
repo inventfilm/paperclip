@@ -2,9 +2,24 @@ import type { Approval, Issue, IssueAttachment, IssueComment, IssueLabel } from 
 import { api } from "./client";
 
 export const issuesApi = {
-  list: (companyId: string, filters?: { projectId?: string }) => {
+  list: (
+    companyId: string,
+    filters?: {
+      status?: string;
+      projectId?: string;
+      assigneeAgentId?: string;
+      assigneeUserId?: string;
+      labelId?: string;
+      q?: string;
+    },
+  ) => {
     const params = new URLSearchParams();
+    if (filters?.status) params.set("status", filters.status);
     if (filters?.projectId) params.set("projectId", filters.projectId);
+    if (filters?.assigneeAgentId) params.set("assigneeAgentId", filters.assigneeAgentId);
+    if (filters?.assigneeUserId) params.set("assigneeUserId", filters.assigneeUserId);
+    if (filters?.labelId) params.set("labelId", filters.labelId);
+    if (filters?.q) params.set("q", filters.q);
     const qs = params.toString();
     return api.get<Issue[]>(`/companies/${companyId}/issues${qs ? `?${qs}` : ""}`);
   },

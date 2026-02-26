@@ -1495,7 +1495,11 @@ export function heartbeatService(db: Db) {
       return null;
     }
 
-    if (issueId) {
+    const bypassIssueExecutionLock =
+      reason === "issue_comment_mentioned" ||
+      readNonEmptyString(enrichedContextSnapshot.wakeReason) === "issue_comment_mentioned";
+
+    if (issueId && !bypassIssueExecutionLock) {
       const agentNameKey = normalizeAgentNameKey(agent.name);
       const sessionBefore = await resolveSessionBeforeForWakeup(agent, taskKey);
 

@@ -6,6 +6,7 @@ import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { projectsApi } from "../api/projects";
+import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -20,6 +21,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { cn, formatCents } from "../lib/utils";
 import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
+import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
 import type { Agent, Issue } from "@paperclip/shared";
 
 function getRecentIssues(issues: Issue[]): Issue[] {
@@ -28,7 +30,7 @@ function getRecentIssues(issues: Issue[]): Issue[] {
 }
 
 export function Dashboard() {
-  const { selectedCompanyId, selectedCompany, companies } = useCompany();
+  const { selectedCompanyId, companies } = useCompany();
   const { openOnboarding } = useDialog();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [animatedActivityIds, setAnimatedActivityIds] = useState<Set<string>>(new Set());
@@ -67,6 +69,12 @@ export function Dashboard() {
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(selectedCompanyId!),
     queryFn: () => projectsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: runs } = useQuery({
+    queryKey: queryKeys.heartbeats(selectedCompanyId!),
+    queryFn: () => heartbeatsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
 
@@ -171,16 +179,14 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {selectedCompany && (
-        <p className="text-sm text-muted-foreground">{selectedCompany.name}</p>
-      )}
-
       {isLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
+      <ActiveAgentsPanel companyId={selectedCompanyId!} />
+
       {data && (
         <>
-          <div className="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
+          <div className="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
             <MetricCard
               icon={Bot}
               value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
@@ -230,6 +236,21 @@ export function Dashboard() {
                 </span>
               }
             />
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <ChartCard title="Run Activity" subtitle="Last 14 days">
+              <RunActivityChart runs={runs ?? []} />
+            </ChartCard>
+            <ChartCard title="Issues by Priority" subtitle="Last 14 days">
+              <PriorityChart issues={issues ?? []} />
+            </ChartCard>
+            <ChartCard title="Issues by Status" subtitle="Last 14 days">
+              <IssueStatusChart issues={issues ?? []} />
+            </ChartCard>
+            <ChartCard title="Success Rate" subtitle="Last 14 days">
+              <SuccessRateChart runs={runs ?? []} />
+            </ChartCard>
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -298,7 +319,6 @@ export function Dashboard() {
             </div>
           </div>
 
-          <ActiveAgentsPanel companyId={selectedCompanyId!} />
         </>
       )}
     </div>

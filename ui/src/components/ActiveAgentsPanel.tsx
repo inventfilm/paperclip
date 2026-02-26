@@ -24,6 +24,7 @@ interface FeedItem {
 }
 
 const MAX_FEED_ITEMS = 40;
+const MIN_DASHBOARD_RUNS = 4;
 
 function readString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
@@ -137,6 +138,10 @@ function parseStderrChunk(
   return items;
 }
 
+function isRunActive(run: LiveRunForIssue): boolean {
+  return run.status === "queued" || run.status === "running";
+}
+
 interface ActiveAgentsPanelProps {
   companyId: string;
 }
@@ -148,8 +153,8 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
   const nextIdRef = useRef(1);
 
   const { data: liveRuns } = useQuery({
-    queryKey: queryKeys.liveRuns(companyId),
-    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId),
+    queryKey: [...queryKeys.liveRuns(companyId), "dashboard"],
+    queryFn: () => heartbeatsApi.liveRunsForCompany(companyId, MIN_DASHBOARD_RUNS),
   });
 
   const runs = liveRuns ?? [];
@@ -168,7 +173,7 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
   }, [issues]);
 
   const runById = useMemo(() => new Map(runs.map((r) => [r.id, r])), [runs]);
-  const activeRunIds = useMemo(() => new Set(runs.map((r) => r.id)), [runs]);
+  const activeRunIds = useMemo(() => new Set(runs.filter(isRunActive).map((r) => r.id)), [runs]);
 
   // Clean up pending buffers for runs that ended
   useEffect(() => {
@@ -293,23 +298,28 @@ export function ActiveAgentsPanel({ companyId }: ActiveAgentsPanelProps) {
     };
   }, [activeRunIds, companyId, runById]);
 
-  if (runs.length === 0) return null;
-
   return (
     <div>
       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
-        Active Agents
+        Agents
       </h3>
-      <div className="grid md:grid-cols-2 gap-4">
-        {runs.map((run) => (
-          <AgentRunCard
-            key={run.id}
-            run={run}
-            issue={run.issueId ? issueById.get(run.issueId) : undefined}
-            feed={feedByRun.get(run.id) ?? []}
-          />
-        ))}
-      </div>
+      {runs.length === 0 ? (
+        <div className="border border-border rounded-lg p-4">
+          <p className="text-sm text-muted-foreground">No recent agent runs.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-4">
+          {runs.map((run) => (
+            <AgentRunCard
+              key={run.id}
+              run={run}
+              issue={run.issueId ? issueById.get(run.issueId) : undefined}
+              feed={feedByRun.get(run.id) ?? []}
+              isActive={isRunActive(run)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -318,10 +328,12 @@ function AgentRunCard({
   run,
   issue,
   feed,
+  isActive,
 }: {
   run: LiveRunForIssue;
   issue?: Issue;
   feed: FeedItem[];
+  isActive: boolean;
 }) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const recent = feed.slice(-20);
@@ -333,34 +345,47 @@ function AgentRunCard({
   }, [feed.length]);
 
   return (
-    <div className="rounded-lg border border-blue-500/30 bg-background/80 overflow-hidden shadow-[0_0_12px_rgba(59,130,246,0.08)]">
+    <div className={cn(
+      "flex flex-col rounded-lg border overflow-hidden min-h-[200px]",
+      isActive
+        ? "border-blue-500/30 bg-background/80 shadow-[0_0_12px_rgba(59,130,246,0.08)]"
+        : "border-border bg-background/50",
+    )}>
+      {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border/50">
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
-          </span>
+        <div className="flex items-center gap-2 min-w-0">
+          {isActive ? (
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+            </span>
+          ) : (
+            <span className="flex h-2 w-2 shrink-0">
+              <span className="inline-flex rounded-full h-2 w-2 bg-muted-foreground/40" />
+            </span>
+          )}
           <Identity name={run.agentName} size="sm" />
-          <span className="text-[11px] font-medium text-blue-400">Live</span>
-          <span className="text-[10px] text-muted-foreground font-mono">
-            {run.id.slice(0, 8)}
-          </span>
+          {isActive && (
+            <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">Live</span>
+          )}
         </div>
         <Link
           to={`/agents/${run.agentId}/runs/${run.id}`}
-          className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
+          className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground shrink-0"
         >
-          Open run
           <ExternalLink className="h-2.5 w-2.5" />
         </Link>
       </div>
 
+      {/* Issue context */}
       {run.issueId && (
         <div className="px-3 py-1.5 border-b border-border/40 text-xs flex items-center gap-1 min-w-0">
-          <span className="text-muted-foreground mr-1">Working on:</span>
           <Link
             to={`/issues/${issue?.identifier ?? run.issueId}`}
-            className="text-blue-400 hover:text-blue-300 hover:underline min-w-0 truncate"
+            className={cn(
+              "hover:underline min-w-0 truncate",
+              isActive ? "text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300" : "text-muted-foreground hover:text-foreground",
+            )}
             title={issue?.title ? `${issue?.identifier ?? run.issueId.slice(0, 8)} - ${issue.title}` : issue?.identifier ?? run.issueId.slice(0, 8)}
           >
             {issue?.identifier ?? run.issueId.slice(0, 8)}
@@ -369,25 +394,31 @@ function AgentRunCard({
         </div>
       )}
 
-      <div ref={bodyRef} className="max-h-[180px] overflow-y-auto p-2 font-mono text-[11px] space-y-1">
-        {recent.length === 0 && (
+      {/* Feed body */}
+      <div ref={bodyRef} className="flex-1 max-h-[140px] overflow-y-auto p-2 font-mono text-[11px] space-y-1">
+        {isActive && recent.length === 0 && (
           <div className="text-xs text-muted-foreground">Waiting for output...</div>
+        )}
+        {!isActive && recent.length === 0 && (
+          <div className="text-xs text-muted-foreground">
+            {run.finishedAt ? `Finished ${relativeTime(run.finishedAt)}` : `Started ${relativeTime(run.createdAt)}`}
+          </div>
         )}
         {recent.map((item, index) => (
           <div
             key={item.id}
             className={cn(
               "flex gap-2 items-start",
-              index === recent.length - 1 && "animate-in fade-in slide-in-from-bottom-1 duration-300",
+              index === recent.length - 1 && isActive && "animate-in fade-in slide-in-from-bottom-1 duration-300",
             )}
           >
             <span className="text-[10px] text-muted-foreground shrink-0">{relativeTime(item.ts)}</span>
             <span className={cn(
               "min-w-0 break-words",
-              item.tone === "error" && "text-red-300",
-              item.tone === "warn" && "text-amber-300",
-              item.tone === "assistant" && "text-emerald-200",
-              item.tone === "tool" && "text-cyan-300",
+              item.tone === "error" && "text-red-600 dark:text-red-300",
+              item.tone === "warn" && "text-amber-600 dark:text-amber-300",
+              item.tone === "assistant" && "text-emerald-700 dark:text-emerald-200",
+              item.tone === "tool" && "text-cyan-600 dark:text-cyan-300",
               item.tone === "info" && "text-foreground/80",
             )}>
               {item.text}

@@ -186,11 +186,24 @@ export function issueRoutes(db: Db, storage: StorageService) {
   router.get("/companies/:companyId/issues", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    const assigneeUserFilterRaw = req.query.assigneeUserId as string | undefined;
+    const assigneeUserId =
+      assigneeUserFilterRaw === "me" && req.actor.type === "board"
+        ? req.actor.userId
+        : assigneeUserFilterRaw;
+
+    if (assigneeUserFilterRaw === "me" && (!assigneeUserId || req.actor.type !== "board")) {
+      res.status(403).json({ error: "assigneeUserId=me requires board authentication" });
+      return;
+    }
+
     const result = await svc.list(companyId, {
       status: req.query.status as string | undefined,
       assigneeAgentId: req.query.assigneeAgentId as string | undefined,
+      assigneeUserId,
       projectId: req.query.projectId as string | undefined,
       labelId: req.query.labelId as string | undefined,
+      q: req.query.q as string | undefined,
     });
     res.json(result);
   });
@@ -390,8 +403,20 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const assigneeWillChange =
       (req.body.assigneeAgentId !== undefined && req.body.assigneeAgentId !== existing.assigneeAgentId) ||
       (req.body.assigneeUserId !== undefined && req.body.assigneeUserId !== existing.assigneeUserId);
+
+    const isAgentReturningIssueToCreator =
+      req.actor.type === "agent" &&
+      !!req.actor.agentId &&
+      existing.assigneeAgentId === req.actor.agentId &&
+      req.body.assigneeAgentId === null &&
+      typeof req.body.assigneeUserId === "string" &&
+      !!existing.createdByUserId &&
+      req.body.assigneeUserId === existing.createdByUserId;
+
     if (assigneeWillChange) {
-      await assertCanAssignTasks(req, existing.companyId);
+      if (!isAgentReturningIssueToCreator) {
+        await assertCanAssignTasks(req, existing.companyId);
+      }
     }
     if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
 

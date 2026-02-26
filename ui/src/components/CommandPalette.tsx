@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
@@ -32,9 +32,11 @@ import { Identity } from "./Identity";
 
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const { openNewIssue, openNewAgent } = useDialog();
+  const searchQuery = query.trim();
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -47,10 +49,20 @@ export function CommandPalette() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
+
   const { data: issues = [] } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
     queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId && open,
+  });
+
+  const { data: searchedIssues = [] } = useQuery({
+    queryKey: queryKeys.issues.search(selectedCompanyId!, searchQuery),
+    queryFn: () => issuesApi.list(selectedCompanyId!, { q: searchQuery }),
+    enabled: !!selectedCompanyId && open && searchQuery.length > 0,
   });
 
   const { data: agents = [] } = useQuery({
@@ -75,11 +87,48 @@ export function CommandPalette() {
     return agents.find((a) => a.id === id)?.name ?? null;
   };
 
+  const visibleIssues = useMemo(
+    () => (searchQuery.length > 0 ? searchedIssues : issues),
+    [issues, searchedIssues, searchQuery],
+  );
+
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search issues, agents, projects..." />
+      <CommandInput
+        placeholder="Search issues, agents, projects..."
+        value={query}
+        onValueChange={setQuery}
+      />
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
+
+        <CommandGroup heading="Actions">
+          <CommandItem
+            onSelect={() => {
+              setOpen(false);
+              openNewIssue();
+            }}
+          >
+            <SquarePen className="mr-2 h-4 w-4" />
+            Create new issue
+            <span className="ml-auto text-xs text-muted-foreground">C</span>
+          </CommandItem>
+          <CommandItem
+            onSelect={() => {
+              setOpen(false);
+              openNewAgent();
+            }}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Create new agent
+          </CommandItem>
+          <CommandItem onSelect={() => go("/projects")}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create new project
+          </CommandItem>
+        </CommandGroup>
+
+        <CommandSeparator />
 
         <CommandGroup heading="Pages">
           <CommandItem onSelect={() => go("/dashboard")}>
@@ -116,40 +165,21 @@ export function CommandPalette() {
           </CommandItem>
         </CommandGroup>
 
-        <CommandSeparator />
-
-        <CommandGroup heading="Actions">
-          <CommandItem
-            onSelect={() => {
-              setOpen(false);
-              openNewIssue();
-            }}
-          >
-            <SquarePen className="mr-2 h-4 w-4" />
-            Create new issue
-            <span className="ml-auto text-xs text-muted-foreground">C</span>
-          </CommandItem>
-          <CommandItem
-            onSelect={() => {
-              setOpen(false);
-              openNewAgent();
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Create new agent
-          </CommandItem>
-          <CommandItem onSelect={() => go("/projects")}>
-            <Plus className="mr-2 h-4 w-4" />
-            Create new project
-          </CommandItem>
-        </CommandGroup>
-
-        {issues.length > 0 && (
+        {visibleIssues.length > 0 && (
           <>
             <CommandSeparator />
             <CommandGroup heading="Issues">
-              {issues.slice(0, 10).map((issue) => (
-                <CommandItem key={issue.id} onSelect={() => go(`/issues/${issue.identifier ?? issue.id}`)}>
+              {visibleIssues.slice(0, 10).map((issue) => (
+                <CommandItem
+                  key={issue.id}
+                  value={
+                    searchQuery.length > 0
+                      ? `${searchQuery} ${issue.identifier ?? ""} ${issue.title} ${issue.description ?? ""}`
+                      : undefined
+                  }
+                  keywords={issue.description ? [issue.description] : undefined}
+                  onSelect={() => go(`/issues/${issue.identifier ?? issue.id}`)}
+                >
                   <CircleDot className="mr-2 h-4 w-4" />
                   <span className="text-muted-foreground mr-2 font-mono text-xs">
                     {issue.identifier ?? issue.id.slice(0, 8)}
