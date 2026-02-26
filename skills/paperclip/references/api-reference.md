@@ -408,6 +408,10 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/projects/:projectId`           | Project details    |
 | POST   | `/api/companies/:companyId/projects` | Create project     |
 | PATCH  | `/api/projects/:projectId`           | Update project     |
+| GET    | `/api/projects/:projectId/workspaces` | List project workspaces |
+| POST   | `/api/projects/:projectId/workspaces` | Create project workspace |
+| PATCH  | `/api/projects/:projectId/workspaces/:workspaceId` | Update project workspace |
+| DELETE | `/api/projects/:projectId/workspaces/:workspaceId` | Delete project workspace |
 | GET    | `/api/companies/:companyId/goals`    | List goals         |
 | GET    | `/api/goals/:goalId`                 | Goal details       |
 | POST   | `/api/companies/:companyId/goals`    | Create goal        |
