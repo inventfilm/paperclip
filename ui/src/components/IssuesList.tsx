@@ -39,6 +39,7 @@ export type IssueViewState = {
   sortDir: "asc" | "desc";
   groupBy: "status" | "priority" | "assignee" | "none";
   viewMode: "list" | "board";
+  collapsedGroups: string[];
 };
 
 const defaultViewState: IssueViewState = {
@@ -50,6 +51,7 @@ const defaultViewState: IssueViewState = {
   sortDir: "asc",
   groupBy: "status",
   viewMode: "list",
+  collapsedGroups: [],
 };
 
 const quickFilterPresets = [
@@ -497,7 +499,17 @@ export function IssuesList({
         />
       ) : (
         groupedContent.map((group) => (
-          <Collapsible key={group.key} defaultOpen>
+          <Collapsible
+            key={group.key}
+            open={!viewState.collapsedGroups.includes(group.key)}
+            onOpenChange={(open) => {
+              updateView({
+                collapsedGroups: open
+                  ? viewState.collapsedGroups.filter((k) => k !== group.key)
+                  : [...viewState.collapsedGroups, group.key],
+              });
+            }}
+          >
             {group.label && (
               <div className="flex items-center py-1.5 pl-1 pr-3">
                 <CollapsibleTrigger className="flex items-center gap-1.5">
