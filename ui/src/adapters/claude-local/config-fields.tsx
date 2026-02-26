@@ -25,6 +25,20 @@ export function ClaudeLocalAdvancedFields({
   return (
     <>
       <ToggleField
+        label="Enable Chrome"
+        hint={help.chrome}
+        checked={
+          isCreate
+            ? values!.chrome
+            : eff("adapterConfig", "chrome", config.chrome === true)
+        }
+        onChange={(v) =>
+          isCreate
+            ? set!({ chrome: v })
+            : mark("adapterConfig", "chrome", v)
+        }
+      />
+      <ToggleField
         label="Skip permissions"
         hint={help.dangerouslySkipPermissions}
         checked={

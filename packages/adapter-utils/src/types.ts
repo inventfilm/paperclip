@@ -160,6 +160,7 @@ export interface CreateConfigValues {
   promptTemplate: string;
   model: string;
   thinkingEffort: string;
+  chrome: boolean;
   dangerouslySkipPermissions: boolean;
   search: boolean;
   dangerouslyBypassSandbox: boolean;

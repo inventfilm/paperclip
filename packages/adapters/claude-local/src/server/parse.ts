@@ -154,6 +154,19 @@ export function describeClaudeFailure(parsed: Record<string, unknown>): string |
   return parts.length > 1 ? parts.join(": ") : null;
 }
 
+export function isClaudeMaxTurnsResult(parsed: Record<string, unknown> | null | undefined): boolean {
+  if (!parsed) return false;
+
+  const subtype = asString(parsed.subtype, "").trim().toLowerCase();
+  if (subtype === "error_max_turns") return true;
+
+  const stopReason = asString(parsed.stop_reason, "").trim().toLowerCase();
+  if (stopReason === "max_turns") return true;
+
+  const resultText = asString(parsed.result, "").trim();
+  return /max(?:imum)?\s+turns?/i.test(resultText);
+}
+
 export function isClaudeUnknownSessionError(parsed: Record<string, unknown>): boolean {
   const resultText = asString(parsed.result, "").trim();
   const allMessages = [resultText, ...extractClaudeErrorMessages(parsed)]

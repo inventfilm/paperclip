@@ -15,6 +15,7 @@ Core fields:
 - cwd (string, optional): default absolute working directory fallback for the agent process
 - model (string, optional): Claude model id
 - effort (string, optional): reasoning effort passed via --effort (low|medium|high)
+- chrome (boolean, optional): pass --chrome when running Claude
 - promptTemplate (string, optional): run prompt template
 - bootstrapPromptTemplate (string, optional): first-run prompt template
 - maxTurnsPerRun (number, optional): max turns for one run

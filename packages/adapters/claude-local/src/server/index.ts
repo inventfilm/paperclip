@@ -1,6 +1,11 @@
 export { execute, runClaudeLogin } from "./execute.js";
 export { testEnvironment } from "./test.js";
-export { parseClaudeStreamJson, describeClaudeFailure, isClaudeUnknownSessionError } from "./parse.js";
+export {
+  parseClaudeStreamJson,
+  describeClaudeFailure,
+  isClaudeMaxTurnsResult,
+  isClaudeUnknownSessionError,
+} from "./parse.js";
 import type { AdapterSessionCodec } from "@paperclip/adapter-utils";
 
 function readNonEmptyString(value: unknown): string | null {
