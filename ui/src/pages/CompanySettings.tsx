@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -7,15 +7,43 @@ import { accessApi } from "../api/access";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Settings } from "lucide-react";
+import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
+import { Field, ToggleField, HintIcon } from "../components/agent-config-primitives";
 
 export function CompanySettings() {
   const { selectedCompany, selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
-  const [joinType, setJoinType] = useState<"human" | "agent" | "both">("both");
-  const [expiresInHours, setExpiresInHours] = useState(72);
+
+  // General settings local state
+  const [companyName, setCompanyName] = useState("");
+  const [description, setDescription] = useState("");
+  const [brandColor, setBrandColor] = useState("");
+
+  // Sync local state from selected company
+  useEffect(() => {
+    if (!selectedCompany) return;
+    setCompanyName(selectedCompany.name);
+    setDescription(selectedCompany.description ?? "");
+    setBrandColor(selectedCompany.brandColor ?? "");
+  }, [selectedCompany]);
+
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
+
+  const generalDirty =
+    !!selectedCompany &&
+    (companyName !== selectedCompany.name ||
+      description !== (selectedCompany.description ?? "") ||
+      brandColor !== (selectedCompany.brandColor ?? ""));
+
+  const generalMutation = useMutation({
+    mutationFn: (data: { name: string; description: string | null; brandColor: string | null }) =>
+      companiesApi.update(selectedCompanyId!, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+    },
+  });
 
   const settingsMutation = useMutation({
     mutationFn: (requireApproval: boolean) =>
@@ -30,8 +58,8 @@ export function CompanySettings() {
   const inviteMutation = useMutation({
     mutationFn: () =>
       accessApi.createCompanyInvite(selectedCompanyId!, {
-        allowedJoinTypes: joinType,
-        expiresInHours,
+        allowedJoinTypes: "both",
+        expiresInHours: 72,
       }),
     onSuccess: (invite) => {
       setInviteError(null);
@@ -46,11 +74,6 @@ export function CompanySettings() {
       setInviteError(err instanceof Error ? err.message : "Failed to create invite");
     },
   });
-
-  const inviteExpiryHint = useMemo(() => {
-    const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
-    return expiresAt.toLocaleString();
-  }, [expiresInHours]);
 
   useEffect(() => {
     setBreadcrumbs([
@@ -67,6 +90,14 @@ export function CompanySettings() {
     );
   }
 
+  function handleSaveGeneral() {
+    generalMutation.mutate({
+      name: companyName.trim(),
+      description: description.trim() || null,
+      brandColor: brandColor || null,
+    });
+  }
+
   return (
     <div className="max-w-2xl space-y-6">
       <div className="flex items-center gap-2">
@@ -74,69 +105,132 @@ export function CompanySettings() {
         <h1 className="text-lg font-semibold">Company Settings</h1>
       </div>
 
+      {/* General */}
+      <div className="space-y-4">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          General
+        </div>
+        <div className="space-y-3 rounded-md border border-border px-4 py-4">
+          <Field label="Company name" hint="The display name for your company.">
+            <input
+              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+              type="text"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+            />
+          </Field>
+          <Field label="Description" hint="Optional description shown in the company profile.">
+            <input
+              className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none"
+              type="text"
+              value={description}
+              placeholder="Optional company description"
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </Field>
+        </div>
+      </div>
+
+      {/* Appearance */}
+      <div className="space-y-4">
+        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Appearance
+        </div>
+        <div className="space-y-3 rounded-md border border-border px-4 py-4">
+          <div className="flex items-start gap-4">
+            <div className="shrink-0">
+              <CompanyPatternIcon
+                companyName={companyName || selectedCompany.name}
+                brandColor={brandColor || null}
+                className="rounded-[14px]"
+              />
+            </div>
+            <div className="flex-1 space-y-2">
+              <Field label="Brand color" hint="Sets the hue for the company icon. Leave empty for auto-generated color.">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={brandColor || "#6366f1"}
+                    onChange={(e) => setBrandColor(e.target.value)}
+                    className="h-8 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+                  />
+                  <input
+                    type="text"
+                    value={brandColor}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "" || /^#[0-9a-fA-F]{0,6}$/.test(v)) {
+                        setBrandColor(v);
+                      }
+                    }}
+                    placeholder="Auto"
+                    className="w-28 rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm font-mono outline-none"
+                  />
+                  {brandColor && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setBrandColor("")}
+                      className="text-xs text-muted-foreground"
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              </Field>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Save button for General + Appearance */}
+      {generalDirty && (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            onClick={handleSaveGeneral}
+            disabled={generalMutation.isPending || !companyName.trim()}
+          >
+            {generalMutation.isPending ? "Saving..." : "Save changes"}
+          </Button>
+          {generalMutation.isSuccess && (
+            <span className="text-xs text-muted-foreground">Saved</span>
+          )}
+          {generalMutation.isError && (
+            <span className="text-xs text-destructive">
+              {generalMutation.error instanceof Error
+                ? generalMutation.error.message
+                : "Failed to save"}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Hiring */}
       <div className="space-y-4">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Hiring
         </div>
-        <div className="flex items-center justify-between gap-3 rounded-md border border-border px-4 py-3">
-          <div>
-            <div className="text-sm font-medium">
-              Require board approval for new hires
-            </div>
-            <div className="text-xs text-muted-foreground">
-              New agent hires stay pending until approved by board.
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant={
-              selectedCompany.requireBoardApprovalForNewAgents
-                ? "default"
-                : "outline"
-            }
-            onClick={() =>
-              settingsMutation.mutate(
-                !selectedCompany.requireBoardApprovalForNewAgents,
-              )
-            }
-            disabled={settingsMutation.isPending}
-          >
-            {selectedCompany.requireBoardApprovalForNewAgents ? "On" : "Off"}
-          </Button>
+        <div className="rounded-md border border-border px-4 py-3">
+          <ToggleField
+            label="Require board approval for new hires"
+            hint="New agent hires stay pending until approved by board."
+            checked={!!selectedCompany.requireBoardApprovalForNewAgents}
+            onChange={(v) => settingsMutation.mutate(v)}
+          />
         </div>
       </div>
 
+      {/* Invites */}
       <div className="space-y-4">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Invites
         </div>
         <div className="space-y-3 rounded-md border border-border px-4 py-4">
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="text-sm">
-              <span className="mb-1 block text-muted-foreground">Allowed join type</span>
-              <select
-                className="w-full rounded-md border border-border bg-background px-2 py-2 text-sm"
-                value={joinType}
-                onChange={(event) => setJoinType(event.target.value as "human" | "agent" | "both")}
-              >
-                <option value="both">Human or agent</option>
-                <option value="human">Human only</option>
-                <option value="agent">Agent only</option>
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block text-muted-foreground">Expires in hours</span>
-              <input
-                className="w-full rounded-md border border-border bg-background px-2 py-2 text-sm"
-                type="number"
-                min={1}
-                max={720}
-                value={expiresInHours}
-                onChange={(event) => setExpiresInHours(Math.max(1, Math.min(720, Number(event.target.value) || 72)))}
-              />
-            </label>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">Generate a link to invite humans or agents to this company.</span>
+            <HintIcon text="Invite links expire after 72 hours and allow both human and agent joins." />
           </div>
-          <p className="text-xs text-muted-foreground">Invite will expire around {inviteExpiryHint}.</p>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={() => inviteMutation.mutate()} disabled={inviteMutation.isPending}>
               {inviteMutation.isPending ? "Creating..." : "Create invite link"}

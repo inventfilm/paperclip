@@ -116,8 +116,8 @@ function SortableCompanyItem({
                 brandColor={company.brandColor}
                 className={cn(
                   isSelected
-                    ? "rounded-xl"
-                    : "rounded-[22px] group-hover:rounded-xl",
+                    ? "rounded-[14px]"
+                    : "rounded-[22px] group-hover:rounded-[14px]",
                   isDragging && "shadow-lg",
                 )}
               />
@@ -243,7 +243,7 @@ export function CompanyRail() {
           <TooltipTrigger asChild>
             <button
               onClick={() => openOnboarding()}
-              className="flex items-center justify-center w-11 h-11 rounded-[22px] hover:rounded-xl border-2 border-dashed border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-all duration-200"
+              className="flex items-center justify-center w-11 h-11 rounded-[22px] hover:rounded-[14px] border-2 border-dashed border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-all duration-200"
             >
               <Plus className="h-5 w-5" />
             </button>
