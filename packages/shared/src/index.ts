@@ -77,6 +77,7 @@ export type {
   ProjectGoalRef,
   ProjectWorkspace,
   Issue,
+  IssueAssigneeAdapterOverrides,
   IssueComment,
   IssueAttachment,
   IssueLabel,

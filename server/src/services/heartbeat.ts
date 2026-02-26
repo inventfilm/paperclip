@@ -68,8 +68,31 @@ interface WakeupOptions {
   contextSnapshot?: Record<string, unknown>;
 }
 
+interface ParsedIssueAssigneeAdapterOverrides {
+  adapterConfig: Record<string, unknown> | null;
+  useProjectWorkspace: boolean | null;
+}
+
 function readNonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value : null;
+}
+
+function parseIssueAssigneeAdapterOverrides(
+  raw: unknown,
+): ParsedIssueAssigneeAdapterOverrides | null {
+  const parsed = parseObject(raw);
+  const parsedAdapterConfig = parseObject(parsed.adapterConfig);
+  const adapterConfig =
+    Object.keys(parsedAdapterConfig).length > 0 ? parsedAdapterConfig : null;
+  const useProjectWorkspace =
+    typeof parsed.useProjectWorkspace === "boolean"
+      ? parsed.useProjectWorkspace
+      : null;
+  if (!adapterConfig && useProjectWorkspace === null) return null;
+  return {
+    adapterConfig,
+    useProjectWorkspace,
+  };
 }
 
 function deriveTaskKey(
@@ -344,6 +367,7 @@ export function heartbeatService(db: Db) {
     agent: typeof agents.$inferSelect,
     context: Record<string, unknown>,
     previousSessionParams: Record<string, unknown> | null,
+    opts?: { useProjectWorkspace?: boolean | null },
   ) {
     const issueId = readNonEmptyString(context.issueId);
     const contextProjectId = readNonEmptyString(context.projectId);
@@ -355,15 +379,17 @@ export function heartbeatService(db: Db) {
           .then((rows) => rows[0]?.projectId ?? null)
       : null;
     const resolvedProjectId = issueProjectId ?? contextProjectId;
+    const useProjectWorkspace = opts?.useProjectWorkspace !== false;
+    const workspaceProjectId = useProjectWorkspace ? resolvedProjectId : null;
 
-    const projectWorkspaceRows = resolvedProjectId
+    const projectWorkspaceRows = workspaceProjectId
       ? await db
           .select()
           .from(projectWorkspaces)
           .where(
             and(
               eq(projectWorkspaces.companyId, agent.companyId),
-              eq(projectWorkspaces.projectId, resolvedProjectId),
+              eq(projectWorkspaces.projectId, workspaceProjectId),
             ),
           )
           .orderBy(asc(projectWorkspaces.createdAt), asc(projectWorkspaces.id))
@@ -891,13 +917,35 @@ export function heartbeatService(db: Db) {
     const context = parseObject(run.contextSnapshot);
     const taskKey = deriveTaskKey(context, null);
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
+    const issueId = readNonEmptyString(context.issueId);
+    const issueAssigneeConfig = issueId
+      ? await db
+          .select({
+            assigneeAgentId: issues.assigneeAgentId,
+            assigneeAdapterOverrides: issues.assigneeAdapterOverrides,
+          })
+          .from(issues)
+          .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
+          .then((rows) => rows[0] ?? null)
+      : null;
+    const issueAssigneeOverrides =
+      issueAssigneeConfig && issueAssigneeConfig.assigneeAgentId === agent.id
+        ? parseIssueAssigneeAdapterOverrides(
+            issueAssigneeConfig.assigneeAdapterOverrides,
+          )
+        : null;
     const taskSession = taskKey
       ? await getTaskSession(agent.companyId, agent.id, agent.adapterType, taskKey)
       : null;
     const previousSessionParams = normalizeSessionParams(
       sessionCodec.deserialize(taskSession?.sessionParamsJson ?? null),
     );
-    const resolvedWorkspace = await resolveWorkspaceForRun(agent, context, previousSessionParams);
+    const resolvedWorkspace = await resolveWorkspaceForRun(
+      agent,
+      context,
+      previousSessionParams,
+      { useProjectWorkspace: issueAssigneeOverrides?.useProjectWorkspace ?? null },
+    );
     context.paperclipWorkspace = {
       cwd: resolvedWorkspace.cwd,
       source: resolvedWorkspace.source,
@@ -1016,9 +1064,12 @@ export function heartbeatService(db: Db) {
       };
 
       const config = parseObject(agent.adapterConfig);
+      const mergedConfig = issueAssigneeOverrides?.adapterConfig
+        ? { ...config, ...issueAssigneeOverrides.adapterConfig }
+        : config;
       const resolvedConfig = await secretsSvc.resolveAdapterConfigForRuntime(
         agent.companyId,
-        config,
+        mergedConfig,
       );
       const onAdapterMeta = async (meta: AdapterInvocationMeta) => {
         await appendRunEvent(currentRun, seq++, {

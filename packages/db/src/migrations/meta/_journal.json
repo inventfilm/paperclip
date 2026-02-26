@@ -148,6 +148,13 @@
       "when": 1772032176413,
       "tag": "0020_white_anita_blake",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1772122471656,
+      "tag": "0021_chief_vindicator",
+      "breakpoints": true
     }
   ]
 }

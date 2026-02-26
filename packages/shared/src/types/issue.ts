@@ -43,6 +43,11 @@ export interface IssueLabel {
   updatedAt: Date;
 }
 
+export interface IssueAssigneeAdapterOverrides {
+  adapterConfig?: Record<string, unknown>;
+  useProjectWorkspace?: boolean;
+}
+
 export interface Issue {
   id: string;
   companyId: string;
@@ -66,6 +71,7 @@ export interface Issue {
   identifier: string | null;
   requestDepth: number;
   billingCode: string | null;
+  assigneeAdapterOverrides: IssueAssigneeAdapterOverrides | null;
   startedAt: Date | null;
   completedAt: Date | null;
   cancelledAt: Date | null;

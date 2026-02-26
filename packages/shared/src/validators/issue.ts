@@ -1,6 +1,13 @@
 import { z } from "zod";
 import { ISSUE_PRIORITIES, ISSUE_STATUSES } from "../constants.js";
 
+export const issueAssigneeAdapterOverridesSchema = z
+  .object({
+    adapterConfig: z.record(z.unknown()).optional(),
+    useProjectWorkspace: z.boolean().optional(),
+  })
+  .strict();
+
 export const createIssueSchema = z.object({
   projectId: z.string().uuid().optional().nullable(),
   goalId: z.string().uuid().optional().nullable(),
@@ -13,6 +20,7 @@ export const createIssueSchema = z.object({
   assigneeUserId: z.string().optional().nullable(),
   requestDepth: z.number().int().nonnegative().optional().default(0),
   billingCode: z.string().optional().nullable(),
+  assigneeAdapterOverrides: issueAssigneeAdapterOverridesSchema.optional().nullable(),
   labelIds: z.array(z.string().uuid()).optional(),
 });
 

@@ -22,6 +22,8 @@ import {
   Maximize2,
   Minimize2,
   MoreHorizontal,
+  ChevronRight,
+  ChevronDown,
   CircleDot,
   Minus,
   ArrowUp,
@@ -47,6 +49,58 @@ interface IssueDraft {
   priority: string;
   assigneeId: string;
   projectId: string;
+  assigneeModelOverride: string;
+  assigneeThinkingEffort: string;
+  assigneeUseProjectWorkspace: boolean;
+}
+
+const ISSUE_OVERRIDE_ADAPTER_TYPES = new Set(["claude_local", "codex_local"]);
+
+const ISSUE_THINKING_EFFORT_OPTIONS = {
+  claude_local: [
+    { value: "", label: "Default" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+  ],
+  codex_local: [
+    { value: "", label: "Default" },
+    { value: "minimal", label: "Minimal" },
+    { value: "low", label: "Low" },
+    { value: "medium", label: "Medium" },
+    { value: "high", label: "High" },
+  ],
+} as const;
+
+function buildAssigneeAdapterOverrides(input: {
+  adapterType: string | null | undefined;
+  modelOverride: string;
+  thinkingEffortOverride: string;
+  useProjectWorkspace: boolean;
+}): Record<string, unknown> | null {
+  const adapterType = input.adapterType ?? null;
+  if (!adapterType || !ISSUE_OVERRIDE_ADAPTER_TYPES.has(adapterType)) {
+    return null;
+  }
+
+  const adapterConfig: Record<string, unknown> = {};
+  if (input.modelOverride) adapterConfig.model = input.modelOverride;
+  if (input.thinkingEffortOverride) {
+    if (adapterType === "codex_local") {
+      adapterConfig.modelReasoningEffort = input.thinkingEffortOverride;
+    } else if (adapterType === "claude_local") {
+      adapterConfig.effort = input.thinkingEffortOverride;
+    }
+  }
+
+  const overrides: Record<string, unknown> = {};
+  if (Object.keys(adapterConfig).length > 0) {
+    overrides.adapterConfig = adapterConfig;
+  }
+  if (!input.useProjectWorkspace) {
+    overrides.useProjectWorkspace = false;
+  }
+  return Object.keys(overrides).length > 0 ? overrides : null;
 }
 
 function loadDraft(): IssueDraft | null {
@@ -93,6 +147,10 @@ export function NewIssueDialog() {
   const [priority, setPriority] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [assigneeOptionsOpen, setAssigneeOptionsOpen] = useState(false);
+  const [assigneeModelOverride, setAssigneeModelOverride] = useState("");
+  const [assigneeThinkingEffort, setAssigneeThinkingEffort] = useState("");
+  const [assigneeUseProjectWorkspace, setAssigneeUseProjectWorkspace] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -115,6 +173,17 @@ export function NewIssueDialog() {
     queryKey: queryKeys.projects.list(selectedCompanyId!),
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId && newIssueOpen,
+  });
+
+  const assigneeAdapterType = (agents ?? []).find((agent) => agent.id === assigneeId)?.adapterType ?? null;
+  const supportsAssigneeOverrides = Boolean(
+    assigneeAdapterType && ISSUE_OVERRIDE_ADAPTER_TYPES.has(assigneeAdapterType),
+  );
+
+  const { data: assigneeAdapterModels } = useQuery({
+    queryKey: ["adapter-models", assigneeAdapterType],
+    queryFn: () => agentsApi.adapterModels(assigneeAdapterType!),
+    enabled: !!selectedCompanyId && newIssueOpen && supportsAssigneeOverrides,
   });
 
   const createIssue = useMutation({
@@ -157,8 +226,30 @@ export function NewIssueDialog() {
   // Save draft on meaningful changes
   useEffect(() => {
     if (!newIssueOpen) return;
-    scheduleSave({ title, description, status, priority, assigneeId, projectId });
-  }, [title, description, status, priority, assigneeId, projectId, newIssueOpen, scheduleSave]);
+    scheduleSave({
+      title,
+      description,
+      status,
+      priority,
+      assigneeId,
+      projectId,
+      assigneeModelOverride,
+      assigneeThinkingEffort,
+      assigneeUseProjectWorkspace,
+    });
+  }, [
+    title,
+    description,
+    status,
+    priority,
+    assigneeId,
+    projectId,
+    assigneeModelOverride,
+    assigneeThinkingEffort,
+    assigneeUseProjectWorkspace,
+    newIssueOpen,
+    scheduleSave,
+  ]);
 
   // Restore draft or apply defaults when dialog opens
   useEffect(() => {
@@ -172,13 +263,37 @@ export function NewIssueDialog() {
       setPriority(draft.priority);
       setAssigneeId(newIssueDefaults.assigneeAgentId ?? draft.assigneeId);
       setProjectId(newIssueDefaults.projectId ?? draft.projectId);
+      setAssigneeModelOverride(draft.assigneeModelOverride ?? "");
+      setAssigneeThinkingEffort(draft.assigneeThinkingEffort ?? "");
+      setAssigneeUseProjectWorkspace(draft.assigneeUseProjectWorkspace ?? true);
     } else {
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
       setProjectId(newIssueDefaults.projectId ?? "");
       setAssigneeId(newIssueDefaults.assigneeAgentId ?? "");
+      setAssigneeModelOverride("");
+      setAssigneeThinkingEffort("");
+      setAssigneeUseProjectWorkspace(true);
     }
   }, [newIssueOpen, newIssueDefaults]);
+
+  useEffect(() => {
+    if (!supportsAssigneeOverrides) {
+      setAssigneeOptionsOpen(false);
+      setAssigneeModelOverride("");
+      setAssigneeThinkingEffort("");
+      setAssigneeUseProjectWorkspace(true);
+      return;
+    }
+
+    const validThinkingValues =
+      assigneeAdapterType === "codex_local"
+        ? ISSUE_THINKING_EFFORT_OPTIONS.codex_local
+        : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
+    if (!validThinkingValues.some((option) => option.value === assigneeThinkingEffort)) {
+      setAssigneeThinkingEffort("");
+    }
+  }, [supportsAssigneeOverrides, assigneeAdapterType, assigneeThinkingEffort]);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -194,6 +309,10 @@ export function NewIssueDialog() {
     setPriority("");
     setAssigneeId("");
     setProjectId("");
+    setAssigneeOptionsOpen(false);
+    setAssigneeModelOverride("");
+    setAssigneeThinkingEffort("");
+    setAssigneeUseProjectWorkspace(true);
     setExpanded(false);
   }
 
@@ -205,6 +324,12 @@ export function NewIssueDialog() {
 
   function handleSubmit() {
     if (!selectedCompanyId || !title.trim()) return;
+    const assigneeAdapterOverrides = buildAssigneeAdapterOverrides({
+      adapterType: assigneeAdapterType,
+      modelOverride: assigneeModelOverride,
+      thinkingEffortOverride: assigneeThinkingEffort,
+      useProjectWorkspace: assigneeUseProjectWorkspace,
+    });
     createIssue.mutate({
       title: title.trim(),
       description: description.trim() || undefined,
@@ -212,6 +337,7 @@ export function NewIssueDialog() {
       priority: priority || "medium",
       ...(assigneeId ? { assigneeAgentId: assigneeId } : {}),
       ...(projectId ? { projectId } : {}),
+      ...(assigneeAdapterOverrides ? { assigneeAdapterOverrides } : {}),
     });
   }
 
@@ -242,6 +368,16 @@ export function NewIssueDialog() {
   const currentPriority = priorities.find((p) => p.value === priority);
   const currentAssignee = (agents ?? []).find((a) => a.id === assigneeId);
   const currentProject = (projects ?? []).find((p) => p.id === projectId);
+  const assigneeOptionsTitle =
+    assigneeAdapterType === "claude_local"
+      ? "Claude options"
+      : assigneeAdapterType === "codex_local"
+        ? "Codex options"
+        : "Agent options";
+  const thinkingEffortOptions =
+    assigneeAdapterType === "codex_local"
+      ? ISSUE_THINKING_EFFORT_OPTIONS.codex_local
+      : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
   const assigneeOptions = useMemo<InlineEntityOption[]>(
     () =>
       (agents ?? [])
@@ -261,6 +397,15 @@ export function NewIssueDialog() {
         searchText: project.description ?? "",
       })),
     [projects],
+  );
+  const modelOverrideOptions = useMemo<InlineEntityOption[]>(
+    () =>
+      (assigneeAdapterModels ?? []).map((model) => ({
+        id: model.id,
+        label: model.label,
+        searchText: model.id,
+      })),
+    [assigneeAdapterModels],
   );
 
   return (
@@ -418,6 +563,68 @@ export function NewIssueDialog() {
             </div>
           </div>
         </div>
+
+        {supportsAssigneeOverrides && (
+          <div className="px-4 pb-2 shrink-0">
+            <button
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => setAssigneeOptionsOpen((open) => !open)}
+            >
+              {assigneeOptionsOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+              {assigneeOptionsTitle}
+            </button>
+            {assigneeOptionsOpen && (
+              <div className="mt-2 rounded-md border border-border p-3 bg-muted/20 space-y-3">
+                <div className="space-y-1.5">
+                  <div className="text-xs text-muted-foreground">Model</div>
+                  <InlineEntitySelector
+                    value={assigneeModelOverride}
+                    options={modelOverrideOptions}
+                    placeholder="Default model"
+                    noneLabel="Default model"
+                    searchPlaceholder="Search models..."
+                    emptyMessage="No models found."
+                    onChange={setAssigneeModelOverride}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <div className="text-xs text-muted-foreground">Thinking effort</div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {thinkingEffortOptions.map((option) => (
+                      <button
+                        key={option.value || "default"}
+                        className={cn(
+                          "px-2 py-1 rounded-md text-xs border border-border hover:bg-accent/50 transition-colors",
+                          assigneeThinkingEffort === option.value && "bg-accent"
+                        )}
+                        onClick={() => setAssigneeThinkingEffort(option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between rounded-md border border-border px-2 py-1.5">
+                  <div className="text-xs text-muted-foreground">Use project workspace</div>
+                  <button
+                    className={cn(
+                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                      assigneeUseProjectWorkspace ? "bg-green-600" : "bg-muted"
+                    )}
+                    onClick={() => setAssigneeUseProjectWorkspace((value) => !value)}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                        assigneeUseProjectWorkspace ? "translate-x-4.5" : "translate-x-0.5"
+                      )}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Description */}
         <div className={cn("px-4 pb-2 overflow-y-auto min-h-0 border-t border-border/60 pt-3", expanded ? "flex-1" : "")}>
