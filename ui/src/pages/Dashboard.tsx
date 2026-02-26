@@ -142,6 +142,12 @@ export function Dashboard() {
     return map;
   }, [issues, agents, projects]);
 
+  const entityTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
+    return map;
+  }, [issues]);
+
   const agentName = (id: string | null) => {
     if (!id || !agents) return null;
     return agents.find((a) => a.id === id)?.name ?? null;
@@ -240,6 +246,7 @@ export function Dashboard() {
                       event={event}
                       agentMap={agentMap}
                       entityNameMap={entityNameMap}
+                      entityTitleMap={entityTitleMap}
                       className={animatedActivityIds.has(event.id) ? "activity-row-enter" : undefined}
                     />
                   ))}

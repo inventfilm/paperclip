@@ -44,6 +44,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
     const [query, setQuery] = useState("");
     const [highlightedIndex, setHighlightedIndex] = useState(0);
     const inputRef = useRef<HTMLInputElement>(null);
+    const shouldPreventCloseAutoFocusRef = useRef(false);
 
     const allOptions = useMemo<InlineEntityOption[]>(
       () => [{ id: "", label: noneLabel, searchText: noneLabel }, ...options],
@@ -70,6 +71,7 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
     const commitSelection = (index: number, moveNext: boolean) => {
       const option = filteredOptions[index] ?? filteredOptions[0];
       if (option) onChange(option.id);
+      shouldPreventCloseAutoFocusRef.current = moveNext;
       setOpen(false);
       setQuery("");
       if (moveNext && onConfirm) {
@@ -108,6 +110,11 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             inputRef.current?.focus();
+          }}
+          onCloseAutoFocus={(event) => {
+            if (!shouldPreventCloseAutoFocusRef.current) return;
+            event.preventDefault();
+            shouldPreventCloseAutoFocusRef.current = false;
           }}
         >
           <input

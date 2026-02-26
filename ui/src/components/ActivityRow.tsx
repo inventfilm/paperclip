@@ -108,7 +108,7 @@ export function ActivityRow({ event, agentMap, entityNameMap, entityTitleMap, cl
 
   const inner = (
     <div className="flex gap-3">
-      <p className="flex-1 min-w-0">
+      <p className="flex-1 min-w-0 truncate">
         <Identity
           name={actorName}
           size="xs"

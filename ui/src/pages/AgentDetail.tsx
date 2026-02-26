@@ -215,6 +215,12 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function AgentDetail() {
   const { agentId, tab: urlTab, runId: urlRunId } = useParams<{ agentId: string; tab?: string; runId?: string }>();
   const { selectedCompanyId } = useCompany();
@@ -1509,6 +1515,7 @@ function RunsTab({ runs, companyId, agentId, selectedRunId, adapterType }: { run
 
 function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const metrics = runMetrics(run);
   const [sessionOpen, setSessionOpen] = useState(false);
   const [claudeLoginResult, setClaudeLoginResult] = useState<ClaudeLoginResult | null>(null);
@@ -1521,6 +1528,41 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
     mutationFn: () => heartbeatsApi.cancel(run.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
+    },
+  });
+  const canResumeLostRun = run.errorCode === "process_lost" && run.status === "failed";
+  const resumePayload = useMemo(() => {
+    const payload: Record<string, unknown> = {
+      resumeFromRunId: run.id,
+    };
+    const context = asRecord(run.contextSnapshot);
+    if (!context) return payload;
+    const issueId = asNonEmptyString(context.issueId);
+    const taskId = asNonEmptyString(context.taskId);
+    const taskKey = asNonEmptyString(context.taskKey);
+    const commentId = asNonEmptyString(context.wakeCommentId) ?? asNonEmptyString(context.commentId);
+    if (issueId) payload.issueId = issueId;
+    if (taskId) payload.taskId = taskId;
+    if (taskKey) payload.taskKey = taskKey;
+    if (commentId) payload.commentId = commentId;
+    return payload;
+  }, [run.contextSnapshot, run.id]);
+  const resumeRun = useMutation({
+    mutationFn: async () => {
+      const result = await agentsApi.wakeup(run.agentId, {
+        source: "on_demand",
+        triggerDetail: "manual",
+        reason: "resume_process_lost_run",
+        payload: resumePayload,
+      });
+      if (!("id" in result)) {
+        throw new Error("Resume request was skipped because the agent is not currently invokable.");
+      }
+      return result;
+    },
+    onSuccess: (resumedRun) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
+      navigate(`/agents/${run.agentId}/runs/${resumedRun.id}`);
     },
   });
 
@@ -1602,7 +1644,24 @@ function RunDetail({ run, adapterType }: { run: HeartbeatRun; adapterType: strin
                   {cancelRun.isPending ? "Cancelling..." : "Cancel"}
                 </Button>
               )}
+              {canResumeLostRun && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs h-6 px-2"
+                  onClick={() => resumeRun.mutate()}
+                  disabled={resumeRun.isPending}
+                >
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                  {resumeRun.isPending ? "Resuming..." : "Resume"}
+                </Button>
+              )}
             </div>
+            {resumeRun.isError && (
+              <div className="text-xs text-destructive">
+                {resumeRun.error instanceof Error ? resumeRun.error.message : "Failed to resume run"}
+              </div>
+            )}
             {startTime && (
               <div className="space-y-0.5">
                 <div className="text-sm font-mono">
