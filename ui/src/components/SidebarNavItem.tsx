@@ -8,6 +8,7 @@ interface SidebarNavItemProps {
   label: string;
   icon: LucideIcon;
   end?: boolean;
+  className?: string;
   badge?: number;
   badgeTone?: "default" | "danger";
   alert?: boolean;
@@ -19,6 +20,7 @@ export function SidebarNavItem({
   label,
   icon: Icon,
   end,
+  className,
   badge,
   badgeTone = "default",
   alert = false,
@@ -36,7 +38,8 @@ export function SidebarNavItem({
           "flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium transition-colors",
           isActive
             ? "bg-accent text-foreground"
-            : "text-foreground/80 hover:bg-accent/50 hover:text-foreground"
+            : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
+          className,
         )
       }
     >
@@ -53,7 +56,7 @@ export function SidebarNavItem({
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
           </span>
-          <span className="text-[11px] font-medium text-blue-400">{liveCount} live</span>
+          <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">{liveCount} live</span>
         </span>
       )}
       {badge != null && badge > 0 && (

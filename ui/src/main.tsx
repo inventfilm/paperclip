@@ -10,6 +10,7 @@ import { PanelProvider } from "./context/PanelContext";
 import { SidebarProvider } from "./context/SidebarContext";
 import { DialogProvider } from "./context/DialogContext";
 import { ToastProvider } from "./context/ToastContext";
+import { ThemeProvider } from "./context/ThemeContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "@mdxeditor/editor/style.css";
 import "./index.css";
@@ -26,25 +27,27 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <CompanyProvider>
-        <ToastProvider>
-          <LiveUpdatesProvider>
-            <BrowserRouter>
-              <TooltipProvider>
-                <BreadcrumbProvider>
-                  <SidebarProvider>
-                    <PanelProvider>
-                      <DialogProvider>
-                        <App />
-                      </DialogProvider>
-                    </PanelProvider>
-                  </SidebarProvider>
-                </BreadcrumbProvider>
-              </TooltipProvider>
-            </BrowserRouter>
-          </LiveUpdatesProvider>
-        </ToastProvider>
-      </CompanyProvider>
+      <ThemeProvider>
+        <CompanyProvider>
+          <ToastProvider>
+            <LiveUpdatesProvider>
+              <BrowserRouter>
+                <TooltipProvider>
+                  <BreadcrumbProvider>
+                    <SidebarProvider>
+                      <PanelProvider>
+                        <DialogProvider>
+                          <App />
+                        </DialogProvider>
+                      </PanelProvider>
+                    </SidebarProvider>
+                  </BreadcrumbProvider>
+                </TooltipProvider>
+              </BrowserRouter>
+            </LiveUpdatesProvider>
+          </ToastProvider>
+        </CompanyProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   </StrictMode>
 );

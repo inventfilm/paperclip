@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type UIEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen } from "lucide-react";
+import { BookOpen, Moon, Sun } from "lucide-react";
 import { Outlet } from "react-router-dom";
 import { CompanyRail } from "./CompanyRail";
 import { Sidebar } from "./Sidebar";
@@ -19,20 +19,24 @@ import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
+import { useTheme } from "../context/ThemeContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
+import { Button } from "@/components/ui/button";
 
 export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialog();
   const { panelContent, closePanel } = usePanel();
   const { companies, loading: companiesLoading, setSelectedCompanyId } = useCompany();
+  const { theme, toggleTheme } = useTheme();
   const onboardingTriggered = useRef(false);
   const lastMainScrollTop = useRef(0);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
+  const nextTheme = theme === "dark" ? "light" : "dark";
   const { data: health } = useQuery({
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
@@ -168,7 +172,25 @@ export function Layout() {
             <Sidebar />
           </div>
           <div className="border-t border-r border-border px-3 py-2 bg-background">
-            <SidebarNavItem to="/docs" label="Documentation" icon={BookOpen} />
+            <div className="flex items-center gap-1">
+              <SidebarNavItem
+                to="/docs"
+                label="Documentation"
+                icon={BookOpen}
+                className="flex-1 min-w-0"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground shrink-0"
+                onClick={toggleTheme}
+                aria-label={`Switch to ${nextTheme} mode`}
+                title={`Switch to ${nextTheme} mode`}
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
         </div>
       ) : (
@@ -185,7 +207,25 @@ export function Layout() {
             </div>
           </div>
           <div className="border-t border-r border-border px-3 py-2">
-            <SidebarNavItem to="/docs" label="Documentation" icon={BookOpen} />
+            <div className="flex items-center gap-1">
+              <SidebarNavItem
+                to="/docs"
+                label="Documentation"
+                icon={BookOpen}
+                className="flex-1 min-w-0"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground shrink-0"
+                onClick={toggleTheme}
+                aria-label={`Switch to ${nextTheme} mode`}
+                title={`Switch to ${nextTheme} mode`}
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
+            </div>
           </div>
         </div>
       )}

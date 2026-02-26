@@ -455,10 +455,10 @@ export function DesignGuide() {
         <SubSection title="Run invocation badges">
           <div className="flex items-center gap-2 flex-wrap">
             {[
-              ["timer", "bg-blue-900/50 text-blue-300"],
-              ["assignment", "bg-violet-900/50 text-violet-300"],
-              ["on_demand", "bg-cyan-900/50 text-cyan-300"],
-              ["automation", "bg-neutral-800 text-neutral-400"],
+              ["timer", "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"],
+              ["assignment", "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300"],
+              ["on_demand", "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/50 dark:text-cyan-300"],
+              ["automation", "bg-muted text-muted-foreground"],
             ].map(([label, cls]) => (
               <span key={label} className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>
                 {label}

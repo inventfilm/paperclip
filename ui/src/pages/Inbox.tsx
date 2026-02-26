@@ -185,7 +185,7 @@ function FailedRunCard({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="rounded-md bg-red-500/20 p-1.5">
-                <XCircle className="h-4 w-4 text-red-400" />
+                <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
               </span>
               {linkedAgentName ? (
                 <Identity name={linkedAgentName} size="sm" />
@@ -586,7 +586,7 @@ export function Inbox() {
                   to={`/issues/${issue.identifier ?? issue.id}`}
                   className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 no-underline text-inherit"
                 >
-                  <UserCheck className="h-4 w-4 shrink-0 text-blue-400" />
+                  <UserCheck className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
                   <PriorityIcon priority={issue.priority} />
                   <StatusIcon status={issue.status} />
                   <span className="text-xs font-mono text-muted-foreground">
@@ -719,7 +719,7 @@ export function Inbox() {
                   to="/agents"
                   className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 no-underline text-inherit"
                 >
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" />
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
                   <span className="text-sm">
                     <span className="font-medium">{dashboard!.agents.error}</span>{" "}
                     {dashboard!.agents.error === 1 ? "agent has" : "agents have"} errors

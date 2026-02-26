@@ -344,7 +344,7 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
               <button
                 onClick={() => handleCancelRun(headerRun.id)}
                 disabled={cancellingRunIds.has(headerRun.id)}
-                className="inline-flex items-center gap-1 text-[10px] text-red-400 hover:text-red-300 disabled:opacity-50"
+                className="inline-flex items-center gap-1 text-[10px] text-red-600 hover:text-red-500 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
               >
                 <Square className="h-2 w-2" fill="currentColor" />
                 {cancellingRunIds.has(headerRun.id) ? "Stopping…" : "Stop"}
@@ -352,7 +352,7 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
             )}
             <Link
               to={`/agents/${headerRun.agentId}/runs/${headerRun.id}`}
-              className="inline-flex items-center gap-1 text-[10px] text-cyan-300 hover:text-cyan-200"
+              className="inline-flex items-center gap-1 text-[10px] text-cyan-600 hover:text-cyan-500 dark:text-cyan-300 dark:hover:text-cyan-200"
             >
               Open run
               <ExternalLink className="h-2.5 w-2.5" />
@@ -376,13 +376,13 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
             <span className="text-[10px] text-muted-foreground">{relativeTime(item.ts)}</span>
             <div className={cn(
               "min-w-0",
-              item.tone === "error" && "text-red-300",
-              item.tone === "warn" && "text-amber-300",
-              item.tone === "assistant" && "text-emerald-200",
-              item.tone === "tool" && "text-cyan-300",
+              item.tone === "error" && "text-red-600 dark:text-red-300",
+              item.tone === "warn" && "text-amber-600 dark:text-amber-300",
+              item.tone === "assistant" && "text-emerald-700 dark:text-emerald-200",
+              item.tone === "tool" && "text-cyan-600 dark:text-cyan-300",
               item.tone === "info" && "text-foreground/80",
             )}>
-              <Identity name={item.agentName} size="sm" className="text-cyan-400" />
+              <Identity name={item.agentName} size="sm" className="text-cyan-600 dark:text-cyan-400" />
               <span className="text-muted-foreground"> [{item.runId.slice(0, 8)}] </span>
               <span className="break-words">{item.text}</span>
             </div>
@@ -396,7 +396,7 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
             <div key={run.id} className="inline-flex items-center gap-1.5">
               <Link
                 to={`/agents/${run.agentId}/runs/${run.id}`}
-                className="inline-flex items-center gap-1 text-[10px] text-cyan-300 hover:text-cyan-200"
+                className="inline-flex items-center gap-1 text-[10px] text-cyan-600 hover:text-cyan-500 dark:text-cyan-300 dark:hover:text-cyan-200"
               >
                 <Identity name={run.agentName} size="sm" /> {run.id.slice(0, 8)}
                 <ExternalLink className="h-2.5 w-2.5" />
