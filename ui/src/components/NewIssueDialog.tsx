@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, type ChangeEvent } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, type ChangeEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -27,8 +27,6 @@ import {
   ArrowUp,
   ArrowDown,
   AlertTriangle,
-  User,
-  Hexagon,
   Tag,
   Calendar,
   Paperclip,
@@ -37,7 +35,7 @@ import { cn } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDefault } from "../lib/status-colors";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { AgentIcon } from "./AgentIconPicker";
-import type { Project, Agent } from "@paperclip/shared";
+import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 
 const DRAFT_KEY = "paperclip:issue-draft";
 const DEBOUNCE_MS = 800;
@@ -101,12 +99,11 @@ export function NewIssueDialog() {
   // Popover states
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
-  const [assigneeOpen, setAssigneeOpen] = useState(false);
-  const [assigneeSearch, setAssigneeSearch] = useState("");
-  const [projectOpen, setProjectOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
+  const assigneeSelectorRef = useRef<HTMLButtonElement | null>(null);
+  const projectSelectorRef = useRef<HTMLButtonElement | null>(null);
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -245,6 +242,26 @@ export function NewIssueDialog() {
   const currentPriority = priorities.find((p) => p.value === priority);
   const currentAssignee = (agents ?? []).find((a) => a.id === assigneeId);
   const currentProject = (projects ?? []).find((p) => p.id === projectId);
+  const assigneeOptions = useMemo<InlineEntityOption[]>(
+    () =>
+      (agents ?? [])
+        .filter((agent) => agent.status !== "terminated")
+        .map((agent) => ({
+          id: agent.id,
+          label: agent.name,
+          searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        })),
+    [agents],
+  );
+  const projectOptions = useMemo<InlineEntityOption[]>(
+    () =>
+      (projects ?? []).map((project) => ({
+        id: project.id,
+        label: project.name,
+        searchText: project.description ?? "",
+      })),
+    [projects],
+  );
 
   return (
     <Dialog
@@ -257,9 +274,9 @@ export function NewIssueDialog() {
         showCloseButton={false}
         aria-describedby={undefined}
         className={cn(
-          "p-0 gap-0 flex flex-col max-h-[calc(100vh-6rem)]",
+          "p-0 gap-0 flex flex-col max-h-[calc(100dvh-2rem)]",
           expanded
-            ? "sm:max-w-2xl h-[calc(100vh-6rem)]"
+            ? "sm:max-w-2xl h-[calc(100dvh-2rem)]"
             : "sm:max-w-lg"
         )}
         onKeyDown={handleKeyDown}
@@ -297,23 +314,113 @@ export function NewIssueDialog() {
 
         {/* Title */}
         <div className="px-4 pt-4 pb-2 shrink-0">
-          <input
-            className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-muted-foreground/50"
+          <textarea
+            className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-muted-foreground/50"
             placeholder="Issue title"
+            rows={1}
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(e) => {
+              setTitle(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = `${e.target.scrollHeight}px`;
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Tab" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.metaKey && !e.ctrlKey) {
                 e.preventDefault();
                 descriptionEditorRef.current?.focus();
+              }
+              if (e.key === "Tab" && !e.shiftKey) {
+                e.preventDefault();
+                assigneeSelectorRef.current?.focus();
               }
             }}
             autoFocus
           />
         </div>
 
+        <div className="px-4 pb-2 shrink-0">
+          <div className="overflow-x-auto">
+            <div className="inline-flex min-w-max items-center gap-2 text-sm text-muted-foreground">
+              <span>For</span>
+              <InlineEntitySelector
+                ref={assigneeSelectorRef}
+                value={assigneeId}
+                options={assigneeOptions}
+                placeholder="Assignee"
+                noneLabel="No assignee"
+                searchPlaceholder="Search assignees..."
+                emptyMessage="No assignees found."
+                onChange={setAssigneeId}
+                onConfirm={() => {
+                  projectSelectorRef.current?.focus();
+                }}
+                renderTriggerValue={(option) =>
+                  option && currentAssignee ? (
+                    <>
+                      <AgentIcon icon={currentAssignee.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">Assignee</span>
+                  )
+                }
+                renderOption={(option) => {
+                  if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const assignee = (agents ?? []).find((agent) => agent.id === option.id);
+                  return (
+                    <>
+                      <AgentIcon icon={assignee?.icon} className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+              />
+              <span>in</span>
+              <InlineEntitySelector
+                ref={projectSelectorRef}
+                value={projectId}
+                options={projectOptions}
+                placeholder="Project"
+                noneLabel="No project"
+                searchPlaceholder="Search projects..."
+                emptyMessage="No projects found."
+                onChange={setProjectId}
+                onConfirm={() => {
+                  descriptionEditorRef.current?.focus();
+                }}
+                renderTriggerValue={(option) =>
+                  option && currentProject ? (
+                    <>
+                      <span
+                        className="h-3.5 w-3.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: currentProject.color ?? "#6366f1" }}
+                      />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">Project</span>
+                  )
+                }
+                renderOption={(option) => {
+                  if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const project = (projects ?? []).find((item) => item.id === option.id);
+                  return (
+                    <>
+                      <span
+                        className="h-3.5 w-3.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: project?.color ?? "#6366f1" }}
+                      />
+                      <span className="truncate">{option.label}</span>
+                    </>
+                  );
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Description */}
-        <div className={cn("px-4 pb-2 overflow-y-auto min-h-0", expanded ? "flex-1" : "")}>
+        <div className={cn("px-4 pb-2 overflow-y-auto min-h-0 border-t border-border/60 pt-3", expanded ? "flex-1" : "")}>
           <MarkdownEditor
             ref={descriptionEditorRef}
             value={description}
@@ -386,116 +493,6 @@ export function NewIssueDialog() {
                   {p.label}
                 </button>
               ))}
-            </PopoverContent>
-          </Popover>
-
-          {/* Assignee chip */}
-          <Popover open={assigneeOpen} onOpenChange={(open) => { setAssigneeOpen(open); if (!open) setAssigneeSearch(""); }}>
-            <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
-                {currentAssignee ? (
-                  <>
-                    <AgentIcon icon={currentAssignee.icon} className="h-3 w-3 text-muted-foreground" />
-                    {currentAssignee.name}
-                  </>
-                ) : (
-                  <>
-                    <User className="h-3 w-3 text-muted-foreground" />
-                    Assignee
-                  </>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-52 p-1" align="start">
-              <input
-                className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-                placeholder="Search agents..."
-                value={assigneeSearch}
-                onChange={(e) => setAssigneeSearch(e.target.value)}
-                autoFocus
-              />
-              <div className="max-h-48 overflow-y-auto overscroll-contain">
-                <button
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    !assigneeId && "bg-accent"
-                  )}
-                  onClick={() => { setAssigneeId(""); setAssigneeOpen(false); }}
-                >
-                  No assignee
-                </button>
-                {(agents ?? [])
-                  .filter((a) => a.status !== "terminated")
-                  .filter((a) => {
-                    if (!assigneeSearch.trim()) return true;
-                    const q = assigneeSearch.toLowerCase();
-                    return a.name.toLowerCase().includes(q);
-                  })
-                  .map((a) => (
-                  <button
-                    key={a.id}
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                      a.id === assigneeId && "bg-accent"
-                    )}
-                    onClick={() => { setAssigneeId(a.id); setAssigneeOpen(false); }}
-                  >
-                    <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
-                    {a.name}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-
-          {/* Project chip */}
-          <Popover open={projectOpen} onOpenChange={setProjectOpen}>
-            <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
-                {currentProject ? (
-                  <>
-                    <span
-                      className="shrink-0 h-3 w-3 rounded-sm"
-                      style={{ backgroundColor: currentProject.color ?? "#6366f1" }}
-                    />
-                    {currentProject.name}
-                  </>
-                ) : (
-                  <>
-                    <Hexagon className="h-3 w-3 text-muted-foreground" />
-                    Project
-                  </>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-fit min-w-[11rem] p-1" align="start">
-              <div className="max-h-48 overflow-y-auto overscroll-contain">
-                <button
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
-                    !projectId && "bg-accent"
-                  )}
-                  onClick={() => { setProjectId(""); setProjectOpen(false); }}
-                >
-                  No project
-                </button>
-                {(projects ?? []).map((p) => (
-                  <button
-                    key={p.id}
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
-                      p.id === projectId && "bg-accent"
-                    )}
-                    onClick={() => { setProjectId(p.id); setProjectOpen(false); }}
-                  >
-                    <span
-                      className="shrink-0 h-3 w-3 rounded-sm"
-                      style={{ backgroundColor: p.color ?? "#6366f1" }}
-                    />
-                    {p.name}
-                  </button>
-                ))}
-              </div>
             </PopoverContent>
           </Popover>
 

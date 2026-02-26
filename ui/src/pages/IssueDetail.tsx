@@ -819,7 +819,7 @@ export function IssueDetail() {
           </SheetHeader>
           <ScrollArea className="flex-1 overflow-y-auto">
             <div className="px-4 pb-4">
-              <IssueProperties issue={issue} onUpdate={(data) => updateIssue.mutate(data)} />
+              <IssueProperties issue={issue} onUpdate={(data) => updateIssue.mutate(data)} inline />
             </div>
           </ScrollArea>
         </SheetContent>

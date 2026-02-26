@@ -20,6 +20,7 @@ import { AgentIcon } from "./AgentIconPicker";
 interface IssuePropertiesProps {
   issue: Issue;
   onUpdate: (data: Record<string, unknown>) => void;
+  inline?: boolean;
 }
 
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -31,7 +32,69 @@ function PropertyRow({ label, children }: { label: string; children: React.React
   );
 }
 
-export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
+/** Renders a Popover on desktop, or an inline collapsible section on mobile (inline mode). */
+function PropertyPicker({
+  inline,
+  label,
+  open,
+  onOpenChange,
+  triggerContent,
+  triggerClassName,
+  popoverClassName,
+  popoverAlign = "end",
+  extra,
+  children,
+}: {
+  inline?: boolean;
+  label: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  triggerContent: React.ReactNode;
+  triggerClassName?: string;
+  popoverClassName?: string;
+  popoverAlign?: "start" | "center" | "end";
+  extra?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const btnCn = cn(
+    "inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors",
+    triggerClassName,
+  );
+
+  if (inline) {
+    return (
+      <div>
+        <PropertyRow label={label}>
+          <button className={btnCn} onClick={() => onOpenChange(!open)}>
+            {triggerContent}
+          </button>
+          {extra}
+        </PropertyRow>
+        {open && (
+          <div className={cn("rounded-md border border-border bg-popover p-1 mb-2", popoverClassName)}>
+            {children}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <PropertyRow label={label}>
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <PopoverTrigger asChild>
+          <button className={btnCn}>{triggerContent}</button>
+        </PopoverTrigger>
+        <PopoverContent className={cn("p-1", popoverClassName)} align={popoverAlign} collisionPadding={16}>
+          {children}
+        </PopoverContent>
+      </Popover>
+      {extra}
+    </PropertyRow>
+  );
+}
+
+export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
   const queryClient = useQueryClient();
   const companyId = issue.companyId ?? selectedCompanyId;
@@ -104,6 +167,217 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
     ? agents?.find((a) => a.id === issue.assigneeAgentId)
     : null;
 
+  const labelsTrigger = (issue.labels ?? []).length > 0 ? (
+    <div className="flex items-center gap-1 flex-wrap">
+      {(issue.labels ?? []).slice(0, 3).map((label) => (
+        <span
+          key={label.id}
+          className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border"
+          style={{
+            borderColor: label.color,
+            backgroundColor: `${label.color}22`,
+            color: label.color,
+          }}
+        >
+          {label.name}
+        </span>
+      ))}
+      {(issue.labels ?? []).length > 3 && (
+        <span className="text-xs text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
+      )}
+    </div>
+  ) : (
+    <>
+      <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-sm text-muted-foreground">No labels</span>
+    </>
+  );
+
+  const labelsContent = (
+    <>
+      <input
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        placeholder="Search labels..."
+        value={labelSearch}
+        onChange={(e) => setLabelSearch(e.target.value)}
+        autoFocus={!inline}
+      />
+      <div className="max-h-44 overflow-y-auto overscroll-contain space-y-0.5">
+        {(labels ?? [])
+          .filter((label) => {
+            if (!labelSearch.trim()) return true;
+            return label.name.toLowerCase().includes(labelSearch.toLowerCase());
+          })
+          .map((label) => {
+            const selected = (issue.labelIds ?? []).includes(label.id);
+            return (
+              <div key={label.id} className="flex items-center gap-1">
+                <button
+                  className={cn(
+                    "flex items-center gap-2 flex-1 px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
+                    selected && "bg-accent"
+                  )}
+                  onClick={() => toggleLabel(label.id)}
+                >
+                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: label.color }} />
+                  <span className="truncate">{label.name}</span>
+                </button>
+                <button
+                  type="button"
+                  className="p-1 text-muted-foreground hover:text-destructive rounded"
+                  onClick={() => deleteLabel.mutate(label.id)}
+                  title={`Delete ${label.name}`}
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            );
+          })}
+      </div>
+      <div className="mt-2 border-t border-border pt-2 space-y-1">
+        <div className="flex items-center gap-1">
+          <input
+            className="h-7 w-7 p-0 rounded bg-transparent"
+            type="color"
+            value={newLabelColor}
+            onChange={(e) => setNewLabelColor(e.target.value)}
+          />
+          <input
+            className="flex-1 px-2 py-1.5 text-xs bg-transparent outline-none rounded placeholder:text-muted-foreground/50"
+            placeholder="New label"
+            value={newLabelName}
+            onChange={(e) => setNewLabelName(e.target.value)}
+          />
+        </div>
+        <button
+          className="flex items-center justify-center gap-1.5 w-full px-2 py-1.5 text-xs rounded border border-border hover:bg-accent/50 disabled:opacity-50"
+          disabled={!newLabelName.trim() || createLabel.isPending}
+          onClick={() =>
+            createLabel.mutate({
+              name: newLabelName.trim(),
+              color: newLabelColor,
+            })
+          }
+        >
+          <Plus className="h-3 w-3" />
+          {createLabel.isPending ? "Creating..." : "Create label"}
+        </button>
+      </div>
+    </>
+  );
+
+  const assigneeTrigger = assignee ? (
+    <Identity name={assignee.name} size="sm" />
+  ) : (
+    <>
+      <User className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-sm text-muted-foreground">Unassigned</span>
+    </>
+  );
+
+  const assigneeContent = (
+    <>
+      <input
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        placeholder="Search agents..."
+        value={assigneeSearch}
+        onChange={(e) => setAssigneeSearch(e.target.value)}
+        autoFocus={!inline}
+      />
+      <div className="max-h-48 overflow-y-auto overscroll-contain">
+        <button
+          className={cn(
+            "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+            !issue.assigneeAgentId && !issue.assigneeUserId && "bg-accent"
+          )}
+          onClick={() => { onUpdate({ assigneeAgentId: null, assigneeUserId: null }); setAssigneeOpen(false); }}
+        >
+          No assignee
+        </button>
+        {(agents ?? [])
+          .filter((a) => a.status !== "terminated")
+          .filter((a) => {
+            if (!assigneeSearch.trim()) return true;
+            const q = assigneeSearch.toLowerCase();
+            return a.name.toLowerCase().includes(q);
+          })
+          .map((a) => (
+          <button
+            key={a.id}
+            className={cn(
+              "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+              a.id === issue.assigneeAgentId && "bg-accent"
+            )}
+            onClick={() => { onUpdate({ assigneeAgentId: a.id, assigneeUserId: null }); setAssigneeOpen(false); }}
+          >
+            <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
+            {a.name}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
+  const projectTrigger = issue.projectId ? (
+    <>
+      <span
+        className="shrink-0 h-3 w-3 rounded-sm"
+        style={{ backgroundColor: projects?.find((p) => p.id === issue.projectId)?.color ?? "#6366f1" }}
+      />
+      <span className="text-sm truncate">{projectName(issue.projectId)}</span>
+    </>
+  ) : (
+    <>
+      <Hexagon className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className="text-sm text-muted-foreground">No project</span>
+    </>
+  );
+
+  const projectContent = (
+    <>
+      <input
+        className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
+        placeholder="Search projects..."
+        value={projectSearch}
+        onChange={(e) => setProjectSearch(e.target.value)}
+        autoFocus={!inline}
+      />
+      <div className="max-h-48 overflow-y-auto overscroll-contain">
+        <button
+          className={cn(
+            "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
+            !issue.projectId && "bg-accent"
+          )}
+          onClick={() => { onUpdate({ projectId: null }); setProjectOpen(false); }}
+        >
+          No project
+        </button>
+        {(projects ?? [])
+          .filter((p) => {
+            if (!projectSearch.trim()) return true;
+            const q = projectSearch.toLowerCase();
+            return p.name.toLowerCase().includes(q);
+          })
+          .map((p) => (
+          <button
+            key={p.id}
+            className={cn(
+              "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
+              p.id === issue.projectId && "bg-accent"
+            )}
+            onClick={() => { onUpdate({ projectId: p.id }); setProjectOpen(false); }}
+          >
+            <span
+              className="shrink-0 h-3 w-3 rounded-sm"
+              style={{ backgroundColor: p.color ?? "#6366f1" }}
+            />
+            {p.name}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <div className="space-y-1">
@@ -123,166 +397,26 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
           />
         </PropertyRow>
 
-        <PropertyRow label="Labels">
-          <Popover open={labelsOpen} onOpenChange={(open) => { setLabelsOpen(open); if (!open) setLabelSearch(""); }}>
-            <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors min-w-0 max-w-full">
-                {(issue.labels ?? []).length > 0 ? (
-                  <div className="flex items-center gap-1 flex-wrap">
-                    {(issue.labels ?? []).slice(0, 3).map((label) => (
-                      <span
-                        key={label.id}
-                        className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium border"
-                        style={{
-                          borderColor: label.color,
-                          backgroundColor: `${label.color}22`,
-                          color: label.color,
-                        }}
-                      >
-                        {label.name}
-                      </span>
-                    ))}
-                    {(issue.labels ?? []).length > 3 && (
-                      <span className="text-xs text-muted-foreground">+{(issue.labels ?? []).length - 3}</span>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">No labels</span>
-                  </>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-1" align="end" collisionPadding={16}>
-              <input
-                className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-                placeholder="Search labels..."
-                value={labelSearch}
-                onChange={(e) => setLabelSearch(e.target.value)}
-                autoFocus
-              />
-              <div className="max-h-44 overflow-y-auto overscroll-contain space-y-0.5">
-                {(labels ?? [])
-                  .filter((label) => {
-                    if (!labelSearch.trim()) return true;
-                    return label.name.toLowerCase().includes(labelSearch.toLowerCase());
-                  })
-                  .map((label) => {
-                    const selected = (issue.labelIds ?? []).includes(label.id);
-                    return (
-                      <div key={label.id} className="flex items-center gap-1">
-                        <button
-                          className={cn(
-                            "flex items-center gap-2 flex-1 px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-left",
-                            selected && "bg-accent"
-                          )}
-                          onClick={() => toggleLabel(label.id)}
-                        >
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: label.color }} />
-                          <span className="truncate">{label.name}</span>
-                        </button>
-                        <button
-                          type="button"
-                          className="p-1 text-muted-foreground hover:text-destructive rounded"
-                          onClick={() => deleteLabel.mutate(label.id)}
-                          title={`Delete ${label.name}`}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </button>
-                      </div>
-                    );
-                  })}
-              </div>
-              <div className="mt-2 border-t border-border pt-2 space-y-1">
-                <div className="flex items-center gap-1">
-                  <input
-                    className="h-7 w-7 p-0 rounded bg-transparent"
-                    type="color"
-                    value={newLabelColor}
-                    onChange={(e) => setNewLabelColor(e.target.value)}
-                  />
-                  <input
-                    className="flex-1 px-2 py-1.5 text-xs bg-transparent outline-none rounded placeholder:text-muted-foreground/50"
-                    placeholder="New label"
-                    value={newLabelName}
-                    onChange={(e) => setNewLabelName(e.target.value)}
-                  />
-                </div>
-                <button
-                  className="flex items-center justify-center gap-1.5 w-full px-2 py-1.5 text-xs rounded border border-border hover:bg-accent/50 disabled:opacity-50"
-                  disabled={!newLabelName.trim() || createLabel.isPending}
-                  onClick={() =>
-                    createLabel.mutate({
-                      name: newLabelName.trim(),
-                      color: newLabelColor,
-                    })
-                  }
-                >
-                  <Plus className="h-3 w-3" />
-                  {createLabel.isPending ? "Creating..." : "Create label"}
-                </button>
-              </div>
-            </PopoverContent>
-          </Popover>
-        </PropertyRow>
+        <PropertyPicker
+          inline={inline}
+          label="Labels"
+          open={labelsOpen}
+          onOpenChange={(open) => { setLabelsOpen(open); if (!open) setLabelSearch(""); }}
+          triggerContent={labelsTrigger}
+          triggerClassName="min-w-0 max-w-full"
+          popoverClassName="w-64"
+        >
+          {labelsContent}
+        </PropertyPicker>
 
-        <PropertyRow label="Assignee">
-          <Popover open={assigneeOpen} onOpenChange={(open) => { setAssigneeOpen(open); if (!open) setAssigneeSearch(""); }}>
-            <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors">
-                {assignee ? (
-                  <Identity name={assignee.name} size="sm" />
-                ) : (
-                  <>
-                    <User className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Unassigned</span>
-                  </>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-52 p-1" align="end" collisionPadding={16}>
-              <input
-                className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-                placeholder="Search agents..."
-                value={assigneeSearch}
-                onChange={(e) => setAssigneeSearch(e.target.value)}
-                autoFocus
-              />
-              <div className="max-h-48 overflow-y-auto overscroll-contain">
-                <button
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    !issue.assigneeAgentId && !issue.assigneeUserId && "bg-accent"
-                  )}
-                  onClick={() => { onUpdate({ assigneeAgentId: null, assigneeUserId: null }); setAssigneeOpen(false); }}
-                >
-                  No assignee
-                </button>
-                {(agents ?? [])
-                  .filter((a) => a.status !== "terminated")
-                  .filter((a) => {
-                    if (!assigneeSearch.trim()) return true;
-                    const q = assigneeSearch.toLowerCase();
-                    return a.name.toLowerCase().includes(q);
-                  })
-                  .map((a) => (
-                  <button
-                    key={a.id}
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                      a.id === issue.assigneeAgentId && "bg-accent"
-                    )}
-                    onClick={() => { onUpdate({ assigneeAgentId: a.id, assigneeUserId: null }); setAssigneeOpen(false); }}
-                  >
-                    <AgentIcon icon={a.icon} className="shrink-0 h-3 w-3 text-muted-foreground" />
-                    {a.name}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-          {issue.assigneeAgentId && (
+        <PropertyPicker
+          inline={inline}
+          label="Assignee"
+          open={assigneeOpen}
+          onOpenChange={(open) => { setAssigneeOpen(open); if (!open) setAssigneeSearch(""); }}
+          triggerContent={assigneeTrigger}
+          popoverClassName="w-52"
+          extra={issue.assigneeAgentId ? (
             <Link
               to={`/agents/${issue.assigneeAgentId}`}
               className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
@@ -290,73 +424,20 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
             >
               <ArrowUpRight className="h-3 w-3" />
             </Link>
-          )}
-        </PropertyRow>
+          ) : undefined}
+        >
+          {assigneeContent}
+        </PropertyPicker>
 
-        <PropertyRow label="Project">
-          <Popover open={projectOpen} onOpenChange={(open) => { setProjectOpen(open); if (!open) setProjectSearch(""); }}>
-            <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 cursor-pointer hover:bg-accent/50 rounded px-1 -mx-1 py-0.5 transition-colors min-w-0 max-w-full">
-                {issue.projectId ? (
-                  <>
-                    <span
-                      className="shrink-0 h-3 w-3 rounded-sm"
-                      style={{ backgroundColor: projects?.find((p) => p.id === issue.projectId)?.color ?? "#6366f1" }}
-                    />
-                    <span className="text-sm truncate">{projectName(issue.projectId)}</span>
-                  </>
-                ) : (
-                  <>
-                    <Hexagon className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">No project</span>
-                  </>
-                )}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-fit min-w-[11rem] p-1" align="end" collisionPadding={16}>
-              <input
-                className="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-border mb-1 placeholder:text-muted-foreground/50"
-                placeholder="Search projects..."
-                value={projectSearch}
-                onChange={(e) => setProjectSearch(e.target.value)}
-                autoFocus
-              />
-              <div className="max-h-48 overflow-y-auto overscroll-contain">
-                <button
-                  className={cn(
-                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
-                    !issue.projectId && "bg-accent"
-                  )}
-                  onClick={() => { onUpdate({ projectId: null }); setProjectOpen(false); }}
-                >
-                  No project
-                </button>
-                {(projects ?? [])
-                  .filter((p) => {
-                    if (!projectSearch.trim()) return true;
-                    const q = projectSearch.toLowerCase();
-                    return p.name.toLowerCase().includes(q);
-                  })
-                  .map((p) => (
-                  <button
-                    key={p.id}
-                    className={cn(
-                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 whitespace-nowrap",
-                      p.id === issue.projectId && "bg-accent"
-                    )}
-                    onClick={() => { onUpdate({ projectId: p.id }); setProjectOpen(false); }}
-                  >
-                    <span
-                      className="shrink-0 h-3 w-3 rounded-sm"
-                      style={{ backgroundColor: p.color ?? "#6366f1" }}
-                    />
-                    {p.name}
-                  </button>
-                ))}
-              </div>
-            </PopoverContent>
-          </Popover>
-          {issue.projectId && (
+        <PropertyPicker
+          inline={inline}
+          label="Project"
+          open={projectOpen}
+          onOpenChange={(open) => { setProjectOpen(open); if (!open) setProjectSearch(""); }}
+          triggerContent={projectTrigger}
+          triggerClassName="min-w-0 max-w-full"
+          popoverClassName="w-fit min-w-[11rem]"
+          extra={issue.projectId ? (
             <Link
               to={`/projects/${issue.projectId}`}
               className="inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground"
@@ -364,8 +445,10 @@ export function IssueProperties({ issue, onUpdate }: IssuePropertiesProps) {
             >
               <ArrowUpRight className="h-3 w-3" />
             </Link>
-          )}
-        </PropertyRow>
+          ) : undefined}
+        >
+          {projectContent}
+        </PropertyPicker>
 
         {issue.parentId && (
           <PropertyRow label="Parent">
