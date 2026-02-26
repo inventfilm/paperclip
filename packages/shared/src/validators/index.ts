@@ -102,11 +102,13 @@ export {
   createCompanyInviteSchema,
   acceptInviteSchema,
   listJoinRequestsQuerySchema,
+  claimJoinRequestApiKeySchema,
   updateMemberPermissionsSchema,
   updateUserCompanyAccessSchema,
   type CreateCompanyInvite,
   type AcceptInvite,
   type ListJoinRequestsQuery,
+  type ClaimJoinRequestApiKey,
   type UpdateMemberPermissions,
   type UpdateUserCompanyAccess,
 } from "./access.js";

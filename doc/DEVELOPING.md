@@ -196,3 +196,12 @@ pnpm paperclip dashboard get
 ```
 
 See full command reference in `doc/CLI.md`.
+
+## OpenClaw Invite Onboarding Endpoints
+
+Agent-oriented invite onboarding now exposes machine-readable API docs:
+
+- `GET /api/invites/:token` returns invite summary plus onboarding and skills index links.
+- `GET /api/invites/:token/onboarding` returns onboarding manifest details (registration endpoint, claim endpoint template, skill install hints).
+- `GET /api/skills/index` lists available skill documents.
+- `GET /api/skills/paperclip` returns the Paperclip heartbeat skill markdown.

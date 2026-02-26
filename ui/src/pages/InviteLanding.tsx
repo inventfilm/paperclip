@@ -6,12 +6,34 @@ import { authApi } from "../api/auth";
 import { healthApi } from "../api/health";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import type { JoinRequest } from "@paperclip/shared";
+import { AGENT_ADAPTER_TYPES } from "@paperclip/shared";
+import type { AgentAdapterType, JoinRequest } from "@paperclip/shared";
 
 type JoinType = "human" | "agent";
+const joinAdapterOptions: AgentAdapterType[] = [
+  "openclaw",
+  ...AGENT_ADAPTER_TYPES.filter((type): type is Exclude<AgentAdapterType, "openclaw"> => type !== "openclaw"),
+];
+
+const adapterLabels: Record<AgentAdapterType, string> = {
+  claude_local: "Claude (local)",
+  codex_local: "Codex (local)",
+  openclaw: "OpenClaw",
+  process: "Process",
+  http: "HTTP",
+};
 
 function dateTime(value: string) {
   return new Date(value).toLocaleString();
+}
+
+function readNestedString(value: unknown, path: string[]): string | null {
+  let current: unknown = value;
+  for (const segment of path) {
+    if (!current || typeof current !== "object") return null;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return typeof current === "string" && current.trim().length > 0 ? current : null;
 }
 
 export function InviteLandingPage() {
@@ -20,7 +42,7 @@ export function InviteLandingPage() {
   const token = (params.token ?? "").trim();
   const [joinType, setJoinType] = useState<JoinType>("human");
   const [agentName, setAgentName] = useState("");
-  const [adapterType, setAdapterType] = useState("");
+  const [adapterType, setAdapterType] = useState<AgentAdapterType>("openclaw");
   const [capabilities, setCapabilities] = useState("");
   const [result, setResult] = useState<{ kind: "bootstrap" | "join"; payload: unknown } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +95,7 @@ export function InviteLandingPage() {
       return accessApi.acceptInvite(token, {
         requestType: "agent",
         agentName: agentName.trim(),
-        adapterType: adapterType.trim() || undefined,
+        adapterType,
         capabilities: capabilities.trim() || null,
       });
     },
@@ -128,7 +150,16 @@ export function InviteLandingPage() {
   }
 
   if (result?.kind === "join") {
-    const payload = result.payload as JoinRequest;
+    const payload = result.payload as JoinRequest & {
+      claimSecret?: string;
+      claimApiKeyPath?: string;
+      onboarding?: Record<string, unknown>;
+    };
+    const claimSecret = typeof payload.claimSecret === "string" ? payload.claimSecret : null;
+    const claimApiKeyPath = typeof payload.claimApiKeyPath === "string" ? payload.claimApiKeyPath : null;
+    const onboardingSkillUrl = readNestedString(payload.onboarding, ["skill", "url"]);
+    const onboardingSkillPath = readNestedString(payload.onboarding, ["skill", "path"]);
+    const onboardingInstallPath = readNestedString(payload.onboarding, ["skill", "installPath"]);
     return (
       <div className="mx-auto max-w-xl py-10">
         <div className="rounded-lg border border-border bg-card p-6">
@@ -139,6 +170,21 @@ export function InviteLandingPage() {
           <div className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
             Request ID: <span className="font-mono">{payload.id}</span>
           </div>
+          {claimSecret && claimApiKeyPath && (
+            <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">One-time claim secret (save now)</p>
+              <p className="font-mono break-all">{claimSecret}</p>
+              <p className="font-mono break-all">POST {claimApiKeyPath}</p>
+            </div>
+          )}
+          {(onboardingSkillUrl || onboardingSkillPath || onboardingInstallPath) && (
+            <div className="mt-3 space-y-1 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+              <p className="font-medium text-foreground">Paperclip skill bootstrap</p>
+              {onboardingSkillUrl && <p className="font-mono break-all">GET {onboardingSkillUrl}</p>}
+              {!onboardingSkillUrl && onboardingSkillPath && <p className="font-mono break-all">GET {onboardingSkillPath}</p>}
+              {onboardingInstallPath && <p className="font-mono break-all">Install to {onboardingInstallPath}</p>}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -182,13 +228,18 @@ export function InviteLandingPage() {
               />
             </label>
             <label className="block text-sm">
-              <span className="mb-1 block text-muted-foreground">Adapter type (optional)</span>
-              <input
+              <span className="mb-1 block text-muted-foreground">Adapter type</span>
+              <select
                 className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
                 value={adapterType}
-                onChange={(event) => setAdapterType(event.target.value)}
-                placeholder="process"
-              />
+                onChange={(event) => setAdapterType(event.target.value as AgentAdapterType)}
+              >
+                {joinAdapterOptions.map((type) => (
+                  <option key={type} value={type}>
+                    {adapterLabels[type]}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="block text-sm">
               <span className="mb-1 block text-muted-foreground">Capabilities (optional)</span>

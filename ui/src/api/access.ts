@@ -1,4 +1,4 @@
-import type { JoinRequest } from "@paperclip/shared";
+import type { AgentAdapterType, JoinRequest } from "@paperclip/shared";
 import { api } from "./client";
 
 type InviteSummary = {
@@ -7,6 +7,10 @@ type InviteSummary = {
   inviteType: "company_join" | "bootstrap_ceo";
   allowedJoinTypes: "human" | "agent" | "both";
   expiresAt: string;
+  onboardingPath?: string;
+  onboardingUrl?: string;
+  skillIndexPath?: string;
+  skillIndexUrl?: string;
 };
 
 type AcceptInviteInput =
@@ -14,10 +18,21 @@ type AcceptInviteInput =
   | {
     requestType: "agent";
     agentName: string;
-    adapterType?: string;
+    adapterType?: AgentAdapterType;
     capabilities?: string | null;
     agentDefaultsPayload?: Record<string, unknown> | null;
   };
+
+type AgentJoinRequestAccepted = JoinRequest & {
+  claimSecret: string;
+  claimApiKeyPath: string;
+  onboarding?: Record<string, unknown>;
+};
+
+type InviteOnboardingManifest = {
+  invite: InviteSummary;
+  onboarding: Record<string, unknown>;
+};
 
 type BoardClaimStatus = {
   status: "available" | "claimed" | "expired";
@@ -44,9 +59,14 @@ export const accessApi = {
     }>(`/companies/${companyId}/invites`, input),
 
   getInvite: (token: string) => api.get<InviteSummary>(`/invites/${token}`),
+  getInviteOnboarding: (token: string) =>
+    api.get<InviteOnboardingManifest>(`/invites/${token}/onboarding`),
 
   acceptInvite: (token: string, input: AcceptInviteInput) =>
-    api.post<JoinRequest | { bootstrapAccepted: true; userId: string }>(`/invites/${token}/accept`, input),
+    api.post<AgentJoinRequestAccepted | JoinRequest | { bootstrapAccepted: true; userId: string }>(
+      `/invites/${token}/accept`,
+      input,
+    ),
 
   listJoinRequests: (companyId: string, status: "pending_approval" | "approved" | "rejected" = "pending_approval") =>
     api.get<JoinRequest[]>(`/companies/${companyId}/join-requests?status=${status}`),
@@ -56,6 +76,12 @@ export const accessApi = {
 
   rejectJoinRequest: (companyId: string, requestId: string) =>
     api.post<JoinRequest>(`/companies/${companyId}/join-requests/${requestId}/reject`, {}),
+
+  claimJoinRequestApiKey: (requestId: string, claimSecret: string) =>
+    api.post<{ keyId: string; token: string; agentId: string; createdAt: string }>(
+      `/join-requests/${requestId}/claim-api-key`,
+      { claimSecret },
+    ),
 
   getBoardClaimStatus: (token: string, code: string) =>
     api.get<BoardClaimStatus>(`/board-claim/${token}?code=${encodeURIComponent(code)}`),

@@ -1,4 +1,7 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { Request } from "express";
 import { and, eq, isNull, desc } from "drizzle-orm";
@@ -11,6 +14,7 @@ import {
 } from "@paperclip/db";
 import {
   acceptInviteSchema,
+  claimJoinRequestApiKeySchema,
   createCompanyInviteSchema,
   listJoinRequestsQuerySchema,
   updateMemberPermissionsSchema,
@@ -29,6 +33,106 @@ function hashToken(token: string) {
 
 function createInviteToken() {
   return `pcp_invite_${randomBytes(24).toString("hex")}`;
+}
+
+function createClaimSecret() {
+  return `pcp_claim_${randomBytes(24).toString("hex")}`;
+}
+
+function tokenHashesMatch(left: string, right: string) {
+  const leftBytes = Buffer.from(left, "utf8");
+  const rightBytes = Buffer.from(right, "utf8");
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+}
+
+function requestBaseUrl(req: Request) {
+  const forwardedProto = req.header("x-forwarded-proto");
+  const proto = forwardedProto?.split(",")[0]?.trim() || req.protocol || "http";
+  const host = req.header("x-forwarded-host")?.split(",")[0]?.trim() || req.header("host");
+  if (!host) return "";
+  return `${proto}://${host}`;
+}
+
+function readSkillMarkdown(skillName: string): string | null {
+  const normalized = skillName.trim().toLowerCase();
+  if (normalized !== "paperclip" && normalized !== "paperclip-create-agent") return null;
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(process.cwd(), "skills", normalized, "SKILL.md"),
+    path.resolve(moduleDir, "../../../skills", normalized, "SKILL.md"),
+  ];
+  for (const skillPath of candidates) {
+    try {
+      return fs.readFileSync(skillPath, "utf8");
+    } catch {
+      // Continue to next candidate.
+    }
+  }
+  return null;
+}
+
+function toJoinRequestResponse(row: typeof joinRequests.$inferSelect) {
+  const { claimSecretHash: _claimSecretHash, ...safe } = row;
+  return safe;
+}
+
+function toInviteSummaryResponse(req: Request, token: string, invite: typeof invites.$inferSelect) {
+  const baseUrl = requestBaseUrl(req);
+  const onboardingPath = `/api/invites/${token}/onboarding`;
+  return {
+    id: invite.id,
+    companyId: invite.companyId,
+    inviteType: invite.inviteType,
+    allowedJoinTypes: invite.allowedJoinTypes,
+    expiresAt: invite.expiresAt,
+    onboardingPath,
+    onboardingUrl: baseUrl ? `${baseUrl}${onboardingPath}` : onboardingPath,
+    skillIndexPath: "/api/skills/index",
+    skillIndexUrl: baseUrl ? `${baseUrl}/api/skills/index` : "/api/skills/index",
+  };
+}
+
+function buildInviteOnboardingManifest(req: Request, token: string, invite: typeof invites.$inferSelect) {
+  const baseUrl = requestBaseUrl(req);
+  const skillPath = "/api/skills/paperclip";
+  const skillUrl = baseUrl ? `${baseUrl}${skillPath}` : skillPath;
+  const registrationEndpointPath = `/api/invites/${token}/accept`;
+  const registrationEndpointUrl = baseUrl ? `${baseUrl}${registrationEndpointPath}` : registrationEndpointPath;
+
+  return {
+    invite: toInviteSummaryResponse(req, token, invite),
+    onboarding: {
+      instructions:
+        "Join as an agent, save your one-time claim secret, wait for board approval, then claim your API key and install the Paperclip skill before starting heartbeat loops.",
+      recommendedAdapterType: "openclaw",
+      requiredFields: {
+        requestType: "agent",
+        agentName: "Display name for this agent",
+        adapterType: "Use 'openclaw' for OpenClaw webhook-based agents",
+        capabilities: "Optional capability summary",
+        agentDefaultsPayload:
+          "Optional adapter config such as url/method/headers/webhookAuthHeader for OpenClaw callback endpoint",
+      },
+      registrationEndpoint: {
+        method: "POST",
+        path: registrationEndpointPath,
+        url: registrationEndpointUrl,
+      },
+      claimEndpointTemplate: {
+        method: "POST",
+        path: "/api/join-requests/{requestId}/claim-api-key",
+        body: {
+          claimSecret: "one-time claim secret returned when the join request is created",
+        },
+      },
+      skill: {
+        name: "paperclip",
+        path: skillPath,
+        url: skillUrl,
+        installPath: "~/.openclaw/skills/paperclip/SKILL.md",
+      },
+    },
+  };
 }
 
 function requestIp(req: Request) {
@@ -150,6 +254,22 @@ export function accessRoutes(db: Db) {
     if (!allowed) throw forbidden("Permission denied");
   }
 
+  router.get("/skills/index", (_req, res) => {
+    res.json({
+      skills: [
+        { name: "paperclip", path: "/api/skills/paperclip" },
+        { name: "paperclip-create-agent", path: "/api/skills/paperclip-create-agent" },
+      ],
+    });
+  });
+
+  router.get("/skills/:skillName", (req, res) => {
+    const skillName = (req.params.skillName as string).trim().toLowerCase();
+    const markdown = readSkillMarkdown(skillName);
+    if (!markdown) throw notFound("Skill not found");
+    res.type("text/markdown").send(markdown);
+  });
+
   router.post(
     "/companies/:companyId/invites",
     validate(createCompanyInviteSchema),
@@ -206,13 +326,22 @@ export function accessRoutes(db: Db) {
       throw notFound("Invite not found");
     }
 
-    res.json({
-      id: invite.id,
-      companyId: invite.companyId,
-      inviteType: invite.inviteType,
-      allowedJoinTypes: invite.allowedJoinTypes,
-      expiresAt: invite.expiresAt,
-    });
+    res.json(toInviteSummaryResponse(req, token, invite));
+  });
+
+  router.get("/invites/:token/onboarding", async (req, res) => {
+    const token = (req.params.token as string).trim();
+    if (!token) throw notFound("Invite not found");
+    const invite = await db
+      .select()
+      .from(invites)
+      .where(eq(invites.tokenHash, hashToken(token)))
+      .then((rows) => rows[0] ?? null);
+    if (!invite || invite.revokedAt || inviteExpired(invite)) {
+      throw notFound("Invite not found");
+    }
+
+    res.json(buildInviteOnboardingManifest(req, token, invite));
   });
 
   router.post("/invites/:token/accept", validate(acceptInviteSchema), async (req, res) => {
@@ -272,6 +401,12 @@ export function accessRoutes(db: Db) {
       throw badRequest("agentName is required for agent join requests");
     }
 
+    const claimSecret = requestType === "agent" ? createClaimSecret() : null;
+    const claimSecretHash = claimSecret ? hashToken(claimSecret) : null;
+    const claimSecretExpiresAt = claimSecret
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      : null;
+
     const actorEmail = requestType === "human" ? await resolveActorEmail(db, req) : null;
     const created = await db.transaction(async (tx) => {
       await tx
@@ -293,6 +428,8 @@ export function accessRoutes(db: Db) {
           adapterType: requestType === "agent" ? req.body.adapterType ?? null : null,
           capabilities: requestType === "agent" ? req.body.capabilities ?? null : null,
           agentDefaultsPayload: requestType === "agent" ? req.body.agentDefaultsPayload ?? null : null,
+          claimSecretHash,
+          claimSecretExpiresAt,
         })
         .returning()
         .then((rows) => rows[0]);
@@ -312,7 +449,18 @@ export function accessRoutes(db: Db) {
       details: { requestType, requestIp: created.requestIp },
     });
 
-    res.status(202).json(created);
+    const response = toJoinRequestResponse(created);
+    if (claimSecret) {
+      const onboardingManifest = buildInviteOnboardingManifest(req, token, invite);
+      res.status(202).json({
+        ...response,
+        claimSecret,
+        claimApiKeyPath: `/api/join-requests/${created.id}/claim-api-key`,
+        onboarding: onboardingManifest.onboarding,
+      });
+      return;
+    }
+    res.status(202).json(response);
   });
 
   router.post("/invites/:inviteId/revoke", async (req, res) => {
@@ -363,7 +511,7 @@ export function accessRoutes(db: Db) {
       if (query.requestType && row.requestType !== query.requestType) return false;
       return true;
     });
-    res.json(filtered);
+    res.json(filtered.map(toJoinRequestResponse));
   });
 
   router.post("/companies/:companyId/join-requests/:requestId/approve", async (req, res) => {
@@ -447,7 +595,7 @@ export function accessRoutes(db: Db) {
       details: { requestType: existing.requestType, createdAgentId },
     });
 
-    res.json(approved);
+    res.json(toJoinRequestResponse(approved));
   });
 
   router.post("/companies/:companyId/join-requests/:requestId/reject", async (req, res) => {
@@ -485,11 +633,12 @@ export function accessRoutes(db: Db) {
       details: { requestType: existing.requestType },
     });
 
-    res.json(rejected);
+    res.json(toJoinRequestResponse(rejected));
   });
 
-  router.post("/join-requests/:requestId/claim-api-key", async (req, res) => {
+  router.post("/join-requests/:requestId/claim-api-key", validate(claimJoinRequestApiKeySchema), async (req, res) => {
     const requestId = req.params.requestId as string;
+    const presentedClaimSecretHash = hashToken(req.body.claimSecret);
     const joinRequest = await db
       .select()
       .from(joinRequests)
@@ -499,6 +648,14 @@ export function accessRoutes(db: Db) {
     if (joinRequest.requestType !== "agent") throw badRequest("Only agent join requests can claim API keys");
     if (joinRequest.status !== "approved") throw conflict("Join request must be approved before key claim");
     if (!joinRequest.createdAgentId) throw conflict("Join request has no created agent");
+    if (!joinRequest.claimSecretHash) throw conflict("Join request is missing claim secret metadata");
+    if (!tokenHashesMatch(joinRequest.claimSecretHash, presentedClaimSecretHash)) {
+      throw forbidden("Invalid claim secret");
+    }
+    if (joinRequest.claimSecretExpiresAt && joinRequest.claimSecretExpiresAt.getTime() <= Date.now()) {
+      throw conflict("Claim secret expired");
+    }
+    if (joinRequest.claimSecretConsumedAt) throw conflict("Claim secret already used");
 
     const existingKey = await db
       .select({ id: agentApiKeys.id })
@@ -506,6 +663,14 @@ export function accessRoutes(db: Db) {
       .where(eq(agentApiKeys.agentId, joinRequest.createdAgentId))
       .then((rows) => rows[0] ?? null);
     if (existingKey) throw conflict("API key already claimed");
+
+    const consumed = await db
+      .update(joinRequests)
+      .set({ claimSecretConsumedAt: new Date(), updatedAt: new Date() })
+      .where(and(eq(joinRequests.id, requestId), isNull(joinRequests.claimSecretConsumedAt)))
+      .returning({ id: joinRequests.id })
+      .then((rows) => rows[0] ?? null);
+    if (!consumed) throw conflict("Claim secret already used");
 
     const created = await agents.createApiKey(joinRequest.createdAgentId, "initial-join-key");
 

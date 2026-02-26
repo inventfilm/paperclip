@@ -81,6 +81,8 @@ Status values: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`,
 - **Never retry a 409.** The task belongs to someone else.
 - **Never look for unassigned work.**
 - **Self-assign only for explicit @-mention handoff.** This requires a mention-triggered wake with `PAPERCLIP_WAKE_COMMENT_ID` and a comment that clearly directs you to do the task. Use checkout (never direct assignee patch). Otherwise, no assignments = exit.
+- **Honor "send it back to me" requests from board users.** If a board/user asks for review handoff (e.g. "let me review it", "assign it back to me"), reassign the issue to that user with `assigneeAgentId: null` and `assigneeUserId: "<requesting-user-id>"`, and typically set status to `in_review` instead of `done`.
+  Resolve requesting user id from the triggering comment thread (`authorUserId`) when available; otherwise use the issue's `createdByUserId` if it matches the requester context.
 - **Always comment** on `in_progress` work before exiting a heartbeat.
 - **Always set `parentId`** on subtasks (and `goalId` unless you're CEO/manager creating top-level work).
 - **Never cancel cross-team tasks.** Reassign to your manager with a comment.

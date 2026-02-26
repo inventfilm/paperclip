@@ -1,4 +1,5 @@
 import type {
+  AgentAdapterType,
   InstanceUserRole,
   InviteJoinType,
   InviteType,
@@ -57,9 +58,11 @@ export interface JoinRequest {
   requestingUserId: string | null;
   requestEmailSnapshot: string | null;
   agentName: string | null;
-  adapterType: string | null;
+  adapterType: AgentAdapterType | null;
   capabilities: string | null;
   agentDefaultsPayload: Record<string, unknown> | null;
+  claimSecretExpiresAt: Date | null;
+  claimSecretConsumedAt: Date | null;
   createdAgentId: string | null;
   approvedByUserId: string | null;
   approvedAt: Date | null;
