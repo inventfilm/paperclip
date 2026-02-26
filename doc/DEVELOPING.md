@@ -57,6 +57,28 @@ pnpm paperclip run
 2. `paperclip doctor` with repair enabled
 3. starts the server when checks pass
 
+## Docker Quickstart (No local Node install)
+
+Build and run Paperclip in Docker:
+
+```sh
+docker build -t paperclip-local .
+docker run --name paperclip \
+  -p 3100:3100 \
+  -e HOST=0.0.0.0 \
+  -e PAPERCLIP_HOME=/paperclip \
+  -v "$(pwd)/data/docker-paperclip:/paperclip" \
+  paperclip-local
+```
+
+Or use Compose:
+
+```sh
+docker compose -f docker-compose.quickstart.yml up --build
+```
+
+See `doc/DOCKER.md` for API key wiring (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`) and persistence details.
+
 ## Database in Dev (Auto-Handled)
 
 For local development, leave `DATABASE_URL` unset.

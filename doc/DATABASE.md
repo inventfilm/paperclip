@@ -21,6 +21,8 @@ Data persists across restarts in `~/.paperclip/instances/default/db/`. To reset 
 
 This mode is ideal for local development and one-command installs.
 
+Docker note: the Docker quickstart image also uses embedded PostgreSQL by default. Persist `/paperclip` to keep DB state across container restarts (see `doc/DOCKER.md`).
+
 ## 2. Local PostgreSQL (Docker)
 
 For a full PostgreSQL server locally, use the included Docker Compose setup:
