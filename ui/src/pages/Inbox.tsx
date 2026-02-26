@@ -33,6 +33,8 @@ import {
   Clock,
   ArrowUpRight,
   XCircle,
+  UserCheck,
+  RotateCcw,
 } from "lucide-react";
 import { Identity } from "../components/Identity";
 import { PageTabBar } from "../components/PageTabBar";
@@ -45,13 +47,20 @@ const ACTIONABLE_APPROVAL_STATUSES = new Set(["pending", "revision_requested"]);
 type InboxTab = "new" | "all";
 type InboxCategoryFilter =
   | "everything"
+  | "assigned_to_me"
   | "join_requests"
   | "approvals"
   | "failed_runs"
   | "alerts"
   | "stale_work";
 type InboxApprovalFilter = "all" | "actionable" | "resolved";
-type SectionKey = "join_requests" | "approvals" | "failed_runs" | "alerts" | "stale_work";
+type SectionKey =
+  | "assigned_to_me"
+  | "join_requests"
+  | "approvals"
+  | "failed_runs"
+  | "alerts"
+  | "stale_work";
 
 const RUN_SOURCE_LABELS: Record<string, string> = {
   timer: "Scheduled",
@@ -107,6 +116,131 @@ function readIssueIdFromRun(run: HeartbeatRun): string | null {
   if (typeof taskId === "string" && taskId.length > 0) return taskId;
 
   return null;
+}
+
+function FailedRunCard({
+  run,
+  issueById,
+  agentName: linkedAgentName,
+}: {
+  run: HeartbeatRun;
+  issueById: Map<string, Issue>;
+  agentName: string | null;
+}) {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const issueId = readIssueIdFromRun(run);
+  const issue = issueId ? issueById.get(issueId) ?? null : null;
+  const sourceLabel = RUN_SOURCE_LABELS[run.invocationSource] ?? "Manual";
+  const displayError = runFailureMessage(run);
+
+  const retryRun = useMutation({
+    mutationFn: async () => {
+      const payload: Record<string, unknown> = {};
+      const context = run.contextSnapshot as Record<string, unknown> | null;
+      if (context) {
+        if (typeof context.issueId === "string" && context.issueId) payload.issueId = context.issueId;
+        if (typeof context.taskId === "string" && context.taskId) payload.taskId = context.taskId;
+        if (typeof context.taskKey === "string" && context.taskKey) payload.taskKey = context.taskKey;
+      }
+      const result = await agentsApi.wakeup(run.agentId, {
+        source: "on_demand",
+        triggerDetail: "manual",
+        reason: "retry_failed_run",
+        payload,
+      });
+      if (!("id" in result)) {
+        throw new Error("Retry was skipped because the agent is not currently invokable.");
+      }
+      return result;
+    },
+    onSuccess: (newRun) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
+      navigate(`/agents/${run.agentId}/runs/${newRun.id}`);
+    },
+  });
+
+  return (
+    <div className="group relative overflow-hidden rounded-xl border border-red-500/30 bg-gradient-to-br from-red-500/10 via-card to-card p-4">
+      <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-red-500/10 blur-2xl" />
+      <div className="relative space-y-3">
+        {issue ? (
+          <Link
+            to={`/issues/${issue.identifier ?? issue.id}`}
+            className="block truncate text-sm font-medium transition-colors hover:text-foreground no-underline text-inherit"
+          >
+            <span className="font-mono text-muted-foreground mr-1.5">
+              {issue.identifier ?? issue.id.slice(0, 8)}
+            </span>
+            {issue.title}
+          </Link>
+        ) : (
+          <span className="block text-sm text-muted-foreground">
+            {run.errorCode ? `Error code: ${run.errorCode}` : "No linked issue"}
+          </span>
+        )}
+
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="rounded-md bg-red-500/20 p-1.5">
+                <XCircle className="h-4 w-4 text-red-400" />
+              </span>
+              {linkedAgentName ? (
+                <Identity name={linkedAgentName} size="sm" />
+              ) : (
+                <span className="text-sm font-medium">Agent {run.agentId.slice(0, 8)}</span>
+              )}
+              <StatusBadge status={run.status} />
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {sourceLabel} run failed {timeAgo(run.createdAt)}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-2.5"
+              onClick={() => retryRun.mutate()}
+              disabled={retryRun.isPending}
+            >
+              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+              {retryRun.isPending ? "Retrying..." : "Retry"}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-2.5"
+              asChild
+            >
+              <Link to={`/agents/${run.agentId}/runs/${run.id}`}>
+                Open run
+                <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </div>
+        </div>
+
+        <div className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm">
+          {displayError}
+        </div>
+
+        <div className="text-xs">
+          <span className="font-mono text-muted-foreground">run {run.id.slice(0, 8)}</span>
+        </div>
+
+        {retryRun.isError && (
+          <div className="text-xs text-destructive">
+            {retryRun.error instanceof Error ? retryRun.error.message : "Failed to retry run"}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export function Inbox() {
@@ -172,6 +306,18 @@ export function Inbox() {
     queryFn: () => issuesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const {
+    data: assignedToMeIssuesRaw = [],
+    isLoading: isAssignedToMeLoading,
+  } = useQuery({
+    queryKey: queryKeys.issues.listAssignedToMe(selectedCompanyId!),
+    queryFn: () =>
+      issuesApi.list(selectedCompanyId!, {
+        assigneeUserId: "me",
+        status: "backlog,todo,in_progress,in_review,blocked",
+      }),
+    enabled: !!selectedCompanyId,
+  });
 
   const { data: heartbeatRuns, isLoading: isRunsLoading } = useQuery({
     queryKey: queryKeys.heartbeats(selectedCompanyId!),
@@ -180,6 +326,13 @@ export function Inbox() {
   });
 
   const staleIssues = issues ? getStaleIssues(issues) : [];
+  const assignedToMeIssues = useMemo(
+    () =>
+      [...assignedToMeIssuesRaw].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      ),
+    [assignedToMeIssuesRaw],
+  );
 
   const agentById = useMemo(() => {
     const map = new Map<string, string>();
@@ -289,8 +442,10 @@ export function Inbox() {
   const hasAlerts = showAggregateAgentError || showBudgetAlert;
   const hasStale = staleIssues.length > 0;
   const hasJoinRequests = joinRequests.length > 0;
+  const hasAssignedToMe = assignedToMeIssues.length > 0;
 
   const newItemCount =
+    assignedToMeIssues.length +
     joinRequests.length +
     actionableApprovals.length +
     failedRuns.length +
@@ -300,6 +455,8 @@ export function Inbox() {
 
   const showJoinRequestsCategory =
     allCategoryFilter === "everything" || allCategoryFilter === "join_requests";
+  const showAssignedCategory =
+    allCategoryFilter === "everything" || allCategoryFilter === "assigned_to_me";
   const showApprovalsCategory = allCategoryFilter === "everything" || allCategoryFilter === "approvals";
   const showFailedRunsCategory =
     allCategoryFilter === "everything" || allCategoryFilter === "failed_runs";
@@ -307,6 +464,7 @@ export function Inbox() {
   const showStaleCategory = allCategoryFilter === "everything" || allCategoryFilter === "stale_work";
 
   const approvalsToRender = tab === "new" ? actionableApprovals : filteredAllApprovals;
+  const showAssignedSection = tab === "new" ? hasAssignedToMe : showAssignedCategory && hasAssignedToMe;
   const showJoinRequestsSection =
     tab === "new" ? hasJoinRequests : showJoinRequestsCategory && hasJoinRequests;
   const showApprovalsSection =
@@ -319,6 +477,7 @@ export function Inbox() {
   const showStaleSection = tab === "new" ? hasStale : showStaleCategory && hasStale;
 
   const visibleSections = [
+    showAssignedSection ? "assigned_to_me" : null,
     showApprovalsSection ? "approvals" : null,
     showJoinRequestsSection ? "join_requests" : null,
     showFailedRunsSection ? "failed_runs" : null,
@@ -331,6 +490,7 @@ export function Inbox() {
     !isApprovalsLoading &&
     !isDashboardLoading &&
     !isIssuesLoading &&
+    !isAssignedToMeLoading &&
     !isRunsLoading;
 
   const showSeparatorBefore = (key: SectionKey) => visibleSections.indexOf(key) > 0;
@@ -370,6 +530,7 @@ export function Inbox() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="everything">All categories</SelectItem>
+                <SelectItem value="assigned_to_me">Assigned to me</SelectItem>
                 <SelectItem value="join_requests">Join requests</SelectItem>
                 <SelectItem value="approvals">Approvals</SelectItem>
                 <SelectItem value="failed_runs">Failed runs</SelectItem>
@@ -409,6 +570,37 @@ export function Inbox() {
           icon={InboxIcon}
           message={tab === "new" ? "You're all caught up!" : "No inbox items match these filters."}
         />
+      )}
+
+      {showAssignedSection && (
+        <>
+          {showSeparatorBefore("assigned_to_me") && <Separator />}
+          <div>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Assigned To Me
+            </h3>
+            <div className="divide-y divide-border border border-border">
+              {assignedToMeIssues.map((issue) => (
+                <Link
+                  key={issue.id}
+                  to={`/issues/${issue.identifier ?? issue.id}`}
+                  className="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-accent/50 no-underline text-inherit"
+                >
+                  <UserCheck className="h-4 w-4 shrink-0 text-blue-400" />
+                  <PriorityIcon priority={issue.priority} />
+                  <StatusIcon status={issue.status} />
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {issue.identifier ?? issue.id.slice(0, 8)}
+                  </span>
+                  <span className="flex-1 truncate text-sm">{issue.title}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    updated {timeAgo(issue.updatedAt)}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
       )}
 
       {showApprovalsSection && (
@@ -501,74 +693,14 @@ export function Inbox() {
               Failed Runs
             </h3>
             <div className="grid gap-3">
-              {failedRuns.map((run) => {
-                const issueId = readIssueIdFromRun(run);
-                const issue = issueId ? issueById.get(issueId) ?? null : null;
-                const sourceLabel = RUN_SOURCE_LABELS[run.invocationSource] ?? "Manual";
-                const displayError = runFailureMessage(run);
-                const linkedAgentName = agentName(run.agentId);
-
-                return (
-                  <div
-                    key={run.id}
-                    className="group relative overflow-hidden rounded-xl border border-red-500/30 bg-gradient-to-br from-red-500/10 via-card to-card p-4"
-                  >
-                    <div className="absolute right-0 top-0 h-24 w-24 rounded-full bg-red-500/10 blur-2xl" />
-                    <div className="relative space-y-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="rounded-md bg-red-500/20 p-1.5">
-                              <XCircle className="h-4 w-4 text-red-400" />
-                            </span>
-                            {linkedAgentName ? (
-                              <Identity name={linkedAgentName} size="sm" />
-                            ) : (
-                              <span className="text-sm font-medium">Agent {run.agentId.slice(0, 8)}</span>
-                            )}
-                            <StatusBadge status={run.status} />
-                          </div>
-                          <p className="mt-2 text-xs text-muted-foreground">
-                            {sourceLabel} run failed {timeAgo(run.createdAt)}
-                          </p>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-2.5"
-                          asChild
-                        >
-                          <Link to={`/agents/${run.agentId}/runs/${run.id}`}>
-                            Open run
-                            <ArrowUpRight className="ml-1.5 h-3.5 w-3.5" />
-                          </Link>
-                        </Button>
-                      </div>
-
-                      <div className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm">
-                        {displayError}
-                      </div>
-
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="font-mono text-muted-foreground">run {run.id.slice(0, 8)}</span>
-                        {issue ? (
-                          <Link
-                            to={`/issues/${issue.identifier ?? issue.id}`}
-                            className="truncate text-muted-foreground transition-colors hover:text-foreground no-underline"
-                          >
-                            {issue.identifier ?? issue.id.slice(0, 8)} · {issue.title}
-                          </Link>
-                        ) : (
-                          <span className="text-muted-foreground">
-                            {run.errorCode ? `code: ${run.errorCode}` : "No linked issue"}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {failedRuns.map((run) => (
+                <FailedRunCard
+                  key={run.id}
+                  run={run}
+                  issueById={issueById}
+                  agentName={agentName(run.agentId)}
+                />
+              ))}
             </div>
           </div>
         </>
