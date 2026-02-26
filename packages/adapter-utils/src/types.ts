@@ -30,6 +30,8 @@ export interface UsageSummary {
   cachedInputTokens?: number;
 }
 
+export type AdapterBillingType = "api" | "subscription" | "unknown";
+
 export interface AdapterExecutionResult {
   exitCode: number | null;
   signal: string | null;
@@ -46,6 +48,7 @@ export interface AdapterExecutionResult {
   sessionDisplayId?: string | null;
   provider?: string | null;
   model?: string | null;
+  billingType?: AdapterBillingType | null;
   costUsd?: number | null;
   resultJson?: Record<string, unknown> | null;
   summary?: string | null;

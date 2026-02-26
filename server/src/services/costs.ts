@@ -105,7 +105,7 @@ export function costService(db: Db) {
       if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
       if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
 
-      return db
+      const costRows = await db
         .select({
           agentId: costEvents.agentId,
           agentName: agents.name,
@@ -119,14 +119,46 @@ export function costService(db: Db) {
         .where(and(...conditions))
         .groupBy(costEvents.agentId, agents.name, agents.status)
         .orderBy(desc(sql`coalesce(sum(${costEvents.costCents}), 0)::int`));
+
+      const runConditions: ReturnType<typeof eq>[] = [eq(heartbeatRuns.companyId, companyId)];
+      if (range?.from) runConditions.push(gte(heartbeatRuns.finishedAt, range.from));
+      if (range?.to) runConditions.push(lte(heartbeatRuns.finishedAt, range.to));
+
+      const runRows = await db
+        .select({
+          agentId: heartbeatRuns.agentId,
+          apiRunCount:
+            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'api' then 1 else 0 end), 0)::int`,
+          subscriptionRunCount:
+            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'subscription' then 1 else 0 end), 0)::int`,
+          subscriptionInputTokens:
+            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'subscription' then coalesce((${heartbeatRuns.usageJson} ->> 'inputTokens')::int, 0) else 0 end), 0)::int`,
+          subscriptionOutputTokens:
+            sql<number>`coalesce(sum(case when coalesce((${heartbeatRuns.usageJson} ->> 'billingType'), 'unknown') = 'subscription' then coalesce((${heartbeatRuns.usageJson} ->> 'outputTokens')::int, 0) else 0 end), 0)::int`,
+        })
+        .from(heartbeatRuns)
+        .where(and(...runConditions))
+        .groupBy(heartbeatRuns.agentId);
+
+      const runRowsByAgent = new Map(runRows.map((row) => [row.agentId, row]));
+      return costRows.map((row) => {
+        const runRow = runRowsByAgent.get(row.agentId);
+        return {
+          ...row,
+          apiRunCount: runRow?.apiRunCount ?? 0,
+          subscriptionRunCount: runRow?.subscriptionRunCount ?? 0,
+          subscriptionInputTokens: runRow?.subscriptionInputTokens ?? 0,
+          subscriptionOutputTokens: runRow?.subscriptionOutputTokens ?? 0,
+        };
+      });
     },
 
     byProject: async (companyId: string, range?: CostDateRange) => {
       const issueIdAsText = sql<string>`${issues.id}::text`;
       const runProjectLinks = db
         .selectDistinctOn([activityLog.runId, issues.projectId], {
-          runId: sql<string>`${activityLog.runId}`,
-          projectId: sql<string>`${issues.projectId}`,
+          runId: activityLog.runId,
+          projectId: issues.projectId,
         })
         .from(activityLog)
         .innerJoin(

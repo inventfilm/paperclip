@@ -977,7 +977,9 @@ export function agentRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const agentId = req.query.agentId as string | undefined;
-    const runs = await heartbeat.list(companyId, agentId);
+    const limitParam = req.query.limit as string | undefined;
+    const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam, 10) || 200)) : undefined;
+    const runs = await heartbeat.list(companyId, agentId, limit);
     res.json(runs);
   });
 

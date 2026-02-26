@@ -50,6 +50,16 @@ function firstNonEmptyLine(text: string): string {
   );
 }
 
+function hasNonEmptyEnvValue(env: Record<string, string>, key: string): boolean {
+  const raw = env[key];
+  return typeof raw === "string" && raw.trim().length > 0;
+}
+
+function resolveCodexBillingType(env: Record<string, string>): "api" | "subscription" {
+  // Codex uses API-key auth when OPENAI_API_KEY is present; otherwise rely on local login/session auth.
+  return hasNonEmptyEnvValue(env, "OPENAI_API_KEY") ? "api" : "subscription";
+}
+
 function codexHomeDir(): string {
   const fromEnv = process.env.CODEX_HOME;
   if (typeof fromEnv === "string" && fromEnv.trim().length > 0) return fromEnv.trim();
@@ -114,7 +124,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const workspaceId = asString(workspaceContext.workspaceId, "");
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "");
   const workspaceRepoRef = asString(workspaceContext.repoRef, "");
-  const cwd = workspaceCwd || asString(config.cwd, process.cwd());
+  const workspaceHints = Array.isArray(context.paperclipWorkspaces)
+    ? context.paperclipWorkspaces.filter(
+        (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
+      )
+    : [];
+  const configuredCwd = asString(config.cwd, "");
+  const useConfiguredInsteadOfAgentHome = workspaceSource === "agent_home" && configuredCwd.length > 0;
+  const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
+  const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd);
   await ensureCodexSkillsInjected(onLog);
   const envConfig = parseObject(config.env);
@@ -163,8 +181,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (linkedIssueIds.length > 0) {
     env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   }
-  if (workspaceCwd) {
-    env.PAPERCLIP_WORKSPACE_CWD = workspaceCwd;
+  if (effectiveWorkspaceCwd) {
+    env.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
   }
   if (workspaceSource) {
     env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
@@ -178,12 +196,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (workspaceRepoRef) {
     env.PAPERCLIP_WORKSPACE_REPO_REF = workspaceRepoRef;
   }
+  if (workspaceHints.length > 0) {
+    env.PAPERCLIP_WORKSPACES_JSON = JSON.stringify(workspaceHints);
+  }
   for (const [k, v] of Object.entries(envConfig)) {
     if (typeof v === "string") env[k] = v;
   }
   if (!hasExplicitApiKey && authToken) {
     env.PAPERCLIP_API_KEY = authToken;
   }
+  const billingType = resolveCodexBillingType(env);
   const runtimeEnv = ensurePathInEnv({ ...process.env, ...env });
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
@@ -320,6 +342,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       sessionDisplayId: resolvedSessionId,
       provider: "openai",
       model,
+      billingType,
       costUsd: null,
       resultJson: {
         stdout: attempt.proc.stdout,

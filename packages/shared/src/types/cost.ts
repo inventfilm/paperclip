@@ -29,4 +29,8 @@ export interface CostByAgent {
   costCents: number;
   inputTokens: number;
   outputTokens: number;
+  apiRunCount: number;
+  subscriptionRunCount: number;
+  subscriptionInputTokens: number;
+  subscriptionOutputTokens: number;
 }

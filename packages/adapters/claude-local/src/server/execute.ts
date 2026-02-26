@@ -86,6 +86,16 @@ function buildLoginResult(input: {
   };
 }
 
+function hasNonEmptyEnvValue(env: Record<string, string>, key: string): boolean {
+  const raw = env[key];
+  return typeof raw === "string" && raw.trim().length > 0;
+}
+
+function resolveClaudeBillingType(env: Record<string, string>): "api" | "subscription" {
+  // Claude uses API-key auth when ANTHROPIC_API_KEY is present; otherwise rely on local login/session auth.
+  return hasNonEmptyEnvValue(env, "ANTHROPIC_API_KEY") ? "api" : "subscription";
+}
+
 async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<ClaudeRuntimeConfig> {
   const { runId, agent, config, context, authToken } = input;
 
@@ -96,7 +106,15 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   const workspaceId = asString(workspaceContext.workspaceId, "") || null;
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "") || null;
   const workspaceRepoRef = asString(workspaceContext.repoRef, "") || null;
-  const cwd = workspaceCwd || asString(config.cwd, process.cwd());
+  const workspaceHints = Array.isArray(context.paperclipWorkspaces)
+    ? context.paperclipWorkspaces.filter(
+        (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
+      )
+    : [];
+  const configuredCwd = asString(config.cwd, "");
+  const useConfiguredInsteadOfAgentHome = workspaceSource === "agent_home" && configuredCwd.length > 0;
+  const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
+  const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd);
 
   const envConfig = parseObject(config.env);
@@ -147,8 +165,8 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   if (linkedIssueIds.length > 0) {
     env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   }
-  if (workspaceCwd) {
-    env.PAPERCLIP_WORKSPACE_CWD = workspaceCwd;
+  if (effectiveWorkspaceCwd) {
+    env.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
   }
   if (workspaceSource) {
     env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
@@ -161,6 +179,9 @@ async function buildClaudeRuntimeConfig(input: ClaudeExecutionInput): Promise<Cl
   }
   if (workspaceRepoRef) {
     env.PAPERCLIP_WORKSPACE_REPO_REF = workspaceRepoRef;
+  }
+  if (workspaceHints.length > 0) {
+    env.PAPERCLIP_WORKSPACES_JSON = JSON.stringify(workspaceHints);
   }
 
   for (const [key, value] of Object.entries(envConfig)) {
@@ -263,6 +284,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     graceSec,
     extraArgs,
   } = runtimeConfig;
+  const billingType = resolveClaudeBillingType(env);
   const skillsDir = await buildSkillsDir();
 
   const runtimeSessionParams = parseObject(runtime.sessionParams);
@@ -434,6 +456,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       sessionDisplayId: resolvedSessionId,
       provider: "anthropic",
       model: parsedStream.model || asString(parsed.model, model),
+      billingType,
       costUsd: parsedStream.costUsd ?? asNumber(parsed.total_cost_usd, 0),
       resultJson: parsed,
       summary: parsedStream.summary || asString(parsed.result, ""),
