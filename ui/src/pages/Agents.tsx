@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate, useLocation } from "@/lib/router";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { agentsApi, type OrgNode } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
-import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
+import { useAgentStatusMutations } from "../hooks/useAgentStatusMutations";
 import { StatusBadgeMenu } from "../components/StatusBadgeMenu";
 import { agentStatusDot, agentStatusDotDefault } from "../lib/status-colors";
 import { EntityRow } from "../components/EntityRow";
@@ -67,7 +67,6 @@ function filterOrgTree(nodes: OrgNode[], tab: FilterTab, showTerminated: boolean
 export function Agents() {
   const { selectedCompanyId } = useCompany();
   const { openNewAgent } = useDialog();
-  const { pushToast } = useToast();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
   const location = useLocation();
@@ -120,7 +119,9 @@ export function Agents() {
     return map;
   }, [agents]);
 
-  const queryClient = useQueryClient();
+  const { invalidate, onError: onMutationError } = useAgentStatusMutations({
+    companyId: selectedCompanyId!,
+  });
 
   const filtered = useMemo(
     () => filterAgents(agents ?? [], tab, showTerminated),
@@ -156,13 +157,8 @@ export function Agents() {
         throw new Error(`${failed.length} agent(s) failed to ${action}`);
       }
     },
-    onError: (err) => {
-      pushToast({ title: err.message, tone: "error" });
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.org(selectedCompanyId!) });
-    },
+    onError: onMutationError,
+    onSettled: invalidate,
   });
 
   useEffect(() => {

@@ -1,15 +1,15 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { NavLink, useLocation } from "@/lib/router";
-import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { ChevronRight, Eye, Pause, Play, Plus, ToggleLeft, ToggleRight } from "lucide-react";
 import { AGENT_PAUSABLE_STATUSES, AGENT_ACTIONABLE_STATUSES } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
-import { useToast } from "../context/ToastContext";
 import { agentsApi } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
+import { useAgentStatusMutations } from "../hooks/useAgentStatusMutations";
 import { cn, agentRouteRef, agentUrl } from "../lib/utils";
 import { AgentIcon } from "./AgentIconPicker";
 import {
@@ -57,9 +57,7 @@ export function SidebarAgents() {
   const { selectedCompanyId } = useCompany();
   const { openNewAgent } = useDialog();
   const { isMobile, setSidebarOpen } = useSidebar();
-  const { pushToast } = useToast();
   const location = useLocation();
-  const queryClient = useQueryClient();
 
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -112,28 +110,8 @@ export function SidebarAgents() {
   const allPausedRef = useRef(allPaused);
   allPausedRef.current = allPaused;
 
-  const invalidate = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.agents.list(selectedCompanyId!) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.org(selectedCompanyId!) });
-  }, [queryClient, selectedCompanyId]);
-
-  const onMutationError = useCallback(
-    (err: Error) => {
-      pushToast({ title: err.message, tone: "error" });
-    },
-    [pushToast],
-  );
-
-  const pauseAgent = useMutation({
-    mutationFn: (id: string) => agentsApi.pause(id, selectedCompanyId!),
-    onSuccess: invalidate,
-    onError: onMutationError,
-  });
-
-  const resumeAgent = useMutation({
-    mutationFn: (id: string) => agentsApi.resume(id, selectedCompanyId!),
-    onSuccess: invalidate,
-    onError: onMutationError,
+  const { pauseAgent, resumeAgent, invalidate, onError: onMutationError } = useAgentStatusMutations({
+    companyId: selectedCompanyId!,
   });
 
   const bulkToggle = useMutation({
