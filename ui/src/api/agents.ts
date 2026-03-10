@@ -1,5 +1,6 @@
 import type {
   Agent,
+  AgentStatus,
   AdapterEnvironmentTestResult,
   AgentKeyCreated,
   AgentRuntimeState,
@@ -36,7 +37,7 @@ export interface OrgNode {
   id: string;
   name: string;
   role: string;
-  status: string;
+  status: AgentStatus;
   reports: OrgNode[];
 }
 

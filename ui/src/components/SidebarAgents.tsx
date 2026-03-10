@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation } from "@/lib/router";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { ChevronRight, Pause, Play, Plus, ToggleLeft, ToggleRight } from "lucide-react";
+import { ChevronRight, Eye, Pause, Play, Plus, ToggleLeft, ToggleRight } from "lucide-react";
 import { AGENT_PAUSABLE_STATUSES, AGENT_ACTIONABLE_STATUSES } from "@paperclipai/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
@@ -250,6 +250,23 @@ export function SidebarAgents() {
               Agents
             </span>
           </CollapsibleTrigger>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <NavLink
+                to="/agents"
+                onClick={() => {
+                  if (isMobile) setSidebarOpen(false);
+                }}
+                className="flex items-center justify-center h-4 w-4 rounded text-muted-foreground/60 hover:text-foreground hover:bg-accent/50 transition-colors"
+                aria-label="View all agents"
+              >
+                <Eye className="h-3 w-3" />
+              </NavLink>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              <p>View all agents</p>
+            </TooltipContent>
+          </Tooltip>
           {toggleableAgents.length > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
