@@ -365,6 +365,16 @@ export function isTimerSkipEnabled(runtimeConfig: unknown): boolean {
   return (heartbeat as Record<string, unknown>).skipTimerWhenNoAssignedOpenIssue === true;
 }
 
+/**
+ * Returns true when a timer wake should be skipped for an agent.
+ * The flag must be enabled AND the agent must have zero open assigned issues.
+ * Callers are responsible for querying the issue count.
+ */
+export function shouldSkipTimerWake(runtimeConfig: unknown, openIssueCount: number): boolean {
+  if (!isTimerSkipEnabled(runtimeConfig)) return false;
+  return openIssueCount === 0;
+}
+
 export function shouldResetTaskSessionForWake(
   contextSnapshot: Record<string, unknown> | null | undefined,
 ) {
@@ -1138,7 +1148,7 @@ export function heartbeatService(db: Db) {
       intervalSec: Math.max(0, asNumber(heartbeat.intervalSec, 0)),
       wakeOnDemand: asBoolean(heartbeat.wakeOnDemand ?? heartbeat.wakeOnAssignment ?? heartbeat.wakeOnOnDemand ?? heartbeat.wakeOnAutomation, true),
       maxConcurrentRuns: normalizeMaxConcurrentRuns(heartbeat.maxConcurrentRuns),
-      skipTimerWhenNoAssignedOpenIssue: isTimerSkipEnabled(agent.runtimeConfig),
+      skipTimerWhenNoAssignedOpenIssue: heartbeat.skipTimerWhenNoAssignedOpenIssue === true,
     };
   }
 
@@ -2835,7 +2845,7 @@ export function heartbeatService(db: Db) {
                 inArray(issues.status, ["todo", "in_progress", "blocked", "in_review"]),
               ),
             );
-          if (Number(count ?? 0) === 0) {
+          if (shouldSkipTimerWake(agent.runtimeConfig, Number(count ?? 0))) {
             skipped += 1;
             continue;
           }
