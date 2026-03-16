@@ -91,7 +91,11 @@ export function AuthPage() {
             className="mt-6 space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!canSubmit || mutation.isPending) return;
+              if (mutation.isPending) return;
+              if (!canSubmit) {
+                setError("Please fill in all required fields.");
+                return;
+              }
               mutation.mutate();
             }}
           >
@@ -133,7 +137,7 @@ export function AuthPage() {
               type="submit"
               disabled={mutation.isPending}
               aria-disabled={!canSubmit || mutation.isPending}
-              className={`w-full ${!canSubmit ? "opacity-50 pointer-events-none" : ""}`}
+              className={`w-full ${!canSubmit && !mutation.isPending ? "opacity-50" : ""}`}
             >
               {mutation.isPending
                 ? "Working…"
