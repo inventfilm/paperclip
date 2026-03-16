@@ -749,6 +749,7 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           )}
         </div>
 
+          {/* PAP-525: workspace UI gated by useExperimentalWorkspacesEnabled() */}
           {showExperimentalWorkspaceUi && (
           <>
         <Separator className="my-4" />
