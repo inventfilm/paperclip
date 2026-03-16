@@ -51,7 +51,6 @@ import { issueStatusText, issueStatusTextDefault, priorityColor, priorityColorDe
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { AgentIcon } from "./AgentIconPicker";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
-import { useExperimentalWorkspacesEnabled } from "../lib/experimentalSettings";
 
 const DRAFT_KEY = "paperclip:issue-draft";
 const DEBOUNCE_MS = 800;
@@ -280,7 +279,6 @@ function issueExecutionWorkspaceModeForExistingWorkspace(mode: string | null | u
 export function NewIssueDialog() {
   const { newIssueOpen, newIssueDefaults, closeNewIssue } = useDialog();
   const { companies, selectedCompanyId, selectedCompany } = useCompany();
-  const { enabled: showExperimentalWorkspaceUi } = useExperimentalWorkspacesEnabled();
   const queryClient = useQueryClient();
   const { pushToast } = useToast();
   const [title, setTitle] = useState("");
@@ -339,7 +337,7 @@ export function NewIssueDialog() {
         projectWorkspaceId: projectWorkspaceId || undefined,
         reuseEligible: true,
       }),
-    enabled: Boolean(effectiveCompanyId) && newIssueOpen && showExperimentalWorkspaceUi && Boolean(projectId),
+    enabled: Boolean(effectiveCompanyId) && newIssueOpen && Boolean(projectId),
   });
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -639,9 +637,7 @@ export function NewIssueDialog() {
       chrome: assigneeChrome,
     });
     const selectedProject = orderedProjects.find((project) => project.id === projectId);
-    const executionWorkspacePolicy = showExperimentalWorkspaceUi
-      ? selectedProject?.executionWorkspacePolicy
-      : null;
+    const executionWorkspacePolicy = selectedProject?.executionWorkspacePolicy ?? null;
     const selectedReusableExecutionWorkspace = (reusableExecutionWorkspaces ?? []).find(
       (workspace) => workspace.id === selectedExecutionWorkspaceId,
     );
@@ -749,10 +745,7 @@ export function NewIssueDialog() {
     ? (agents ?? []).find((a) => a.id === selectedAssigneeAgentId)
     : null;
   const currentProject = orderedProjects.find((project) => project.id === projectId);
-  const currentProjectWorkspaces = currentProject?.workspaces ?? [];
-  const currentProjectExecutionWorkspacePolicy = showExperimentalWorkspaceUi
-    ? currentProject?.executionWorkspacePolicy ?? null
-    : null;
+  const currentProjectExecutionWorkspacePolicy = currentProject?.executionWorkspacePolicy ?? null;
   const currentProjectSupportsExecutionWorkspace = Boolean(currentProjectExecutionWorkspacePolicy?.enabled);
   const selectedReusableExecutionWorkspace = (reusableExecutionWorkspaces ?? []).find(
     (workspace) => workspace.id === selectedExecutionWorkspaceId,
@@ -822,7 +815,7 @@ export function NewIssueDialog() {
     setProjectWorkspaceId(defaultProjectWorkspaceIdForProject(project));
     setExecutionWorkspaceMode(defaultExecutionWorkspaceModeForProject(project));
     setSelectedExecutionWorkspaceId("");
-  }, [newIssueOpen, orderedProjects, projectId, showExperimentalWorkspaceUi]);
+  }, [newIssueOpen, orderedProjects, projectId]);
   const modelOverrideOptions = useMemo<InlineEntityOption[]>(
     () => {
       return [...(assigneeAdapterModels ?? [])]
@@ -1102,29 +1095,8 @@ export function NewIssueDialog() {
           </div>
         </div>
 
-        {showExperimentalWorkspaceUi && currentProject && (
+        {currentProject && (
           <div className="px-4 pb-2 shrink-0 space-y-2">
-            {currentProjectWorkspaces.length > 0 && (
-              <div className="rounded-md border border-border px-3 py-2 space-y-1.5">
-                <div className="text-xs font-medium">Codebase</div>
-                <div className="text-[11px] text-muted-foreground">
-                  Choose which project workspace this issue should use.
-                </div>
-                <select
-                  className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none"
-                  value={projectWorkspaceId}
-                  onChange={(e) => setProjectWorkspaceId(e.target.value)}
-                >
-                  {currentProjectWorkspaces.map((workspace) => (
-                    <option key={workspace.id} value={workspace.id}>
-                      {workspace.name}
-                      {workspace.isPrimary ? " (default)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
             {currentProjectSupportsExecutionWorkspace && (
               <div className="rounded-md border border-border px-3 py-2 space-y-1.5">
                 <div className="text-xs font-medium">Execution workspace</div>

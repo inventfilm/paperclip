@@ -17,7 +17,6 @@ import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
 import { formatDate, cn, projectUrl } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
-import { useExperimentalWorkspacesEnabled } from "../lib/experimentalSettings";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2 } from "lucide-react";
@@ -134,7 +133,6 @@ function PropertyPicker({
 
 export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProps) {
   const { selectedCompanyId } = useCompany();
-  const { enabled: showExperimentalWorkspaceUi } = useExperimentalWorkspacesEnabled();
   const queryClient = useQueryClient();
   const companyId = issue.companyId ?? selectedCompanyId;
   const [assigneeOpen, setAssigneeOpen] = useState(false);
@@ -219,11 +217,8 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const currentProject = issue.projectId
     ? orderedProjects.find((project) => project.id === issue.projectId) ?? null
     : null;
-  const currentProjectExecutionWorkspacePolicy = showExperimentalWorkspaceUi
-    ? currentProject?.executionWorkspacePolicy ?? null
-    : null;
+  const currentProjectExecutionWorkspacePolicy = currentProject?.executionWorkspacePolicy ?? null;
   const currentProjectSupportsExecutionWorkspace = Boolean(currentProjectExecutionWorkspacePolicy?.enabled);
-  const currentProjectWorkspaces = currentProject?.workspaces ?? [];
   const currentExecutionWorkspaceSelection =
     issue.executionWorkspacePreference
     ?? issue.executionWorkspaceSettings?.mode
@@ -240,7 +235,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
         projectWorkspaceId: issue.projectWorkspaceId ?? undefined,
         reuseEligible: true,
       }),
-    enabled: Boolean(companyId) && showExperimentalWorkspaceUi && Boolean(issue.projectId),
+    enabled: Boolean(companyId) && Boolean(issue.projectId),
   });
   const selectedReusableExecutionWorkspace = (reusableExecutionWorkspaces ?? []).find(
     (workspace) => workspace.id === issue.executionWorkspaceId,
@@ -509,10 +504,10 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
               const defaultMode = defaultExecutionWorkspaceModeForProject(p);
               onUpdate({
                 projectId: p.id,
-                projectWorkspaceId: showExperimentalWorkspaceUi ? defaultProjectWorkspaceIdForProject(p) : null,
+                projectWorkspaceId: defaultProjectWorkspaceIdForProject(p),
                 executionWorkspaceId: null,
-                executionWorkspacePreference: showExperimentalWorkspaceUi ? defaultMode : null,
-                executionWorkspaceSettings: showExperimentalWorkspaceUi && p.executionWorkspacePolicy?.enabled
+                executionWorkspacePreference: defaultMode,
+                executionWorkspaceSettings: p.executionWorkspacePolicy?.enabled
                   ? { mode: defaultMode }
                   : null,
               });
@@ -602,28 +597,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
           {projectContent}
         </PropertyPicker>
 
-        {showExperimentalWorkspaceUi && currentProjectWorkspaces.length > 0 && (
-          <PropertyRow label="Codebase">
-            <select
-              className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none"
-              value={issue.projectWorkspaceId ?? ""}
-              onChange={(e) =>
-                onUpdate({
-                  projectWorkspaceId: e.target.value || null,
-                  executionWorkspaceId: null,
-                })}
-            >
-              {currentProjectWorkspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>
-                  {workspace.name}
-                  {workspace.isPrimary ? " (default)" : ""}
-                </option>
-              ))}
-            </select>
-          </PropertyRow>
-        )}
-
-        {showExperimentalWorkspaceUi && currentProjectSupportsExecutionWorkspace && (
+        {currentProjectSupportsExecutionWorkspace && (
           <PropertyRow label="Workspace">
             <div className="w-full space-y-2">
               <select

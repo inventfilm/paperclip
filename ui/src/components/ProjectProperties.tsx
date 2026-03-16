@@ -17,7 +17,6 @@ import { AlertCircle, Archive, ArchiveRestore, Check, ExternalLink, Github, Load
 import { ChoosePathButton } from "./PathInstructionsModal";
 import { DraftInput } from "./agent-config-primitives";
 import { InlineEditor } from "./InlineEditor";
-import { useExperimentalWorkspacesEnabled } from "../lib/experimentalSettings";
 
 const PROJECT_STATUSES = [
   { value: "backlog", label: "Backlog" },
@@ -152,7 +151,6 @@ function ProjectStatusPicker({ status, onChange }: { status: string; onChange: (
 
 export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSaveState, onArchive, archivePending }: ProjectPropertiesProps) {
   const { selectedCompanyId } = useCompany();
-  const { enabled: showExperimentalWorkspaceUi } = useExperimentalWorkspacesEnabled();
   const queryClient = useQueryClient();
   const [goalOpen, setGoalOpen] = useState(false);
   const [executionWorkspaceAdvancedOpen, setExecutionWorkspaceAdvancedOpen] = useState(false);
@@ -749,9 +747,6 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           )}
         </div>
 
-          {/* PAP-525: workspace UI gated by useExperimentalWorkspacesEnabled() */}
-          {showExperimentalWorkspaceUi && (
-          <>
         <Separator className="my-4" />
 
         <div className="py-1.5 space-y-2">
@@ -990,8 +985,6 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
             )}
           </div>
         </div>
-          </>
-        )}
 
       </div>
 

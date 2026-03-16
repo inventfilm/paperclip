@@ -11,7 +11,6 @@ import { useCompany } from "../context/CompanyContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
-import { useExperimentalWorkspacesEnabled } from "../lib/experimentalSettings";
 import { readIssueDetailBreadcrumb } from "../lib/issueDetailBreadcrumb";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { relativeTime, cn, formatTokens, visibleRunCostUsd } from "../lib/utils";
@@ -216,7 +215,6 @@ function ActorIdentity({ evt, agentMap }: { evt: ActivityEvent; agentMap: Map<st
 export function IssueDetail() {
   const { issueId } = useParams<{ issueId: string }>();
   const { selectedCompanyId } = useCompany();
-  const { enabled: experimentalWorkspacesEnabled } = useExperimentalWorkspacesEnabled();
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
@@ -662,10 +660,7 @@ export function IssueDetail() {
   // Ancestors are returned oldest-first from the server (root at end, immediate parent at start)
   const ancestors = issue.ancestors ?? [];
   const workProducts = issue.workProducts ?? [];
-  const showOutputsTab =
-    experimentalWorkspacesEnabled ||
-    Boolean(issue.currentExecutionWorkspace) ||
-    workProducts.length > 0;
+  const showOutputsTab = Boolean(issue.currentExecutionWorkspace) || workProducts.length > 0;
 
   const handleFilePicked = async (evt: ChangeEvent<HTMLInputElement>) => {
     const files = evt.target.files;
