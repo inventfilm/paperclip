@@ -51,7 +51,11 @@ import {
   Loader2,
   FolderOpen,
   ChevronDown,
-  X
+  X,
+  Plus,
+  Pencil,
+  Trash2,
+  MessageSquare
 } from "lucide-react";
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
@@ -79,6 +83,45 @@ function buildMissionFromQuestionnaire(q1: string, q2: string, q3: string, q4: s
   if (q3.trim()) parts.push(`Our biggest challenge is ${q3.trim().toLowerCase()}.`);
   if (q4.trim()) parts.push(`Success looks like ${q4.trim().toLowerCase()}.`);
   return parts.join(" ");
+}
+
+interface HiringRole {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  editing: boolean;
+}
+
+let roleIdCounter = 0;
+function nextRoleId(): string {
+  return `role-${++roleIdCounter}`;
+}
+
+/**
+ * Parse a markdown hiring plan into structured roles.
+ * Looks for bullet points with bold role names: "- **Role Name**: description"
+ * Falls back to any bold text in bullet points.
+ */
+function parseHiringPlan(markdown: string): HiringRole[] {
+  const roles: HiringRole[] = [];
+  const lines = markdown.split("\n");
+  for (const line of lines) {
+    // Match "- **Role Name**: description" or "- **Role Name** - description"
+    const match = line.match(
+      /^\s*[-*]\s+\*\*([^*]+)\*\*[:\s-]*(.*)$/
+    );
+    if (match) {
+      roles.push({
+        id: nextRoleId(),
+        name: match[1].trim(),
+        description: match[2].trim(),
+        enabled: true,
+        editing: false,
+      });
+    }
+  }
+  return roles;
 }
 
 const DEFAULT_TASK_DESCRIPTION = `Setup yourself as the CEO. Use the ceo persona found here:
@@ -150,6 +193,8 @@ export function OnboardingWizard() {
   // Planning task + hiring plan
   const [planningTaskId, setPlanningTaskId] = useState<string | null>(null);
   const [planContent, setPlanContent] = useState<string | null>(null);
+  const [hiringRoles, setHiringRoles] = useState<HiringRole[]>([]);
+  const [showRawPlan, setShowRawPlan] = useState(false);
 
   // Created entity IDs — pre-populate from existing company when skipping step 1
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(
@@ -284,6 +329,8 @@ export function OnboardingWizard() {
     setQ4("");
     setPlanningTaskId(null);
     setPlanContent(null);
+    setHiringRoles([]);
+    setShowRawPlan(false);
     setAgentName("CEO");
     setAdapterType("claude_local");
     setCwd("");
@@ -551,33 +598,35 @@ export function OnboardingWizard() {
     setLoading(true);
     setError(null);
     try {
-      let issueRef = createdIssueRef;
-      if (!issueRef) {
-        const issue = await issuesApi.create(createdCompanyId, {
-          title: taskTitle.trim(),
-          ...(taskDescription.trim()
-            ? { description: taskDescription.trim() }
-            : {}),
+      // Create a hire task for each approved role
+      const approvedRoles = hiringRoles.filter(
+        (r) => r.enabled && r.name.trim()
+      );
+      for (const role of approvedRoles) {
+        await issuesApi.create(createdCompanyId, {
+          title: `Hire: ${role.name}`,
+          description: role.description
+            ? `Hire a ${role.name} for the company.\n\n${role.description}`
+            : `Hire a ${role.name} for the company.`,
           assigneeAgentId: createdAgentId,
           status: "todo"
         });
-        issueRef = issue.identifier ?? issue.id;
-        setCreatedIssueRef(issueRef);
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.issues.list(createdCompanyId)
-        });
       }
+
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.issues.list(createdCompanyId)
+      });
 
       setSelectedCompanyId(createdCompanyId);
       reset();
       closeOnboarding();
       navigate(
         createdCompanyPrefix
-          ? `/${createdCompanyPrefix}/issues/${issueRef}`
-          : `/issues/${issueRef}`
+          ? `/${createdCompanyPrefix}/issues`
+          : `/issues`
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create task");
+      setError(err instanceof Error ? err.message : "Failed to create hire tasks");
     } finally {
       setLoading(false);
     }
@@ -1394,9 +1443,9 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {/* Step 5: Review hiring plan — placeholder */}
+              {/* Step 5: Review hiring plan */}
               {step === 5 && (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   <div className="flex items-center gap-3 mb-1">
                     <div className="bg-muted/50 p-2">
                       <ListTodo className="h-5 w-5 text-muted-foreground" />
@@ -1404,16 +1453,209 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">Review your hiring plan</h3>
                       <p className="text-xs text-muted-foreground">
-                        Select which roles to hire. You can edit, add, or remove
-                        roles before approving.
+                        Select which roles to hire. Edit, add, or remove roles
+                        before approving.
                       </p>
                     </div>
                   </div>
-                  <div className="rounded-md border border-border p-4 min-h-[200px] flex items-center justify-center">
-                    <p className="text-sm text-muted-foreground">
-                      Hiring plan review component coming soon.
-                    </p>
-                  </div>
+
+                  {hiringRoles.length === 0 ? (
+                    <div className="rounded-md border border-dashed border-border p-4 text-center">
+                      <p className="text-sm text-muted-foreground mb-2">
+                        No roles parsed from the hiring plan yet.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          setHiringRoles([
+                            {
+                              id: nextRoleId(),
+                              name: "",
+                              description: "",
+                              enabled: true,
+                              editing: true,
+                            },
+                          ])
+                        }
+                      >
+                        <Plus className="h-3.5 w-3.5 mr-1" />
+                        Add a role manually
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {hiringRoles.map((role) => (
+                        <div
+                          key={role.id}
+                          className={cn(
+                            "rounded-md border px-3 py-2.5 transition-colors",
+                            role.enabled
+                              ? "border-border bg-background"
+                              : "border-border/50 bg-muted/30 opacity-60"
+                          )}
+                        >
+                          {role.editing ? (
+                            <div className="space-y-2">
+                              <input
+                                className="w-full rounded border border-border bg-transparent px-2 py-1 text-sm font-medium outline-none focus:ring-1 focus:ring-ring"
+                                placeholder="Role name"
+                                value={role.name}
+                                onChange={(e) =>
+                                  setHiringRoles((prev) =>
+                                    prev.map((r) =>
+                                      r.id === role.id
+                                        ? { ...r, name: e.target.value }
+                                        : r
+                                    )
+                                  )
+                                }
+                                autoFocus
+                              />
+                              <textarea
+                                className="w-full rounded border border-border bg-transparent px-2 py-1 text-sm outline-none focus:ring-1 focus:ring-ring resize-none min-h-[40px]"
+                                placeholder="Role description"
+                                value={role.description}
+                                onChange={(e) =>
+                                  setHiringRoles((prev) =>
+                                    prev.map((r) =>
+                                      r.id === role.id
+                                        ? { ...r, description: e.target.value }
+                                        : r
+                                    )
+                                  )
+                                }
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  setHiringRoles((prev) =>
+                                    prev.map((r) =>
+                                      r.id === role.id
+                                        ? { ...r, editing: false }
+                                        : r
+                                    )
+                                  )
+                                }
+                              >
+                                <Check className="h-3 w-3 mr-1" />
+                                Done
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-start gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={role.enabled}
+                                onChange={(e) =>
+                                  setHiringRoles((prev) =>
+                                    prev.map((r) =>
+                                      r.id === role.id
+                                        ? { ...r, enabled: e.target.checked }
+                                        : r
+                                    )
+                                  )
+                                }
+                                className="mt-1 shrink-0"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium">
+                                  {role.name || "Untitled role"}
+                                </p>
+                                {role.description && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {role.description}
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                                  onClick={() =>
+                                    setHiringRoles((prev) =>
+                                      prev.map((r) =>
+                                        r.id === role.id
+                                          ? { ...r, editing: true }
+                                          : r
+                                      )
+                                    )
+                                  }
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                                <button
+                                  className="p-1 text-muted-foreground hover:text-destructive transition-colors"
+                                  onClick={() =>
+                                    setHiringRoles((prev) =>
+                                      prev.filter((r) => r.id !== role.id)
+                                    )
+                                  }
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Add role button */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setHiringRoles((prev) => [
+                        ...prev,
+                        {
+                          id: nextRoleId(),
+                          name: "",
+                          description: "",
+                          enabled: true,
+                          editing: true,
+                        },
+                      ])
+                    }
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add role
+                  </Button>
+
+                  {/* Revise with CEO */}
+                  {planningTaskId && (
+                    <button
+                      className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => setStep(4)}
+                    >
+                      <MessageSquare className="h-3 w-3" />
+                      Revise with CEO
+                    </button>
+                  )}
+
+                  {/* Collapsible raw plan */}
+                  {planContent && (
+                    <div>
+                      <button
+                        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => setShowRawPlan((v) => !v)}
+                      >
+                        <ChevronDown
+                          className={cn(
+                            "h-3 w-3 transition-transform",
+                            showRawPlan ? "rotate-0" : "-rotate-90"
+                          )}
+                        />
+                        View raw plan
+                      </button>
+                      {showRawPlan && (
+                        <div className="mt-2 rounded-md border border-border p-3 text-xs bg-muted/30 max-h-[200px] overflow-y-auto">
+                          <pre className="whitespace-pre-wrap">{planContent}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1427,8 +1669,8 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">Make your first hires</h3>
                       <p className="text-xs text-muted-foreground">
-                        Everything is set up. Approving will create hire tasks
-                        for your CEO to act on.
+                        Your CEO will create these roles for{" "}
+                        <span className="font-medium text-foreground">{companyName}</span>.
                       </p>
                     </div>
                   </div>
@@ -1439,7 +1681,9 @@ export function OnboardingWizard() {
                         <p className="text-sm font-medium truncate">
                           {companyName}
                         </p>
-                        <p className="text-xs text-muted-foreground">Company</p>
+                        <p className="text-xs text-muted-foreground">
+                          {companyGoal}
+                        </p>
                       </div>
                       <Check className="h-4 w-4 text-green-500 shrink-0" />
                     </div>
@@ -1455,18 +1699,27 @@ export function OnboardingWizard() {
                       </div>
                       <Check className="h-4 w-4 text-green-500 shrink-0" />
                     </div>
-                    <div className="flex items-center gap-3 px-3 py-2.5">
-                      <ListTodo className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          Hiring plan approved
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {companyGoal}
-                        </p>
-                      </div>
-                      <Check className="h-4 w-4 text-green-500 shrink-0" />
-                    </div>
+                    {hiringRoles
+                      .filter((r) => r.enabled && r.name.trim())
+                      .map((role) => (
+                        <div
+                          key={role.id}
+                          className="flex items-center gap-3 px-3 py-2.5"
+                        >
+                          <Bot className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">
+                              {role.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {role.description || "New hire"}
+                            </p>
+                          </div>
+                          <span className="text-[10px] text-amber-500 font-medium">
+                            To hire
+                          </span>
+                        </div>
+                      ))}
                   </div>
                 </div>
               )}
@@ -1538,14 +1791,24 @@ export function OnboardingWizard() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => setStep(5)}
+                        onClick={() => {
+                          if (planContent) {
+                            setHiringRoles(parseHiringPlan(planContent));
+                          }
+                          setStep(5);
+                        }}
                       >
                         Skip chat
                       </Button>
                       <Button
                         size="sm"
                         disabled={loading}
-                        onClick={() => setStep(5)}
+                        onClick={() => {
+                          if (planContent) {
+                            setHiringRoles(parseHiringPlan(planContent));
+                          }
+                          setStep(5);
+                        }}
                       >
                         <ArrowRight className="h-3.5 w-3.5 mr-1" />
                         Next
@@ -1555,9 +1818,10 @@ export function OnboardingWizard() {
                   {step === 5 && (
                     <Button
                       size="sm"
+                      disabled={!hiringRoles.some((r) => r.enabled && r.name.trim())}
                       onClick={() => setStep(6)}
                     >
-                      <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                      <Check className="h-3.5 w-3.5 mr-1" />
                       Approve hiring plan
                     </Button>
                   )}
