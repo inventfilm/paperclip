@@ -50,6 +50,21 @@ export function createDb(url: string) {
   return drizzlePg(sql, { schema });
 }
 
+export async function getPostgresDataDirectory(url: string): Promise<string | null> {
+  const sql = createUtilitySql(url);
+  try {
+    const rows = await sql<{ data_directory: string | null }[]>`
+      SELECT current_setting('data_directory', true) AS data_directory
+    `;
+    const actual = rows[0]?.data_directory;
+    return typeof actual === "string" && actual.length > 0 ? actual : null;
+  } catch {
+    return null;
+  } finally {
+    await sql.end();
+  }
+}
+
 async function listMigrationFiles(): Promise<string[]> {
   const entries = await readdir(MIGRATIONS_FOLDER, { withFileTypes: true });
   return entries
