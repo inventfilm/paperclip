@@ -521,6 +521,15 @@ export function agentService(db: Db) {
       return updated ? normalizeAgentRow(updated) : null;
     },
 
+    hasDirectReports: async (companyId: string, agentId: string): Promise<boolean> => {
+      const rows = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.companyId, companyId), eq(agents.reportsTo, agentId)))
+        .limit(1);
+      return rows.length > 0;
+    },
+
     listConfigRevisions: async (id: string) =>
       db
         .select()
