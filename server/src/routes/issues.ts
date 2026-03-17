@@ -10,6 +10,7 @@ import {
   linkIssueApprovalSchema,
   updateIssueSchema,
 } from "@paperclipai/shared";
+import type { RecurrenceConfig } from "@paperclipai/shared";
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
 import {
@@ -49,6 +50,18 @@ export function issueRoutes(db: Db, storage: StorageService) {
     storage: multer.memoryStorage(),
     limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
   });
+
+  function extractRecurrenceFields(body: Record<string, unknown>) {
+    const { recurrence, ...rest } = body;
+    if (!recurrence) return rest;
+    const config = recurrence as RecurrenceConfig;
+    return {
+      ...rest,
+      recurrenceCronExpr: config.cronExpr ?? null,
+      recurrenceText: config.text ?? null,
+      recurrenceEnabled: config.enabled ?? false,
+    };
+  }
 
   function withContentPath<T extends { id: string }>(attachment: T) {
     return {
@@ -421,8 +434,9 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
 
     const actor = getActorInfo(req);
+    const issueFields = extractRecurrenceFields(req.body);
     const issue = await svc.create(companyId, {
-      ...req.body,
+      ...issueFields,
       createdByAgentId: actor.agentId,
       createdByUserId: actor.actorType === "user" ? actor.actorId : null,
     });
@@ -484,9 +498,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
     if (!(await assertAgentRunCheckoutOwnership(req, res, existing))) return;
 
-    const { comment: commentBody, hiddenAt: hiddenAtRaw, ...updateFields } = req.body;
+    const { comment: commentBody, hiddenAt: hiddenAtRaw, ...rawUpdateFields } = req.body;
+    const updateFields = extractRecurrenceFields(rawUpdateFields);
     if (hiddenAtRaw !== undefined) {
-      updateFields.hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
+      (updateFields as any).hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
     }
     let issue;
     try {

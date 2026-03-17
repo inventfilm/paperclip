@@ -73,6 +73,11 @@ export interface Issue {
   requestDepth: number;
   billingCode: string | null;
   assigneeAdapterOverrides: IssueAssigneeAdapterOverrides | null;
+  recurrenceCronExpr: string | null;
+  recurrenceText: string | null;
+  recurrenceEnabled: boolean;
+  recurrenceLastSpawnedAt: Date | null;
+  recurrenceParentId: string | null;
   startedAt: Date | null;
   completedAt: Date | null;
   cancelledAt: Date | null;

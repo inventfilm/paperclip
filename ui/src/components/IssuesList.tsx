@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
-import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search } from "lucide-react";
+import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search, Repeat } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import type { Issue } from "@paperclipai/shared";
 
@@ -629,6 +629,12 @@ export function IssuesList({
                             <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
                           </span>
                           <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hidden sm:inline">Live</span>
+                        </span>
+                      )}
+                      {issue.recurrenceEnabled && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20">
+                          <Repeat className="h-2.5 w-2.5 text-purple-500" />
+                          <span className="text-[11px] font-medium text-purple-600 dark:text-purple-400 hidden sm:inline">Recurring</span>
                         </span>
                       )}
                       <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>

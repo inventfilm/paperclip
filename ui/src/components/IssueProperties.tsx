@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "@/lib/router";
 import type { Issue } from "@paperclipai/shared";
+import { parseScheduleToCron, describeCron } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
@@ -17,7 +18,7 @@ import { formatDate, cn, projectUrl } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2 } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, Repeat } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 
 interface IssuePropertiesProps {
@@ -109,6 +110,8 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const [labelSearch, setLabelSearch] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState("#6366f1");
+  const [recurrenceOpen, setRecurrenceOpen] = useState(false);
+  const [scheduleInput, setScheduleInput] = useState(issue.recurrenceText ?? "");
 
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -503,6 +506,105 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
         >
           {projectContent}
         </PropertyPicker>
+
+        <PropertyPicker
+          inline={inline}
+          label="Recurrence"
+          open={recurrenceOpen}
+          onOpenChange={setRecurrenceOpen}
+          triggerContent={
+            issue.recurrenceEnabled && issue.recurrenceCronExpr ? (
+              <>
+                <Repeat className="h-3.5 w-3.5 text-purple-500" />
+                <span className="text-sm text-purple-600 dark:text-purple-400">
+                  {issue.recurrenceText || describeCron(issue.recurrenceCronExpr)}
+                </span>
+              </>
+            ) : (
+              <>
+                <Repeat className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">No recurrence</span>
+              </>
+            )
+          }
+          popoverClassName="w-72"
+        >
+          <div className="space-y-3 p-2">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Schedule</label>
+              <input
+                className="w-full px-2 py-1.5 text-xs bg-transparent outline-none rounded border border-border placeholder:text-muted-foreground/50"
+                placeholder="e.g. every weekday at 9am"
+                value={scheduleInput}
+                onChange={(e) => setScheduleInput(e.target.value)}
+                autoFocus={!inline}
+              />
+              {scheduleInput.trim() && (() => {
+                const cron = parseScheduleToCron(scheduleInput.trim());
+                return cron ? (
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    Cron: <code className="font-mono text-foreground">{cron}</code>
+                    {" \u2014 "}{describeCron(cron)}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-destructive mt-1">
+                    Could not parse schedule
+                  </p>
+                );
+              })()}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="flex-1 px-2 py-1.5 text-xs rounded border border-border hover:bg-accent/50 disabled:opacity-50"
+                disabled={!scheduleInput.trim() || !parseScheduleToCron(scheduleInput.trim())}
+                onClick={() => {
+                  const cron = parseScheduleToCron(scheduleInput.trim());
+                  if (!cron) return;
+                  onUpdate({
+                    recurrence: {
+                      cronExpr: cron,
+                      text: describeCron(cron),
+                      enabled: true,
+                    },
+                  });
+                  setRecurrenceOpen(false);
+                }}
+              >
+                {issue.recurrenceEnabled ? "Update schedule" : "Enable recurrence"}
+              </button>
+              {issue.recurrenceEnabled && (
+                <button
+                  className="px-2 py-1.5 text-xs rounded border border-border hover:bg-destructive/10 text-destructive"
+                  onClick={() => {
+                    onUpdate({
+                      recurrence: {
+                        cronExpr: null,
+                        text: null,
+                        enabled: false,
+                      },
+                    });
+                    setScheduleInput("");
+                    setRecurrenceOpen(false);
+                  }}
+                >
+                  Disable
+                </button>
+              )}
+            </div>
+          </div>
+        </PropertyPicker>
+
+        {issue.recurrenceParentId && (
+          <PropertyRow label="Template">
+            <Link
+              to={`/issues/${issue.recurrenceParentId}`}
+              className="text-sm text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1"
+            >
+              <Repeat className="h-3 w-3" />
+              View recurring template
+            </Link>
+          </PropertyRow>
+        )}
 
         {issue.parentId && (
           <PropertyRow label="Parent">

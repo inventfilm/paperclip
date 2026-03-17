@@ -8,6 +8,18 @@ export const issueAssigneeAdapterOverridesSchema = z
   })
   .strict();
 
+export const recurrenceConfigSchema = z
+  .object({
+    cronExpr: z.string().min(1).optional().nullable(),
+    text: z.string().min(1).optional().nullable(),
+    enabled: z.boolean().optional(),
+  })
+  .refine((data) => !data.enabled || data.cronExpr, {
+    message: "cronExpr is required when recurrence is enabled",
+  });
+
+export type RecurrenceConfig = z.infer<typeof recurrenceConfigSchema>;
+
 export const createIssueSchema = z.object({
   projectId: z.string().uuid().optional().nullable(),
   goalId: z.string().uuid().optional().nullable(),
@@ -22,6 +34,7 @@ export const createIssueSchema = z.object({
   billingCode: z.string().optional().nullable(),
   assigneeAdapterOverrides: issueAssigneeAdapterOverridesSchema.optional().nullable(),
   labelIds: z.array(z.string().uuid()).optional(),
+  recurrence: recurrenceConfigSchema.optional().nullable(),
 });
 
 export type CreateIssue = z.infer<typeof createIssueSchema>;

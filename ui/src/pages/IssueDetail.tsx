@@ -40,6 +40,7 @@ import {
   MessageSquare,
   MoreHorizontal,
   Paperclip,
+  Repeat,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
@@ -562,6 +563,13 @@ export function IssueDetail() {
                 <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
               </span>
               Live
+            </span>
+          )}
+
+          {issue.recurrenceEnabled && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-purple-500/10 border border-purple-500/30 px-2 py-0.5 text-[10px] font-medium text-purple-600 dark:text-purple-400 shrink-0">
+              <Repeat className="h-3 w-3" />
+              Recurring
             </span>
           )}
 

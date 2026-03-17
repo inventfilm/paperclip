@@ -25,7 +25,7 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
-import { heartbeatService } from "./services/index.js";
+import { heartbeatService, recurringIssueService } from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -522,8 +522,23 @@ export async function startServer(): Promise<StartedServer> {
           logger.error({ err }, "periodic reap of orphaned heartbeat runs failed");
         });
     }, config.heartbeatSchedulerIntervalMs);
+
+    // Recurring issue spawner — piggybacks on heartbeat scheduler interval
+    const recurring = recurringIssueService(db as any);
+    setInterval(() => {
+      void recurring
+        .tickRecurringIssues(new Date())
+        .then((result) => {
+          if (result.spawned > 0) {
+            logger.info({ ...result }, "recurring issues tick spawned tasks");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "recurring issues tick failed");
+        });
+    }, config.heartbeatSchedulerIntervalMs);
   }
-  
+
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
     let backupInFlight = false;

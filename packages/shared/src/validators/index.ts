@@ -56,6 +56,7 @@ export {
 } from "./project.js";
 
 export {
+  recurrenceConfigSchema,
   createIssueSchema,
   createIssueLabelSchema,
   updateIssueSchema,
@@ -63,6 +64,7 @@ export {
   addIssueCommentSchema,
   linkIssueApprovalSchema,
   createIssueAttachmentMetadataSchema,
+  type RecurrenceConfig,
   type CreateIssue,
   type CreateIssueLabel,
   type UpdateIssue,

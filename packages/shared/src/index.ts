@@ -156,6 +156,7 @@ export {
   type UpdateProject,
   type CreateProjectWorkspace,
   type UpdateProjectWorkspace,
+  recurrenceConfigSchema,
   createIssueSchema,
   createIssueLabelSchema,
   updateIssueSchema,
@@ -163,6 +164,7 @@ export {
   addIssueCommentSchema,
   linkIssueApprovalSchema,
   createIssueAttachmentMetadataSchema,
+  type RecurrenceConfig,
   type CreateIssue,
   type CreateIssueLabel,
   type UpdateIssue,
@@ -230,6 +232,14 @@ export {
   type CompanyPortabilityPreview,
   type CompanyPortabilityImport,
 } from "./validators/index.js";
+
+export {
+  parseScheduleToCron,
+  validateCronExpression,
+  describeCron,
+  isCronDue,
+  formatRecurrenceDateSuffix,
+} from "./schedule-parser.js";
 
 export { API_PREFIX, API } from "./api.js";
 export { normalizeAgentUrlKey, deriveAgentUrlKey, isUuidLike } from "./agent-url-key.js";
