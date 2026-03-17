@@ -592,7 +592,14 @@ export function IssueDetail() {
 
   const copyIssueToClipboard = async () => {
     if (!issue) return;
-    const md = `# ${issue.identifier}: ${issue.title}\n\n${issue.description ?? ""}`;
+    const decodeEntities = (text: string) => {
+      const el = document.createElement("textarea");
+      el.innerHTML = text;
+      return el.value;
+    };
+    const title = decodeEntities(issue.title);
+    const body = decodeEntities(issue.description ?? "");
+    const md = `# ${issue.identifier}: ${title}\n\n${body}`.trimEnd();
     await navigator.clipboard.writeText(md);
     setCopied(true);
     pushToast({ title: "Copied to clipboard", tone: "success" });
