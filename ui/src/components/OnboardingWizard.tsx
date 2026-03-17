@@ -53,7 +53,7 @@ import {
   X
 } from "lucide-react";
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
 type AdapterType =
   | "claude_local"
   | "codex_local"
@@ -65,7 +65,22 @@ type AdapterType =
   | "http"
   | "openclaw_gateway";
 
-const DEFAULT_TASK_DESCRIPTION = `Setup yourself as the CEO. Use the ceo persona found here: 
+const MISSION_PROMPT_CHIPS = [
+  "Build a SaaS product",
+  "Scale a content business",
+  "Launch a marketplace"
+];
+
+function buildMissionFromQuestionnaire(q1: string, q2: string, q3: string, q4: string): string {
+  const parts: string[] = [];
+  if (q1.trim()) parts.push(q1.trim());
+  if (q2.trim()) parts.push(`We serve ${q2.trim().toLowerCase()}.`);
+  if (q3.trim()) parts.push(`Our biggest challenge is ${q3.trim().toLowerCase()}.`);
+  if (q4.trim()) parts.push(`Success looks like ${q4.trim().toLowerCase()}.`);
+  return parts.join(" ");
+}
+
+const DEFAULT_TASK_DESCRIPTION = `Setup yourself as the CEO. Use the ceo persona found here:
 
 https://github.com/paperclipai/companies/blob/main/default/ceo/AGENTS.md
 
@@ -91,6 +106,13 @@ export function OnboardingWizard() {
   // Step 1
   const [companyName, setCompanyName] = useState("");
   const [companyGoal, setCompanyGoal] = useState("");
+  const [missionPath, setMissionPath] = useState<"direct" | "questionnaire" | null>(null);
+  const [missionConfirmed, setMissionConfirmed] = useState(false);
+  // Questionnaire answers
+  const [q1, setQ1] = useState(""); // What do you do?
+  const [q2, setQ2] = useState(""); // Who do you serve?
+  const [q3, setQ3] = useState(""); // Biggest bottleneck?
+  const [q4, setQ4] = useState(""); // What would success look like?
 
   // Step 2
   const [agentName, setAgentName] = useState("CEO");
@@ -158,8 +180,8 @@ export function OnboardingWizard() {
 
   // Resize textarea when step 3 is shown or description changes
   useEffect(() => {
-    if (step === 3) autoResizeTextarea();
-  }, [step, taskDescription, autoResizeTextarea]);
+    // Auto-resize removed — task description textarea no longer used in onboarding
+  }, [step, autoResizeTextarea]);
 
   const {
     data: adapterModels,
@@ -171,7 +193,7 @@ export function OnboardingWizard() {
       ? queryKeys.agents.adapterModels(createdCompanyId, adapterType)
       : ["agents", "none", "adapter-models", adapterType],
     queryFn: () => agentsApi.adapterModels(createdCompanyId!, adapterType),
-    enabled: Boolean(createdCompanyId) && onboardingOpen && step === 2
+    enabled: Boolean(createdCompanyId) && onboardingOpen && step === 3
   });
   const isLocalAdapter =
     adapterType === "claude_local" ||
@@ -192,7 +214,7 @@ export function OnboardingWizard() {
       : "claude");
 
   useEffect(() => {
-    if (step !== 2) return;
+    if (step !== 3) return;
     setAdapterEnvResult(null);
     setAdapterEnvError(null);
   }, [step, adapterType, cwd, model, command, args, url]);
@@ -249,6 +271,12 @@ export function OnboardingWizard() {
     setError(null);
     setCompanyName("");
     setCompanyGoal("");
+    setMissionPath(null);
+    setMissionConfirmed(false);
+    setQ1("");
+    setQ2("");
+    setQ3("");
+    setQ4("");
     setAgentName("CEO");
     setAdapterType("claude_local");
     setCwd("");
@@ -351,20 +379,18 @@ export function OnboardingWizard() {
       setSelectedCompanyId(company.id);
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
 
-      if (companyGoal.trim()) {
-        const parsedGoal = parseOnboardingGoalInput(companyGoal);
-        await goalsApi.create(company.id, {
-          title: parsedGoal.title,
-          ...(parsedGoal.description
-            ? { description: parsedGoal.description }
-            : {}),
-          level: "company",
-          status: "active"
-        });
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.goals.list(company.id)
-        });
-      }
+      const parsedGoal = parseOnboardingGoalInput(companyGoal);
+      await goalsApi.create(company.id, {
+        title: parsedGoal.title,
+        ...(parsedGoal.description
+          ? { description: parsedGoal.description }
+          : {}),
+        level: "company",
+        status: "active"
+      });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.goals.list(company.id)
+      });
 
       setStep(2);
     } catch (err) {
@@ -436,7 +462,7 @@ export function OnboardingWizard() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.agents.list(createdCompanyId)
       });
-      setStep(3);
+      setStep(4);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create agent");
     } finally {
@@ -539,10 +565,12 @@ export function OnboardingWizard() {
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      if (step === 1 && companyName.trim()) handleStep1Next();
-      else if (step === 2 && agentName.trim()) handleStep2Next();
-      else if (step === 3 && taskTitle.trim()) handleStep3Next();
-      else if (step === 4) handleLaunch();
+      if (step === 1 && companyName.trim() && companyGoal.trim()) handleStep1Next();
+      else if (step === 2) setStep(3);
+      else if (step === 3 && agentName.trim()) handleStep2Next();
+      else if (step === 4) setStep(5);
+      else if (step === 5) setStep(6);
+      else if (step === 6) handleLaunch();
     }
   }
 
@@ -582,10 +610,12 @@ export function OnboardingWizard() {
               <div className="flex items-center gap-0 mb-8 border-b border-border">
                 {(
                   [
-                    { step: 1 as Step, label: "Company", icon: Building2 },
-                    { step: 2 as Step, label: "Agent", icon: Bot },
-                    { step: 3 as Step, label: "Task", icon: ListTodo },
-                    { step: 4 as Step, label: "Launch", icon: Rocket }
+                    { step: 1 as Step, label: "Mission", icon: Building2 },
+                    { step: 2 as Step, label: "Launch", icon: Rocket },
+                    { step: 3 as Step, label: "CEO", icon: Bot },
+                    { step: 4 as Step, label: "Chat", icon: Sparkles },
+                    { step: 5 as Step, label: "Plan", icon: ListTodo },
+                    { step: 6 as Step, label: "Hire", icon: Bot }
                   ] as const
                 ).map(({ step: s, label, icon: Icon }) => (
                   <button
@@ -593,7 +623,7 @@ export function OnboardingWizard() {
                     type="button"
                     onClick={() => setStep(s)}
                     className={cn(
-                      "flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 -mb-px transition-colors cursor-pointer",
+                      "flex items-center gap-1.5 px-2 py-2 text-xs font-medium border-b-2 -mb-px transition-colors cursor-pointer",
                       s === step
                         ? "border-foreground text-foreground"
                         : "border-transparent text-muted-foreground hover:text-foreground/70 hover:border-border"
@@ -613,9 +643,10 @@ export function OnboardingWizard() {
                       <Building2 className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <h3 className="font-medium">Name your company</h3>
+                      <h3 className="font-medium">Define your mission</h3>
                       <p className="text-xs text-muted-foreground">
-                        This is the organization your agents will work for.
+                        Your mission drives everything — your CEO, your hires,
+                        and the work your company will do.
                       </p>
                     </div>
                   </div>
@@ -638,37 +669,219 @@ export function OnboardingWizard() {
                       autoFocus
                     />
                   </div>
-                  <div className="group">
-                    <label
-                      className={cn(
-                        "text-xs mb-1 block transition-colors",
-                        companyGoal.trim()
-                          ? "text-foreground"
-                          : "text-muted-foreground group-focus-within:text-foreground"
+
+                  {/* Mission path selector */}
+                  {!missionPath && (
+                    <div className="space-y-3">
+                      <label className="text-xs text-foreground block">
+                        How would you like to define your mission?
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          className="flex flex-col items-center gap-1.5 rounded-md border border-border p-3 text-xs hover:bg-accent/50 transition-colors"
+                          onClick={() => setMissionPath("direct")}
+                        >
+                          <Sparkles className="h-4 w-4" />
+                          <span className="font-medium">I know my mission</span>
+                          <span className="text-muted-foreground text-[10px]">
+                            Type it directly
+                          </span>
+                        </button>
+                        <button
+                          className="flex flex-col items-center gap-1.5 rounded-md border border-border p-3 text-xs hover:bg-accent/50 transition-colors"
+                          onClick={() => setMissionPath("questionnaire")}
+                        >
+                          <ListTodo className="h-4 w-4" />
+                          <span className="font-medium">Help me figure it out</span>
+                          <span className="text-muted-foreground text-[10px]">
+                            Answer a few questions
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Direct mission input */}
+                  {missionPath === "direct" && (
+                    <div className="space-y-3">
+                      <div className="group">
+                        <label
+                          className={cn(
+                            "text-xs mb-1 block transition-colors",
+                            companyGoal.trim()
+                              ? "text-foreground"
+                              : "text-muted-foreground group-focus-within:text-foreground"
+                          )}
+                        >
+                          Mission
+                        </label>
+                        <textarea
+                          className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-[60px]"
+                          placeholder="What is this company trying to achieve?"
+                          value={companyGoal}
+                          onChange={(e) => setCompanyGoal(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                      {/* Prompt chips for inspiration */}
+                      <div className="flex flex-wrap gap-1.5">
+                        {MISSION_PROMPT_CHIPS.map((chip) => (
+                          <button
+                            key={chip}
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                              companyGoal === chip
+                                ? "border-foreground bg-accent text-foreground"
+                                : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/50"
+                            )}
+                            onClick={() => setCompanyGoal(chip)}
+                          >
+                            {chip}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => { setMissionPath(null); setCompanyGoal(""); }}
+                      >
+                        ← Choose a different path
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Questionnaire path */}
+                  {missionPath === "questionnaire" && !missionConfirmed && (
+                    <div className="space-y-3">
+                      <div className="group">
+                        <label className="text-xs text-muted-foreground mb-1 block">
+                          What does your company do?
+                        </label>
+                        <input
+                          className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                          placeholder="e.g. We create educational YouTube content about AI"
+                          value={q1}
+                          onChange={(e) => setQ1(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                      <div className="group">
+                        <label className="text-xs text-muted-foreground mb-1 block">
+                          Who do you serve?
+                        </label>
+                        <input
+                          className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                          placeholder="e.g. Non-technical professionals curious about AI tools"
+                          value={q2}
+                          onChange={(e) => setQ2(e.target.value)}
+                        />
+                      </div>
+                      <div className="group">
+                        <label className="text-xs text-muted-foreground mb-1 block">
+                          What's your biggest bottleneck right now?
+                        </label>
+                        <input
+                          className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                          placeholder="e.g. Can't produce content fast enough across multiple channels"
+                          value={q3}
+                          onChange={(e) => setQ3(e.target.value)}
+                        />
+                      </div>
+                      <div className="group">
+                        <label className="text-xs text-muted-foreground mb-1 block">
+                          What would success look like in 6 months?
+                        </label>
+                        <input
+                          className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
+                          placeholder="e.g. Publishing daily content across 4 platforms with a team of AI agents"
+                          value={q4}
+                          onChange={(e) => setQ4(e.target.value)}
+                        />
+                      </div>
+                      {q1.trim() && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setCompanyGoal(buildMissionFromQuestionnaire(q1, q2, q3, q4));
+                            setMissionConfirmed(true);
+                          }}
+                        >
+                          Generate my mission
+                        </Button>
                       )}
-                    >
-                      Mission / goal (optional)
-                    </label>
-                    <textarea
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-[60px]"
-                      placeholder="What is this company trying to achieve?"
-                      value={companyGoal}
-                      onChange={(e) => setCompanyGoal(e.target.value)}
-                    />
-                  </div>
+                      <button
+                        className="text-[11px] text-muted-foreground hover:text-foreground transition-colors block"
+                        onClick={() => { setMissionPath(null); setQ1(""); setQ2(""); setQ3(""); setQ4(""); }}
+                      >
+                        ← Choose a different path
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Questionnaire result — editable mission */}
+                  {missionPath === "questionnaire" && missionConfirmed && (
+                    <div className="space-y-3">
+                      <div className="group">
+                        <label className="text-xs text-foreground mb-1 block">
+                          Here's your draft mission — edit it however you like:
+                        </label>
+                        <textarea
+                          className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-[80px]"
+                          value={companyGoal}
+                          onChange={(e) => setCompanyGoal(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                      <button
+                        className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => { setMissionConfirmed(false); setCompanyGoal(""); }}
+                      >
+                        ← Back to questions
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Confirm mission note */}
+                  {companyGoal.trim() && companyName.trim() && (
+                    <p className="text-[11px] text-muted-foreground italic">
+                      You can always change your mission later in settings.
+                    </p>
+                  )}
                 </div>
               )}
 
+              {/* Step 2: Launch celebration */}
               {step === 2 && (
+                <div className="space-y-6 text-center py-4">
+                  <div className="text-5xl">🚀</div>
+                  <div>
+                    <h3 className="text-xl font-semibold">{companyName} is live!</h3>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Your company has been created with the mission:
+                    </p>
+                    <p className="text-sm font-medium mt-1 italic">
+                      "{companyGoal}"
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Next, let's bring your CEO to life.
+                  </p>
+                </div>
+              )}
+
+              {/* Step 3: Create your CEO (was step 2) */}
+              {step === 3 && (
                 <div className="space-y-5">
                   <div className="flex items-center gap-3 mb-1">
                     <div className="bg-muted/50 p-2">
                       <Bot className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <h3 className="font-medium">Create your first agent</h3>
+                      <h3 className="font-medium">Bring your CEO to life</h3>
                       <p className="text-xs text-muted-foreground">
-                        Choose how this agent will run tasks.
+                        Give your CEO a heartbeat. They'll lead{" "}
+                        <span className="font-medium text-foreground">{companyName}</span>{" "}
+                        toward its mission.
                       </p>
                     </div>
                   </div>
@@ -1129,58 +1342,64 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {step === 3 && (
+              {/* Step 4: Chat with CEO — placeholder for OnboardingChat component */}
+              {step === 4 && (
+                <div className="space-y-5">
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="bg-muted/50 p-2">
+                      <Sparkles className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium">Chat with your CEO</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Work with your CEO to build a hiring plan for{" "}
+                        <span className="font-medium text-foreground">{companyName}</span>.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-border p-4 min-h-[200px] flex items-center justify-center">
+                    <p className="text-sm text-muted-foreground">
+                      Chat component coming soon — skip to review a sample hiring plan.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 5: Review hiring plan — placeholder */}
+              {step === 5 && (
                 <div className="space-y-5">
                   <div className="flex items-center gap-3 mb-1">
                     <div className="bg-muted/50 p-2">
                       <ListTodo className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <h3 className="font-medium">Give it something to do</h3>
+                      <h3 className="font-medium">Review your hiring plan</h3>
                       <p className="text-xs text-muted-foreground">
-                        Give your agent a small task to start with — a bug fix,
-                        a research question, writing a script.
+                        Select which roles to hire. You can edit, add, or remove
+                        roles before approving.
                       </p>
                     </div>
                   </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">
-                      Task title
-                    </label>
-                    <input
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                      placeholder="e.g. Research competitor pricing"
-                      value={taskTitle}
-                      onChange={(e) => setTaskTitle(e.target.value)}
-                      autoFocus
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">
-                      Description (optional)
-                    </label>
-                    <textarea
-                      ref={textareaRef}
-                      className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50 resize-none min-h-[120px] max-h-[300px] overflow-y-auto"
-                      placeholder="Add more detail about what the agent should do..."
-                      value={taskDescription}
-                      onChange={(e) => setTaskDescription(e.target.value)}
-                    />
+                  <div className="rounded-md border border-border p-4 min-h-[200px] flex items-center justify-center">
+                    <p className="text-sm text-muted-foreground">
+                      Hiring plan review component coming soon.
+                    </p>
                   </div>
                 </div>
               )}
 
-              {step === 4 && (
+              {/* Step 6: Make your first hires */}
+              {step === 6 && (
                 <div className="space-y-5">
                   <div className="flex items-center gap-3 mb-1">
                     <div className="bg-muted/50 p-2">
                       <Rocket className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <h3 className="font-medium">Ready to launch</h3>
+                      <h3 className="font-medium">Make your first hires</h3>
                       <p className="text-xs text-muted-foreground">
-                        Everything is set up. Launching now will create the
-                        starter task, wake the agent, and open the issue.
+                        Everything is set up. Approving will create hire tasks
+                        for your CEO to act on.
                       </p>
                     </div>
                   </div>
@@ -1202,7 +1421,7 @@ export function OnboardingWizard() {
                           {agentName}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {getUIAdapter(adapterType).label}
+                          CEO · {getUIAdapter(adapterType).label}
                         </p>
                       </div>
                       <Check className="h-4 w-4 text-green-500 shrink-0" />
@@ -1211,9 +1430,11 @@ export function OnboardingWizard() {
                       <ListTodo className="h-4 w-4 text-muted-foreground shrink-0" />
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium truncate">
-                          {taskTitle}
+                          Hiring plan approved
                         </p>
-                        <p className="text-xs text-muted-foreground">Task</p>
+                        <p className="text-xs text-muted-foreground">
+                          {companyGoal}
+                        </p>
                       </div>
                       <Check className="h-4 w-4 text-green-500 shrink-0" />
                     </div>
@@ -1247,7 +1468,7 @@ export function OnboardingWizard() {
                   {step === 1 && (
                     <Button
                       size="sm"
-                      disabled={!companyName.trim() || loading}
+                      disabled={!companyName.trim() || !companyGoal.trim() || loading}
                       onClick={handleStep1Next}
                     >
                       {loading ? (
@@ -1255,10 +1476,19 @@ export function OnboardingWizard() {
                       ) : (
                         <ArrowRight className="h-3.5 w-3.5 mr-1" />
                       )}
-                      {loading ? "Creating..." : "Next"}
+                      {loading ? "Creating..." : "Confirm mission"}
                     </Button>
                   )}
                   {step === 2 && (
+                    <Button
+                      size="sm"
+                      onClick={() => setStep(3)}
+                    >
+                      <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                      Hire your CEO
+                    </Button>
+                  )}
+                  {step === 3 && (
                     <Button
                       size="sm"
                       disabled={
@@ -1271,31 +1501,45 @@ export function OnboardingWizard() {
                       ) : (
                         <ArrowRight className="h-3.5 w-3.5 mr-1" />
                       )}
-                      {loading ? "Creating..." : "Next"}
-                    </Button>
-                  )}
-                  {step === 3 && (
-                    <Button
-                      size="sm"
-                      disabled={!taskTitle.trim() || loading}
-                      onClick={handleStep3Next}
-                    >
-                      {loading ? (
-                        <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
-                      ) : (
-                        <ArrowRight className="h-3.5 w-3.5 mr-1" />
-                      )}
-                      {loading ? "Creating..." : "Next"}
+                      {loading ? "Bringing to life..." : "Give it a heartbeat"}
                     </Button>
                   )}
                   {step === 4 && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setStep(5)}
+                      >
+                        Skip chat
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={loading}
+                        onClick={() => setStep(5)}
+                      >
+                        <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                        Next
+                      </Button>
+                    </>
+                  )}
+                  {step === 5 && (
+                    <Button
+                      size="sm"
+                      onClick={() => setStep(6)}
+                    >
+                      <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                      Approve hiring plan
+                    </Button>
+                  )}
+                  {step === 6 && (
                     <Button size="sm" disabled={loading} onClick={handleLaunch}>
                       {loading ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
                       ) : (
-                        <ArrowRight className="h-3.5 w-3.5 mr-1" />
+                        <Rocket className="h-3.5 w-3.5 mr-1" />
                       )}
-                      {loading ? "Creating..." : "Create & Open Issue"}
+                      {loading ? "Creating tasks..." : "Make your first hires"}
                     </Button>
                   )}
                 </div>
