@@ -30,6 +30,7 @@ import {
 } from "@paperclipai/adapter-codex-local";
 import { DEFAULT_CURSOR_LOCAL_MODEL } from "@paperclipai/adapter-cursor-local";
 import { DEFAULT_GEMINI_LOCAL_MODEL } from "@paperclipai/adapter-gemini-local";
+import { OnboardingChat } from "./OnboardingChat";
 import { AsciiArtAnimation } from "./AsciiArtAnimation";
 import { ChoosePathButton } from "./PathInstructionsModal";
 import { HintIcon } from "./agent-config-primitives";
@@ -145,6 +146,10 @@ export function OnboardingWizard() {
     el.style.height = "auto";
     el.style.height = el.scrollHeight + "px";
   }, []);
+
+  // Planning task + hiring plan
+  const [planningTaskId, setPlanningTaskId] = useState<string | null>(null);
+  const [planContent, setPlanContent] = useState<string | null>(null);
 
   // Created entity IDs — pre-populate from existing company when skipping step 1
   const [createdCompanyId, setCreatedCompanyId] = useState<string | null>(
@@ -277,6 +282,8 @@ export function OnboardingWizard() {
     setQ2("");
     setQ3("");
     setQ4("");
+    setPlanningTaskId(null);
+    setPlanContent(null);
     setAgentName("CEO");
     setAdapterType("claude_local");
     setCwd("");
@@ -462,6 +469,20 @@ export function OnboardingWizard() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.agents.list(createdCompanyId)
       });
+
+      // Create the planning task and kick off the conversation
+      const planningIssue = await issuesApi.create(createdCompanyId, {
+        title: "Build hiring plan with CEO",
+        description: `Company mission: ${companyGoal}\n\nCollaborate with the board to create a hiring plan for the company.`,
+        assigneeAgentId: agent.id,
+        status: "in_progress"
+      });
+      setPlanningTaskId(planningIssue.id);
+      await issuesApi.addComment(
+        planningIssue.id,
+        `Our company mission is: ${companyGoal}\n\nLet's build a hiring plan together. What roles do you think we need to accomplish this mission?`
+      );
+
       setStep(4);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create agent");
@@ -1342,9 +1363,9 @@ export function OnboardingWizard() {
                 </div>
               )}
 
-              {/* Step 4: Chat with CEO — placeholder for OnboardingChat component */}
+              {/* Step 4: Chat with CEO */}
               {step === 4 && (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   <div className="flex items-center gap-3 mb-1">
                     <div className="bg-muted/50 p-2">
                       <Sparkles className="h-5 w-5 text-muted-foreground" />
@@ -1357,11 +1378,19 @@ export function OnboardingWizard() {
                       </p>
                     </div>
                   </div>
-                  <div className="rounded-md border border-border p-4 min-h-[200px] flex items-center justify-center">
-                    <p className="text-sm text-muted-foreground">
-                      Chat component coming soon — skip to review a sample hiring plan.
-                    </p>
-                  </div>
+                  {planningTaskId ? (
+                    <OnboardingChat
+                      taskId={planningTaskId}
+                      agentName={agentName}
+                      onPlanDetected={(md) => setPlanContent(md)}
+                    />
+                  ) : (
+                    <div className="rounded-md border border-border p-4 min-h-[200px] flex items-center justify-center">
+                      <p className="text-sm text-muted-foreground">
+                        No planning task found. Go back and create your CEO first.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
