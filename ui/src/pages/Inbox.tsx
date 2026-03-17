@@ -259,12 +259,14 @@ function ApprovalInboxRow({
     ACTIONABLE_APPROVAL_STATUSES.has(approval.status);
 
   return (
-    <div className="border-b border-border px-2 py-2.5 last:border-b-0 sm:px-1 sm:py-2">
-      <div className="flex items-start gap-3 sm:items-center">
+    <div className="border-b border-border px-2 py-2.5 last:border-b-0 sm:px-1 sm:pr-3 sm:py-2">
+      <div className="flex items-start gap-2 sm:items-center">
         <Link
           to={`/approvals/${approval.id}`}
-          className="flex min-w-0 flex-1 items-start gap-3 no-underline text-inherit transition-colors hover:bg-accent/50"
+          className="flex min-w-0 flex-1 items-start gap-2 no-underline text-inherit transition-colors hover:bg-accent/50"
         >
+          <span className="hidden h-2 w-2 shrink-0 sm:inline-flex" aria-hidden="true" />
+          <span className="hidden h-3.5 w-3.5 shrink-0 sm:inline-flex" aria-hidden="true" />
           <span className="mt-0.5 shrink-0 rounded-md bg-muted p-1.5 sm:mt-0">
             <Icon className="h-4 w-4 text-muted-foreground" />
           </span>
