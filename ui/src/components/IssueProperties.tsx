@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
 import type { Issue } from "@paperclipai/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +19,7 @@ import { formatDate, cn, projectUrl } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2 } from "lucide-react";
+import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, Copy, Check } from "lucide-react";
 import { AgentIcon } from "./AgentIconPicker";
 
 const EXECUTION_WORKSPACE_OPTIONS = [
@@ -126,6 +126,37 @@ function PropertyPicker({
       </Popover>
       {extra}
     </PropertyRow>
+  );
+}
+
+/** Displays a path/value with a copy-to-clipboard icon and "Copied!" feedback. */
+function CopyablePath({ value, label, className }: { value: string; label?: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setCopied(false), 1500);
+    } catch { /* noop */ }
+  }, [value]);
+
+  return (
+    <div className={cn("flex items-start gap-1 group", className)}>
+      <span className="break-all min-w-0">
+        {label && <span className="text-muted-foreground">{label} </span>}
+        <span className="font-mono">{value}</span>
+      </span>
+      <button
+        type="button"
+        className="shrink-0 mt-0.5 p-0.5 rounded hover:bg-accent/50 transition-colors text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 focus:opacity-100"
+        onClick={handleCopy}
+        title={copied ? "Copied!" : "Copy"}
+      >
+        {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </div>
   );
 }
 
@@ -675,26 +706,18 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
                     {issue.currentExecutionWorkspace.status}
                   </div>
                   {issue.currentExecutionWorkspace.cwd && (
-                    <div className="font-mono truncate" title={issue.currentExecutionWorkspace.cwd}>
-                      {issue.currentExecutionWorkspace.cwd}
-                    </div>
+                    <CopyablePath value={issue.currentExecutionWorkspace.cwd} className="text-[11px]" />
                   )}
                   {issue.currentExecutionWorkspace.branchName && (
-                    <div className="truncate">
-                      Branch: {issue.currentExecutionWorkspace.branchName}
-                    </div>
+                    <CopyablePath value={issue.currentExecutionWorkspace.branchName} label="Branch:" className="text-[11px]" />
                   )}
                   {issue.currentExecutionWorkspace.repoUrl && (
-                    <div className="truncate" title={issue.currentExecutionWorkspace.repoUrl}>
-                      Repo: {issue.currentExecutionWorkspace.repoUrl}
-                    </div>
+                    <CopyablePath value={issue.currentExecutionWorkspace.repoUrl} label="Repo:" className="text-[11px]" />
                   )}
                 </div>
               )}
               {!issue.currentExecutionWorkspace && currentProject?.primaryWorkspace?.cwd && (
-                <div className="text-[11px] text-muted-foreground font-mono truncate" title={currentProject.primaryWorkspace.cwd}>
-                  {currentProject.primaryWorkspace.cwd}
-                </div>
+                <CopyablePath value={currentProject.primaryWorkspace.cwd} className="text-[11px] text-muted-foreground" />
               )}
             </div>
           </PropertyRow>
