@@ -31,6 +31,7 @@ import { resolveDefaultAgentWorkspaceDir, resolveManagedProjectWorkspaceDir } fr
 import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
 import {
   buildWorkspaceReadyComment,
+  cleanupExecutionWorkspaceArtifacts,
   ensureRuntimeServicesForRun,
   persistAdapterManagedRuntimeServices,
   realizeExecutionWorkspace,
@@ -1629,9 +1630,12 @@ export function heartbeatService(db: Db) {
     const taskKey = deriveTaskKey(context, null);
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
     const issueId = readNonEmptyString(context.issueId);
-    const issueAssigneeConfig = issueId
+    const issueContext = issueId
       ? await db
           .select({
+            id: issues.id,
+            identifier: issues.identifier,
+            title: issues.title,
             projectId: issues.projectId,
             projectWorkspaceId: issues.projectWorkspaceId,
             executionWorkspaceId: issues.executionWorkspaceId,
@@ -1645,17 +1649,17 @@ export function heartbeatService(db: Db) {
           .then((rows) => rows[0] ?? null)
       : null;
     const issueAssigneeOverrides =
-      issueAssigneeConfig && issueAssigneeConfig.assigneeAgentId === agent.id
+      issueContext && issueContext.assigneeAgentId === agent.id
         ? parseIssueAssigneeAdapterOverrides(
-            issueAssigneeConfig.assigneeAdapterOverrides,
+            issueContext.assigneeAdapterOverrides,
           )
         : null;
     const isolatedWorkspacesEnabled = (await instanceSettings.getExperimental()).enableIsolatedWorkspaces;
     const issueExecutionWorkspaceSettings = isolatedWorkspacesEnabled
-      ? parseIssueExecutionWorkspaceSettings(issueAssigneeConfig?.executionWorkspaceSettings)
+      ? parseIssueExecutionWorkspaceSettings(issueContext?.executionWorkspaceSettings)
       : null;
     const contextProjectId = readNonEmptyString(context.projectId);
-    const executionProjectId = issueAssigneeConfig?.projectId ?? contextProjectId;
+    const executionProjectId = issueContext?.projectId ?? contextProjectId;
     const projectExecutionWorkspacePolicy = executionProjectId
       ? await db
           .select({ executionWorkspacePolicy: projects.executionWorkspacePolicy })
@@ -1702,20 +1706,16 @@ export function heartbeatService(db: Db) {
       agent.companyId,
       mergedConfig,
     );
-    const issueRef = issueId
-      ? await db
-          .select({
-            id: issues.id,
-            identifier: issues.identifier,
-            title: issues.title,
-            projectId: issues.projectId,
-            projectWorkspaceId: issues.projectWorkspaceId,
-            executionWorkspaceId: issues.executionWorkspaceId,
-            executionWorkspacePreference: issues.executionWorkspacePreference,
-          })
-          .from(issues)
-          .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
-          .then((rows) => rows[0] ?? null)
+    const issueRef = issueContext
+      ? {
+          id: issueContext.id,
+          identifier: issueContext.identifier,
+          title: issueContext.title,
+          projectId: issueContext.projectId,
+          projectWorkspaceId: issueContext.projectWorkspaceId,
+          executionWorkspaceId: issueContext.executionWorkspaceId,
+          executionWorkspacePreference: issueContext.executionWorkspacePreference,
+        }
       : null;
     const existingExecutionWorkspace =
       issueRef?.executionWorkspaceId ? await executionWorkspacesSvc.getById(issueRef.executionWorkspaceId) : null;
@@ -1748,54 +1748,108 @@ export function heartbeatService(db: Db) {
       issueRef?.executionWorkspacePreference === "reuse_existing" &&
       existingExecutionWorkspace &&
       existingExecutionWorkspace.status !== "archived";
-    const persistedExecutionWorkspace = shouldReuseExisting && existingExecutionWorkspace
-      ? await executionWorkspacesSvc.update(existingExecutionWorkspace.id, {
-          cwd: executionWorkspace.cwd,
-          repoUrl: executionWorkspace.repoUrl,
-          baseRef: executionWorkspace.repoRef,
-          branchName: executionWorkspace.branchName,
-          providerType: executionWorkspace.strategy === "git_worktree" ? "git_worktree" : "local_fs",
-          providerRef: executionWorkspace.worktreePath,
-          status: "active",
-          lastUsedAt: new Date(),
-          metadata: {
-            ...(existingExecutionWorkspace.metadata ?? {}),
-            source: executionWorkspace.source,
-            createdByRuntime: executionWorkspace.created,
-          },
-        })
-      : resolvedProjectId
-        ? await executionWorkspacesSvc.create({
-            companyId: agent.companyId,
-            projectId: resolvedProjectId,
-            projectWorkspaceId: resolvedProjectWorkspaceId,
-            sourceIssueId: issueRef?.id ?? null,
-            mode:
-              executionWorkspaceMode === "isolated_workspace"
-                ? "isolated_workspace"
-                : executionWorkspaceMode === "operator_branch"
-                  ? "operator_branch"
-                  : executionWorkspaceMode === "agent_default"
-                    ? "adapter_managed"
-                    : "shared_workspace",
-            strategyType: executionWorkspace.strategy === "git_worktree" ? "git_worktree" : "project_primary",
-            name: executionWorkspace.branchName ?? issueRef?.identifier ?? `workspace-${agent.id.slice(0, 8)}`,
-            status: "active",
+    let persistedExecutionWorkspace = null;
+    try {
+      persistedExecutionWorkspace = shouldReuseExisting && existingExecutionWorkspace
+        ? await executionWorkspacesSvc.update(existingExecutionWorkspace.id, {
             cwd: executionWorkspace.cwd,
             repoUrl: executionWorkspace.repoUrl,
             baseRef: executionWorkspace.repoRef,
             branchName: executionWorkspace.branchName,
             providerType: executionWorkspace.strategy === "git_worktree" ? "git_worktree" : "local_fs",
             providerRef: executionWorkspace.worktreePath,
+            status: "active",
             lastUsedAt: new Date(),
-            openedAt: new Date(),
             metadata: {
+              ...(existingExecutionWorkspace.metadata ?? {}),
               source: executionWorkspace.source,
               createdByRuntime: executionWorkspace.created,
             },
           })
-        : null;
+        : resolvedProjectId
+          ? await executionWorkspacesSvc.create({
+              companyId: agent.companyId,
+              projectId: resolvedProjectId,
+              projectWorkspaceId: resolvedProjectWorkspaceId,
+              sourceIssueId: issueRef?.id ?? null,
+              mode:
+                executionWorkspaceMode === "isolated_workspace"
+                  ? "isolated_workspace"
+                  : executionWorkspaceMode === "operator_branch"
+                    ? "operator_branch"
+                    : executionWorkspaceMode === "agent_default"
+                      ? "adapter_managed"
+                      : "shared_workspace",
+              strategyType: executionWorkspace.strategy === "git_worktree" ? "git_worktree" : "project_primary",
+              name: executionWorkspace.branchName ?? issueRef?.identifier ?? `workspace-${agent.id.slice(0, 8)}`,
+              status: "active",
+              cwd: executionWorkspace.cwd,
+              repoUrl: executionWorkspace.repoUrl,
+              baseRef: executionWorkspace.repoRef,
+              branchName: executionWorkspace.branchName,
+              providerType: executionWorkspace.strategy === "git_worktree" ? "git_worktree" : "local_fs",
+              providerRef: executionWorkspace.worktreePath,
+              lastUsedAt: new Date(),
+              openedAt: new Date(),
+              metadata: {
+                source: executionWorkspace.source,
+                createdByRuntime: executionWorkspace.created,
+              },
+            })
+          : null;
+    } catch (error) {
+      if (executionWorkspace.created) {
+        try {
+          await cleanupExecutionWorkspaceArtifacts({
+            workspace: {
+              id: existingExecutionWorkspace?.id ?? `transient-${run.id}`,
+              cwd: executionWorkspace.cwd,
+              providerType: executionWorkspace.strategy === "git_worktree" ? "git_worktree" : "local_fs",
+              providerRef: executionWorkspace.worktreePath,
+              branchName: executionWorkspace.branchName,
+              repoUrl: executionWorkspace.repoUrl,
+              baseRef: executionWorkspace.repoRef,
+              projectId: resolvedProjectId,
+              projectWorkspaceId: resolvedProjectWorkspaceId,
+              sourceIssueId: issueRef?.id ?? null,
+              metadata: {
+                createdByRuntime: true,
+                source: executionWorkspace.source,
+              },
+            },
+            projectWorkspace: {
+              cwd: resolvedWorkspace.cwd,
+              cleanupCommand: null,
+            },
+            teardownCommand: projectExecutionWorkspacePolicy?.workspaceStrategy?.teardownCommand ?? null,
+            recorder: workspaceOperationRecorder,
+          });
+        } catch (cleanupError) {
+          logger.warn(
+            {
+              runId: run.id,
+              issueId,
+              executionWorkspaceCwd: executionWorkspace.cwd,
+              cleanupError: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+            },
+            "Failed to cleanup realized execution workspace after persistence failure",
+          );
+        }
+      }
+      throw error;
+    }
     await workspaceOperationRecorder.attachExecutionWorkspaceId(persistedExecutionWorkspace?.id ?? null);
+    if (
+      existingExecutionWorkspace &&
+      persistedExecutionWorkspace &&
+      existingExecutionWorkspace.id !== persistedExecutionWorkspace.id &&
+      existingExecutionWorkspace.status === "active"
+    ) {
+      await executionWorkspacesSvc.update(existingExecutionWorkspace.id, {
+        status: "idle",
+        cleanupReason: null,
+      });
+    }
     if (issueId && persistedExecutionWorkspace && issueRef?.executionWorkspaceId !== persistedExecutionWorkspace.id) {
       await issuesSvc.update(issueId, {
         executionWorkspaceId: persistedExecutionWorkspace.id,

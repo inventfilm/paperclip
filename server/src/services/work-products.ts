@@ -51,51 +51,61 @@ export function workProductService(db: Db) {
     },
 
     createForIssue: async (issueId: string, companyId: string, data: Omit<typeof issueWorkProducts.$inferInsert, "issueId" | "companyId">) => {
-      if (data.isPrimary) {
-        await db
-          .update(issueWorkProducts)
-          .set({ isPrimary: false, updatedAt: new Date() })
-          .where(and(eq(issueWorkProducts.companyId, companyId), eq(issueWorkProducts.issueId, issueId), eq(issueWorkProducts.type, data.type)));
-      }
-      const row = await db
-        .insert(issueWorkProducts)
-        .values({
-          ...data,
-          companyId,
-          issueId,
-        })
-        .returning()
-        .then((rows) => rows[0] ?? null);
+      const row = await db.transaction(async (tx) => {
+        if (data.isPrimary) {
+          await tx
+            .update(issueWorkProducts)
+            .set({ isPrimary: false, updatedAt: new Date() })
+            .where(
+              and(
+                eq(issueWorkProducts.companyId, companyId),
+                eq(issueWorkProducts.issueId, issueId),
+                eq(issueWorkProducts.type, data.type),
+              ),
+            );
+        }
+        return await tx
+          .insert(issueWorkProducts)
+          .values({
+            ...data,
+            companyId,
+            issueId,
+          })
+          .returning()
+          .then((rows) => rows[0] ?? null);
+      });
       return row ? toIssueWorkProduct(row) : null;
     },
 
     update: async (id: string, patch: Partial<typeof issueWorkProducts.$inferInsert>) => {
-      const existing = await db
-        .select()
-        .from(issueWorkProducts)
-        .where(eq(issueWorkProducts.id, id))
-        .then((rows) => rows[0] ?? null);
-      if (!existing) return null;
+      const row = await db.transaction(async (tx) => {
+        const existing = await tx
+          .select()
+          .from(issueWorkProducts)
+          .where(eq(issueWorkProducts.id, id))
+          .then((rows) => rows[0] ?? null);
+        if (!existing) return null;
 
-      if (patch.isPrimary === true) {
-        await db
+        if (patch.isPrimary === true) {
+          await tx
+            .update(issueWorkProducts)
+            .set({ isPrimary: false, updatedAt: new Date() })
+            .where(
+              and(
+                eq(issueWorkProducts.companyId, existing.companyId),
+                eq(issueWorkProducts.issueId, existing.issueId),
+                eq(issueWorkProducts.type, existing.type),
+              ),
+            );
+        }
+
+        return await tx
           .update(issueWorkProducts)
-          .set({ isPrimary: false, updatedAt: new Date() })
-          .where(
-            and(
-              eq(issueWorkProducts.companyId, existing.companyId),
-              eq(issueWorkProducts.issueId, existing.issueId),
-              eq(issueWorkProducts.type, existing.type),
-            ),
-          );
-      }
-
-      const row = await db
-        .update(issueWorkProducts)
-        .set({ ...patch, updatedAt: new Date() })
-        .where(eq(issueWorkProducts.id, id))
-        .returning()
-        .then((rows) => rows[0] ?? null);
+          .set({ ...patch, updatedAt: new Date() })
+          .where(eq(issueWorkProducts.id, id))
+          .returning()
+          .then((rows) => rows[0] ?? null);
+      });
       return row ? toIssueWorkProduct(row) : null;
     },
 
