@@ -525,7 +525,23 @@ export function agentService(db: Db) {
       const rows = await db
         .select({ id: agents.id })
         .from(agents)
-        .where(and(eq(agents.companyId, companyId), eq(agents.reportsTo, agentId)))
+        .where(and(eq(agents.companyId, companyId), eq(agents.reportsTo, agentId), ne(agents.status, "terminated")))
+        .limit(1);
+      return rows.length > 0;
+    },
+
+    isDirectReport: async (companyId: string, managerAgentId: string, targetAgentId: string): Promise<boolean> => {
+      const rows = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.companyId, companyId),
+            eq(agents.reportsTo, managerAgentId),
+            eq(agents.id, targetAgentId),
+            ne(agents.status, "terminated"),
+          ),
+        )
         .limit(1);
       return rows.length > 0;
     },
