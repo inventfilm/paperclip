@@ -45,7 +45,7 @@ export const issues = pgTable(
     recurrenceText: text("recurrence_text"),
     recurrenceEnabled: boolean("recurrence_enabled").notNull().default(false),
     recurrenceLastSpawnedAt: timestamp("recurrence_last_spawned_at", { withTimezone: true }),
-    recurrenceParentId: uuid("recurrence_parent_id").references((): AnyPgColumn => issues.id),
+    recurrenceParentId: uuid("recurrence_parent_id").references((): AnyPgColumn => issues.id, { onDelete: "set null" }),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),

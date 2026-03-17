@@ -38,6 +38,7 @@ export type IssueViewState = {
   priorities: string[];
   assignees: string[];
   labels: string[];
+  hideRecurringChildren: boolean;
   sortField: "status" | "priority" | "title" | "created" | "updated";
   sortDir: "asc" | "desc";
   groupBy: "status" | "priority" | "assignee" | "none";
@@ -50,6 +51,7 @@ const defaultViewState: IssueViewState = {
   priorities: [],
   assignees: [],
   labels: [],
+  hideRecurringChildren: false,
   sortField: "updated",
   sortDir: "desc",
   groupBy: "none",
@@ -93,6 +95,7 @@ function applyFilters(issues: Issue[], state: IssueViewState): Issue[] {
   if (state.priorities.length > 0) result = result.filter((i) => state.priorities.includes(i.priority));
   if (state.assignees.length > 0) result = result.filter((i) => i.assigneeAgentId != null && state.assignees.includes(i.assigneeAgentId));
   if (state.labels.length > 0) result = result.filter((i) => (i.labelIds ?? []).some((id) => state.labels.includes(id)));
+  if (state.hideRecurringChildren) result = result.filter((i) => !i.recurrenceParentId);
   return result;
 }
 
@@ -124,6 +127,7 @@ function countActiveFilters(state: IssueViewState): number {
   if (state.priorities.length > 0) count++;
   if (state.assignees.length > 0) count++;
   if (state.labels.length > 0) count++;
+  if (state.hideRecurringChildren) count++;
   return count;
 }
 
@@ -346,7 +350,7 @@ export function IssuesList({
                   {activeFilterCount > 0 && (
                     <button
                       className="text-xs text-muted-foreground hover:text-foreground"
-                      onClick={() => updateView({ statuses: [], priorities: [], assignees: [], labels: [] })}
+                      onClick={() => updateView({ statuses: [], priorities: [], assignees: [], labels: [], hideRecurringChildren: false })}
                     >
                       Clear
                     </button>
@@ -453,6 +457,18 @@ export function IssuesList({
                     )}
                   </div>
                 </div>
+
+                <div className="border-t border-border" />
+
+                {/* Recurring filter */}
+                <label className="flex items-center gap-2 px-2 py-1.5 rounded-sm hover:bg-accent/50 cursor-pointer">
+                  <Checkbox
+                    checked={viewState.hideRecurringChildren}
+                    onCheckedChange={() => updateView({ hideRecurringChildren: !viewState.hideRecurringChildren })}
+                  />
+                  <Repeat className="h-3.5 w-3.5 text-purple-500" />
+                  <span className="text-sm">Hide spawned recurring tasks</span>
+                </label>
               </div>
             </PopoverContent>
           </Popover>

@@ -133,48 +133,63 @@ describe("validateCronExpression", () => {
 });
 
 describe("isCronDue", () => {
-  it("returns true when cron matches current time", () => {
-    // 2026-03-16T09:00:00Z is a Monday, minute=0, hour=9
-    const now = new Date("2026-03-16T09:00:00Z");
+  // Helper: create a Date with specific local time values
+  function localDate(year: number, month: number, day: number, hour: number, minute: number, second = 0): Date {
+    return new Date(year, month - 1, day, hour, minute, second);
+  }
+
+  it("returns true when cron matches current local time", () => {
+    // Monday March 16 2026, 9:00 AM local
+    const now = localDate(2026, 3, 16, 9, 0);
     expect(isCronDue("0 9 * * *", now, null)).toBe(true);
   });
 
   it("returns false when cron does not match", () => {
-    const now = new Date("2026-03-16T10:00:00Z"); // hour=10, not 9
+    const now = localDate(2026, 3, 16, 10, 0); // hour=10, not 9
     expect(isCronDue("0 9 * * *", now, null)).toBe(false);
   });
 
   it("prevents duplicate spawn in the same minute", () => {
-    const now = new Date("2026-03-16T09:00:30Z");
-    const lastSpawned = new Date("2026-03-16T09:00:00Z"); // same minute
+    const now = localDate(2026, 3, 16, 9, 0, 30);
+    const lastSpawned = localDate(2026, 3, 16, 9, 0, 0); // same minute
     expect(isCronDue("0 9 * * *", now, lastSpawned)).toBe(false);
   });
 
   it("allows spawn in a different minute", () => {
-    const now = new Date("2026-03-17T09:00:00Z"); // next day
-    const lastSpawned = new Date("2026-03-16T09:00:00Z");
+    const now = localDate(2026, 3, 17, 9, 0); // next day
+    const lastSpawned = localDate(2026, 3, 16, 9, 0);
     expect(isCronDue("0 9 * * *", now, lastSpawned)).toBe(true);
   });
 
   it("handles step values", () => {
-    const now = new Date("2026-03-16T09:30:00Z"); // minute=30
+    const now = localDate(2026, 3, 16, 9, 30); // minute=30
     expect(isCronDue("*/15 * * * *", now, null)).toBe(true);
-    const now2 = new Date("2026-03-16T09:07:00Z"); // minute=7
+    const now2 = localDate(2026, 3, 16, 9, 7); // minute=7
     expect(isCronDue("*/15 * * * *", now2, null)).toBe(false);
   });
 
   it("handles day-of-week matching", () => {
     // 2026-03-16 is a Monday (day 1)
-    const now = new Date("2026-03-16T09:00:00Z");
+    const now = localDate(2026, 3, 16, 9, 0);
     expect(isCronDue("0 9 * * 1", now, null)).toBe(true); // Monday
     expect(isCronDue("0 9 * * 5", now, null)).toBe(false); // Friday
   });
 });
 
 describe("formatRecurrenceDateSuffix", () => {
-  it("formats date correctly", () => {
-    expect(formatRecurrenceDateSuffix(new Date("2026-03-16T09:00:00Z"))).toBe("Mar 16");
-    expect(formatRecurrenceDateSuffix(new Date("2026-01-01T00:00:00Z"))).toBe("Jan 1");
-    expect(formatRecurrenceDateSuffix(new Date("2026-12-25T00:00:00Z"))).toBe("Dec 25");
+  it("formats daily schedule with date only", () => {
+    const d = new Date(2026, 2, 16, 9, 0); // Mar 16
+    expect(formatRecurrenceDateSuffix(d, "0 9 * * *")).toBe("Mar 16");
+  });
+
+  it("formats sub-daily schedule with date and time", () => {
+    const d = new Date(2026, 2, 16, 14, 30); // Mar 16 2:30 PM
+    expect(formatRecurrenceDateSuffix(d, "*/30 * * * *")).toBe("Mar 16 14:30");
+    expect(formatRecurrenceDateSuffix(d, "0 */2 * * *")).toBe("Mar 16 14:30");
+  });
+
+  it("formats without cronExpr as date only", () => {
+    const d = new Date(2026, 2, 16, 9, 0);
+    expect(formatRecurrenceDateSuffix(d)).toBe("Mar 16");
   });
 });

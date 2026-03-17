@@ -287,11 +287,12 @@ export function isCronDue(cronExpr: string, now: Date, lastSpawnedAt: Date | nul
 
   const [minuteField, hourField, domField, monthField, dowField] = parts;
 
-  const minute = now.getUTCMinutes();
-  const hour = now.getUTCHours();
-  const dayOfMonth = now.getUTCDate();
-  const month = now.getUTCMonth() + 1; // 1-based
-  const dayOfWeek = now.getUTCDay(); // 0 = Sunday
+  // Use local time — cron expressions from natural language ("9am") mean local time
+  const minute = now.getMinutes();
+  const hour = now.getHours();
+  const dayOfMonth = now.getDate();
+  const month = now.getMonth() + 1; // 1-based
+  const dayOfWeek = now.getDay(); // 0 = Sunday
 
   if (!matchesCronField(minuteField, minute, 0, 59)) return false;
   if (!matchesCronField(hourField, hour, 0, 23)) return false;
@@ -301,15 +302,15 @@ export function isCronDue(cronExpr: string, now: Date, lastSpawnedAt: Date | nul
 
   // Prevent duplicate spawn in the same minute
   if (lastSpawnedAt) {
-    const lastMinute = lastSpawnedAt.getUTCMinutes();
-    const lastHour = lastSpawnedAt.getUTCHours();
-    const lastDate = lastSpawnedAt.getUTCDate();
-    const lastMonth = lastSpawnedAt.getUTCMonth();
-    const lastYear = lastSpawnedAt.getUTCFullYear();
+    const lastMinute = lastSpawnedAt.getMinutes();
+    const lastHour = lastSpawnedAt.getHours();
+    const lastDate = lastSpawnedAt.getDate();
+    const lastMonth = lastSpawnedAt.getMonth();
+    const lastYear = lastSpawnedAt.getFullYear();
     if (
-      lastYear === now.getUTCFullYear() &&
-      lastMonth === now.getUTCMonth() &&
-      lastDate === now.getUTCDate() &&
+      lastYear === now.getFullYear() &&
+      lastMonth === now.getMonth() &&
+      lastDate === now.getDate() &&
       lastHour === hour &&
       lastMinute === minute
     ) {
@@ -361,7 +362,31 @@ function matchesCronField(field: string, value: number, _min: number, _max: numb
  * Format a date suffix for spawned recurring issues.
  * e.g., "Mar 16"
  */
-export function formatRecurrenceDateSuffix(date: Date): string {
+/**
+ * Format a date suffix for spawned recurring issues.
+ * For daily+ schedules: "Mar 16"
+ * For sub-daily schedules (multiple per day): "Mar 16 09:00"
+ */
+export function formatRecurrenceDateSuffix(date: Date, cronExpr?: string): string {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  return `${months[date.getUTCMonth()]} ${date.getUTCDate()}`;
+  const datePart = `${months[date.getMonth()]} ${date.getDate()}`;
+
+  // Check if schedule fires more than once per day
+  if (cronExpr) {
+    const parts = cronExpr.trim().split(/\s+/);
+    if (parts.length === 5) {
+      const [minuteField, hourField] = parts;
+      const isSubDaily =
+        minuteField.includes("/") || minuteField.includes(",") ||
+        hourField.includes("/") || hourField.includes(",") ||
+        (minuteField === "*" && hourField === "*");
+      if (isSubDaily) {
+        const h = String(date.getHours()).padStart(2, "0");
+        const m = String(date.getMinutes()).padStart(2, "0");
+        return `${datePart} ${h}:${m}`;
+      }
+    }
+  }
+
+  return datePart;
 }
