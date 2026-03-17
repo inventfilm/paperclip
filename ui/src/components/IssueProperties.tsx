@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@/lib/router";
 import type { Issue } from "@paperclipai/shared";
 import { parseScheduleToCron, describeCron } from "@paperclipai/shared";
@@ -112,6 +112,11 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   const [newLabelColor, setNewLabelColor] = useState("#6366f1");
   const [recurrenceOpen, setRecurrenceOpen] = useState(false);
   const [scheduleInput, setScheduleInput] = useState(issue.recurrenceText ?? "");
+
+  // Sync scheduleInput when issue prop updates externally
+  useEffect(() => {
+    setScheduleInput(issue.recurrenceText ?? "");
+  }, [issue.recurrenceText]);
 
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
