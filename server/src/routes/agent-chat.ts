@@ -2,6 +2,8 @@ import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Db } from "@paperclipai/db";
 import { agents as agentsTable, heartbeatRuns, issueWorkProducts } from "@paperclipai/db";
 import { eq } from "drizzle-orm";
@@ -594,6 +596,238 @@ If nothing to create, output empty arrays. ALWAYS include this signal line.`;
         res.write(
           `data: ${JSON.stringify({
             type: "done",
+            duration,
+            exitCode: exitCode ?? 0,
+            timedOut: killed,
+          })}\n\n`,
+        );
+      }
+      if (res.writable) res.end();
+    });
+
+    proc.on("error", (err) => {
+      clearTimeout(timeout);
+      if (res.writable) {
+        res.write(`data: ${JSON.stringify({ type: "error", message: err.message })}\n\n`);
+        res.end();
+      }
+    });
+
+    // Pipe the prompt to stdin
+    proc.stdin.write(prompt);
+    proc.stdin.end();
+  });
+
+  // ── Board Concierge Chat ──────────────────────────────────────────────
+  // Same streaming pattern as /agents/:id/chat/stream but uses the
+  // board-member skill as the system prompt instead of the CEO agent's
+  // prompt. Allows the board to manage their company from the web UI chat.
+
+  let _boardSkillCache: string | null = null;
+
+  function loadBoardSkill(): string {
+    if (_boardSkillCache) return _boardSkillCache;
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const skillPath = path.resolve(__dirname, "../../../skills/paperclip-board/SKILL.md");
+    try {
+      let content = fs.readFileSync(skillPath, "utf-8");
+      // Strip YAML frontmatter
+      content = content.replace(/^---[\s\S]*?---\s*\n/, "");
+      _boardSkillCache = content;
+      return content;
+    } catch {
+      return "You are a board-level assistant helping a human manage their AI-agent company through Paperclip. Help them create companies, hire agents, approve tasks, and monitor their organization.";
+    }
+  }
+
+  router.post("/board/chat/stream", async (req, res) => {
+    const { companyId, message, taskId } = req.body as {
+      companyId: string;
+      message: string;
+      taskId?: string;
+    };
+
+    if (!companyId || !message) {
+      res.status(400).json({ error: "companyId and message are required" });
+      return;
+    }
+
+    const issueSvc = issueService(db);
+    let issueId = taskId;
+
+    // Find or create the Board Operations issue
+    if (!issueId) {
+      const companyIssues = await issueSvc.list(companyId, {
+        q: "Board Operations",
+      });
+      const boardIssue = companyIssues.find(
+        (i: any) => i.title === "Board Operations" && i.status !== "done" && i.status !== "cancelled",
+      );
+      if (boardIssue) {
+        issueId = boardIssue.id;
+      } else {
+        const created = await issueSvc.create(companyId, {
+          title: "Board Operations",
+          description: "Standing issue for board concierge conversations and decision log",
+          status: "in_progress",
+          priority: "medium",
+        });
+        issueId = created.id;
+      }
+    }
+
+    const resolvedIssueId = issueId!;
+
+    // Save user message as comment
+    await issueSvc.addComment(resolvedIssueId, message, {
+      userId: (req as any).actor?.userId ?? "local-board",
+    });
+
+    // Build conversation history from recent comments
+    const comments = await issueSvc.listComments(resolvedIssueId);
+    const sorted = [...comments].sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+    const recent = sorted.slice(-20);
+    const history = recent
+      .map((c) => {
+        const role = c.authorAgentId ? "ASSISTANT" : "USER";
+        return `${role}: ${c.body}`;
+      })
+      .join("\n\n");
+
+    // Load board skill as system prompt
+    const systemPrompt = loadBoardSkill();
+
+    // Compose prompt with conversation history
+    const prompt = history
+      ? `Here is the conversation so far:\n\n${history}\n\nRespond to the latest message from the user.`
+      : message;
+
+    // Set up SSE
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders();
+    res.write(`data: ${JSON.stringify({ type: "start", issueId: resolvedIssueId })}\n\n`);
+
+    // Spawn claude CLI with board skill
+    const args = [
+      "-p",
+      "-",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--append-system-prompt",
+      systemPrompt,
+      "--model",
+      "sonnet",
+      "--dangerously-skip-permissions",
+    ];
+
+    // Determine the API URL for the spawned process
+    const serverAddr = (req as any).socket?.localAddress ?? "127.0.0.1";
+    const serverPort = (req as any).socket?.localPort ?? 3000;
+    const apiUrl = `http://${serverAddr === "::" || serverAddr === "::1" ? "127.0.0.1" : serverAddr}:${serverPort}`;
+
+    const proc = spawn("claude", args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      cwd: "/tmp",
+      env: {
+        ...process.env,
+        PAPERCLIP_API_URL: apiUrl,
+        PAPERCLIP_COMPANY_ID: companyId,
+      },
+    });
+
+    let fullResponse = "";
+    const startTime = Date.now();
+    let killed = false;
+
+    // 120s timeout (board conversations can involve multiple API calls)
+    const timeout = setTimeout(() => {
+      killed = true;
+      proc.kill("SIGTERM");
+    }, 120000);
+
+    // Stream stdout — parse stream-json events
+    let stdoutBuf = "";
+    proc.stdout.on("data", (data: Buffer) => {
+      stdoutBuf += data.toString();
+      const lines = stdoutBuf.split("\n");
+      stdoutBuf = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          if (event.type === "assistant" && event.message?.content) {
+            for (const block of event.message.content) {
+              if (block.type === "text" && block.text && res.writable) {
+                fullResponse += block.text;
+                res.write(`data: ${JSON.stringify({ type: "chunk", text: block.text })}\n\n`);
+              }
+            }
+          } else if (event.type === "content_block_delta" && event.delta?.text) {
+            fullResponse += event.delta.text;
+            if (res.writable) {
+              res.write(`data: ${JSON.stringify({ type: "chunk", text: event.delta.text })}\n\n`);
+            }
+          } else if (event.type === "content_block_start" && event.content_block?.type === "tool_use" && res.writable) {
+            // Forward tool-use status so UI can show activity
+            const toolName = event.content_block.name ?? "working";
+            let statusText = "Working...";
+            if (toolName === "Bash" || toolName === "bash") {
+              statusText = "Running a command...";
+            } else if (toolName === "Read" || toolName === "read") {
+              statusText = "Reading a file...";
+            } else if (toolName === "Grep" || toolName === "grep") {
+              statusText = "Searching...";
+            } else {
+              statusText = `Using ${toolName}...`;
+            }
+            res.write(`data: ${JSON.stringify({ type: "status", text: statusText })}\n\n`);
+          } else if (event.type === "result" && event.result && !fullResponse) {
+            fullResponse = event.result;
+            if (res.writable) {
+              res.write(`data: ${JSON.stringify({ type: "chunk", text: event.result })}\n\n`);
+            }
+          }
+        } catch {
+          // Not JSON or unknown format — skip
+        }
+      }
+    });
+
+    proc.stderr.on("data", (data: Buffer) => {
+      console.error("[board/chat/stream stderr]", data.toString());
+    });
+
+    proc.on("close", async (exitCode) => {
+      clearTimeout(timeout);
+
+      // Save response as a comment (strip any action signals)
+      const cleanedResponse = stripActionSignals(fullResponse).trim();
+      if (cleanedResponse) {
+        try {
+          // Save as a system/board comment (no agentId)
+          await issueSvc.addComment(resolvedIssueId, cleanedResponse, {
+            userId: "board-concierge",
+          });
+        } catch {
+          /* best effort */
+        }
+      }
+
+      const duration = Date.now() - startTime;
+      if (res.writable) {
+        res.write(
+          `data: ${JSON.stringify({
+            type: "done",
+            issueId: resolvedIssueId,
             duration,
             exitCode: exitCode ?? 0,
             timedOut: killed,

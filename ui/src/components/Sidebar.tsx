@@ -84,6 +84,7 @@ export function Sidebar() {
       <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide flex flex-col gap-4 px-3 py-2">
         <div className="flex flex-col gap-0.5">
           <SidebarNavItem to="/chat" label="Chat" icon={MessageSquare} />
+          <SidebarNavItem to="/board-chat" label="Board Chat" icon={MessageSquare} />
           {/* New Task button aligned with nav items */}
           <button
             onClick={() => openNewIssue()}

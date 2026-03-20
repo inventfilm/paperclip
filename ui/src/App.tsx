@@ -8,6 +8,7 @@ import { authApi } from "./api/auth";
 import { healthApi } from "./api/health";
 import { Artifacts } from "./pages/Artifacts";
 import { Chat } from "./pages/Chat";
+import { BoardChat } from "./pages/BoardChat";
 import { Dashboard } from "./pages/Dashboard";
 import { Companies } from "./pages/Companies";
 import { Agents } from "./pages/Agents";
@@ -116,6 +117,7 @@ function boardRoutes() {
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="dashboard" element={<Dashboard />} />
       <Route path="chat" element={<Chat />} />
+      <Route path="board-chat" element={<BoardChat />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />
       <Route path="companies" element={<Companies />} />
