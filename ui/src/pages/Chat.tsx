@@ -246,7 +246,7 @@ export function Chat() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3rem)] -m-6 -mt-2">
+    <div className="flex h-[calc(100%+3rem)] -m-6">
       {/* Left: Chat */}
       <div className="shrink-0 border-r border-border" style={{ width: chatWidth }}>
         <CEOChatPanel

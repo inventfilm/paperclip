@@ -1110,10 +1110,11 @@ Follow this structure for every role in the plan.`,
                       <Building2 className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <h3 className="font-medium">Define your mission</h3>
+                      <h3 className="font-medium">{!missionPath ? "Name your company" : "Define your mission"}</h3>
                       <p className="text-xs text-muted-foreground">
-                        Your mission drives everything — your CEO, your hires,
-                        and the work your company will do.
+                        {!missionPath
+                          ? "What will your company be called?"
+                          : "Your mission drives everything — your CEO, your hires, and the work your company will do."}
                       </p>
                     </div>
                   </div>
@@ -1133,12 +1134,12 @@ Follow this structure for every role in the plan.`,
                       placeholder="Acme Corp"
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
-                      autoFocus
+                      autoFocus={!missionPath}
                     />
                   </div>
 
-                  {/* Mission path selector */}
-                  {!missionPath && (
+                  {/* Mission path selector — only shows after company name is entered */}
+                  {!missionPath && companyName.trim() && (
                     <div className="space-y-3">
                       <label className="text-xs text-foreground block">
                         How would you like to define your mission?

@@ -300,16 +300,16 @@ function DocumentViewer({
         <div className="border-t border-border px-4 py-3 bg-background shrink-0">
           <p className="text-[11px] text-muted-foreground mb-2">This document needs your review.</p>
           <div className="flex items-center gap-2">
-            <Button size="sm" className="h-8 text-xs flex-1" onClick={onApprove}>
-              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-              Approve
-            </Button>
-            <Button size="sm" variant="outline" className="h-8 text-xs flex-1" onClick={() => {
+            <Button size="sm" variant="outline" className="h-8 text-xs flex-1 text-destructive hover:text-destructive" onClick={() => {
               onReject?.();
               onBack();
             }}>
-              <RotateCcw className="h-3.5 w-3.5 mr-1" />
-              Request Changes
+              <XCircle className="h-3.5 w-3.5 mr-1" />
+              Reject
+            </Button>
+            <Button size="sm" className="h-8 text-xs flex-1 bg-green-600 hover:bg-green-700 text-white" onClick={onApprove}>
+              <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+              Approve
             </Button>
           </div>
         </div>

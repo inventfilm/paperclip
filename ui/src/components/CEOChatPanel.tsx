@@ -42,6 +42,60 @@ interface CEOChatPanelProps {
   onOpenArtifact?: (key: string, title: string) => void;
 }
 
+/**
+ * Clean agent message content — strip system init JSON, code blocks with
+ * raw config/tool dumps, and other non-conversational output.
+ */
+function cleanAgentMessage(body: string): string {
+  let cleaned = body;
+
+  // Remove markdown links
+  cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+
+  // Remove lines that look like raw JSON objects (system init, config dumps)
+  cleaned = cleaned.replace(/^\s*\{["\w].*["\w]\}\s*$/gm, "");
+
+  // Remove code blocks containing JSON or system data
+  cleaned = cleaned.replace(/```(?:json|plaintext|text)?\s*\n?\{[\s\S]*?\}\s*\n?```/g, "");
+
+  // Remove lines that are clearly system output (tool lists, session IDs, etc.)
+  cleaned = cleaned.replace(/^.*"(?:type|subtype|session_id|tools|mcp_servers|model|permissionMode|slash_commands|agents)".*$/gm, "");
+
+  // Remove excessive blank lines
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+
+  return cleaned.trim();
+}
+
+/**
+ * Check if a streaming chunk looks like system/init output rather than
+ * conversational text. Used to filter relay streaming.
+ */
+function isSystemChunk(text: string): boolean {
+  // JSON-like content
+  if (/^\s*\{/.test(text) && /"type"\s*:/.test(text)) return true;
+  // Tool/permission dumps
+  if (/"tools"\s*:\s*\[/.test(text)) return true;
+  if (/"mcp_servers"\s*:\s*\[/.test(text)) return true;
+  if (/"session_id"\s*:/.test(text)) return true;
+  return false;
+}
+
+/**
+ * Detect if a user message is asking the CEO to create a plan/hire.
+ */
+function isAskingForPlan(message: string): boolean {
+  const planPatterns = [
+    /\b(hiring|team|org)\s*(plan|strategy)\b/i,
+    /\b(build|create|draft|start|write)\s*(a\s+)?(hiring|team|the)\s*(plan)?\b/i,
+    /\bget started\b/i,
+    /\bhire\b.*\b(team|agents?|roles?)\b/i,
+    /\blet'?s\s+(build|start|go|do it)\b/i,
+    /\bready to\s+(hire|build|plan)\b/i,
+  ];
+  return planPatterns.some((p) => p.test(message));
+}
+
 /** Animated paperclip SVG thinking indicator */
 function PaperclipThinking({ className }: { className?: string }) {
   return (
@@ -297,6 +351,23 @@ export function CEOChatPanel({
     setInput("");
     setOptimisticTyping(true);
 
+    // If user is asking for a plan, create a draft artifact immediately
+    if (isAskingForPlan(trimmed)) {
+      issuesApi.createWorkProduct(taskId, {
+        type: "document",
+        title: "Hiring Plan",
+        provider: "paperclip",
+        status: "draft",
+        reviewState: "none",
+        isPrimary: true,
+        summary: "Your CEO is drafting a hiring plan...",
+      }).then(() => {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.issues.workProducts(taskId),
+        });
+      }).catch(() => { /* may already exist */ });
+    }
+
     const latestId = comments?.[comments.length - 1]?.id ?? null;
     setIgnoreBeforeCommentId(latestId);
     setDetectedPlanCommentId(null);
@@ -340,7 +411,7 @@ export function CEOChatPanel({
           if (!line.startsWith("data: ")) continue;
           try {
             const event = JSON.parse(line.slice(6));
-            if (event.type === "chunk") {
+            if (event.type === "chunk" && !isSystemChunk(event.text)) {
               setStreamingText((prev) => prev + event.text);
             } else if (event.type === "done") {
               setStreamingText("");
@@ -576,6 +647,9 @@ export function CEOChatPanel({
         {comments?.map((comment) => {
           const isAgent = Boolean(comment.authorAgentId);
           const isPlan = detectedPlanCommentId === comment.id;
+          // Hide comments that are entirely system output
+          const displayBody = isAgent ? cleanAgentMessage(comment.body) : comment.body;
+          if (isAgent && !displayBody) return null;
           return (
             <div key={comment.id}>
               <div
@@ -603,11 +677,7 @@ export function CEOChatPanel({
                   )}
                 </div>
                 <div className="prose prose-xs dark:prose-invert max-w-none text-[13px] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                  <MarkdownBody>
-                    {isAgent
-                      ? comment.body.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-                      : comment.body}
-                  </MarkdownBody>
+                  <MarkdownBody>{displayBody}</MarkdownBody>
                 </div>
               </div>
 
