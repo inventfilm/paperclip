@@ -16,13 +16,33 @@ import { notFound } from "../errors.js";
 import { parseObject } from "../adapters/utils.js";
 
 /**
- * Detect if the CEO's response commits to creating an artifact.
- * Returns a list of artifacts to create. Simple pattern matching —
- * reliable and instant, no AI call needed.
+ * Parse structured action signals from CEO response.
+ * CEO is prompted to include %%ACTIONS%%{...}%%/ACTIONS%% at the end of each response.
+ * Falls back to regex pattern matching if no structured signal found.
+ */
+function parseStructuredActions(response: string): {
+  artifacts: Array<{ title: string; type?: string }>;
+  tasks: Array<{ title: string; assignTo?: string }>;
+} | null {
+  const match = response.match(/%%ACTIONS%%([\s\S]*?)%%\/ACTIONS%%/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim());
+    return {
+      artifacts: Array.isArray(parsed.artifacts) ? parsed.artifacts : [],
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fallback: detect artifact commitments via regex pattern matching.
+ * Used when CEO doesn't output structured signal.
  */
 function detectArtifactCommitments(response: string): Array<{ title: string; status: string }> {
   const artifacts: Array<{ title: string; status: string }> = [];
-  const lower = response.toLowerCase();
 
   // Hiring plan commitment
   if (
@@ -42,6 +62,13 @@ function detectArtifactCommitments(response: string): Array<{ title: string; sta
   }
 
   return artifacts;
+}
+
+/**
+ * Strip structured action signals from response text before persisting.
+ */
+function stripActionSignals(response: string): string {
+  return response.replace(/%%ACTIONS%%[\s\S]*?%%\/ACTIONS%%/g, "").trim();
 }
 
 /**
@@ -344,6 +371,23 @@ Write the "${artifactTitle}" now. Be specific, actionable, and thorough. Use mar
             })
             .where(eq(issueWorkProducts.id, workProductId));
         }
+
+        // Update task to in_review and reassign to board
+        try {
+          await issueSvc.update(taskId, {
+            status: "in_review",
+            assigneeAgentId: null,
+            // assigneeUserId will be set by the frontend or left for inbox to pick up
+          });
+        } catch { /* best effort */ }
+
+        // Post CEO notification in chat
+        try {
+          await issueSvc.addComment(taskId,
+            `The **${artifactTitle}** is ready for your review. Take a look in the Artifacts panel when you're ready.`,
+            { agentId: agent.id },
+          );
+        } catch { /* best effort */ }
       } catch (err) {
         console.error("[generate-artifact] failed:", err);
       }
@@ -398,10 +442,21 @@ Write the "${artifactTitle}" now. Be specific, actionable, and thorough. Use mar
     let systemPrompt = `You are ${agent.name}, the CEO of this company. The user is the board of directors.
 
 IMPORTANT RULES:
-- Be conversational, strategic, and concise.
-- When the board asks you to create something (a hiring plan, strategy doc, etc.), respond with a SHORT acknowledgment (1-2 sentences max). Do NOT write the full document in chat. Just confirm you'll start working on it. The system will handle document creation separately.
-- When discussing strategy, priorities, or giving advice, be thorough and helpful.
-- Never reference tools, files, code, or technical systems. You are a CEO, not an engineer.`;
+- Be conversational, strategic, and concise. Keep responses to 1-3 sentences for action acknowledgments.
+- Be biased for action. When the board asks you to create something, confirm immediately in ONE sentence. Do NOT write the full document in chat. The system handles document creation separately.
+- When discussing strategy or giving advice, be helpful but brief. Ask clarifying questions if needed, but don't over-discuss — drive toward creating a task.
+- Never reference tools, files, code, or technical systems. You are a CEO, not an engineer.
+- When creating plans that involve hiring, default to AI agents unless the board explicitly specifies human roles.
+
+STRUCTURED SIGNAL (REQUIRED):
+At the END of every response, on its own line, output an action signal:
+%%ACTIONS%%{"tasks":[],"artifacts":[]}%%/ACTIONS%%
+
+If you are committing to create something, populate the arrays:
+- artifacts: [{"title":"Hiring Plan","type":"document"}]
+- tasks: [{"title":"Build landing page","assignTo":"engineer"}]
+
+If nothing to create, output empty arrays. ALWAYS include this signal line.`;
     const instructionsPath = (config as any).instructionsFilePath;
     if (instructionsPath && typeof instructionsPath === "string") {
       try {
@@ -499,13 +554,38 @@ IMPORTANT RULES:
     proc.on("close", async (exitCode) => {
       clearTimeout(timeout);
 
-      // Save full response as agent comment
-      if (fullResponse.trim()) {
+      // Parse structured actions before stripping
+      const structuredActions = parseStructuredActions(fullResponse);
+
+      // Strip action signals before persisting
+      const cleanedResponse = stripActionSignals(fullResponse);
+
+      // Save cleaned response as agent comment
+      if (cleanedResponse) {
         try {
-          await issueSvc.addComment(taskId, fullResponse.trim(), {
+          await issueSvc.addComment(taskId, cleanedResponse, {
             agentId: agent.id,
           });
         } catch { /* best effort */ }
+      }
+
+      // Send observer event with detected actions (Layer 2)
+      if (structuredActions && (structuredActions.artifacts.length > 0 || structuredActions.tasks.length > 0)) {
+        if (res.writable) {
+          res.write(`data: ${JSON.stringify({
+            type: "observer",
+            actions: {
+              artifacts: structuredActions.artifacts.map((a) => ({ title: a.title, status: "in_progress" })),
+              tasks: structuredActions.tasks,
+            },
+          })}\n\n`);
+        }
+      } else {
+        // Fallback: regex-based detection
+        const artifacts = detectArtifactCommitments(fullResponse);
+        if (artifacts.length > 0 && res.writable) {
+          res.write(`data: ${JSON.stringify({ type: "observer", actions: { artifacts, tasks: [] } })}\n\n`);
+        }
       }
 
       // Send completion event
@@ -519,12 +599,6 @@ IMPORTANT RULES:
             timedOut: killed,
           })}\n\n`,
         );
-      }
-
-      // Detect if the CEO committed to creating an artifact
-      const artifacts = detectArtifactCommitments(fullResponse);
-      if (artifacts.length > 0 && res.writable) {
-        res.write(`data: ${JSON.stringify({ type: "observer", actions: { artifacts, tasks: [] } })}\n\n`);
       }
       if (res.writable) res.end();
     });

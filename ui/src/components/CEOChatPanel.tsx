@@ -42,10 +42,13 @@ interface CEOChatPanelProps {
 
 /**
  * Clean agent message content — strip system init JSON, code blocks with
- * raw config/tool dumps, and other non-conversational output.
+ * raw config/tool dumps, structured signals, and other non-conversational output.
  */
 function cleanAgentMessage(body: string): string {
   let cleaned = body;
+
+  // Strip structured action signals
+  cleaned = cleaned.replace(/%%ACTIONS%%[\s\S]*?%%\/ACTIONS%%/g, "");
 
   // Remove markdown links
   cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
@@ -63,6 +66,74 @@ function cleanAgentMessage(body: string): string {
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
 
   return cleaned.trim();
+}
+
+/**
+ * Pattern-match user input to return an instant canned CEO opener.
+ * Returns null if no pattern matches — fall through to pure streaming.
+ */
+function getCannedOpener(message: string): string | null {
+  const lower = message.toLowerCase().trim();
+
+  // Greetings
+  if (/^(hi|hello|hey|howdy|sup|what's up|yo)\b/.test(lower)) {
+    return "Great to have you here! I've been reviewing our mission. What would you like to tackle first \u2014 building the team, or mapping out strategy?";
+  }
+
+  // Hiring plan / team building
+  if (/hiring\s*plan|build.*team|hire|team\s*plan|staffing/.test(lower)) {
+    return "On it. I'll start drafting a hiring plan tailored to our mission right now.";
+  }
+
+  // Strategy / roadmap
+  if (/strateg|roadmap|priorities|game\s*plan/.test(lower)) {
+    return "Good call. Let me pull together a strategic brief based on our goals.";
+  }
+
+  // Generic "build/create/draft X"
+  const buildMatch = lower.match(/(?:build|create|draft|write|make|start|set up)\s+(?:a\s+|an\s+|the\s+)?(.+)/);
+  if (buildMatch) {
+    return "Got it. I'll get that started and have something for you to review shortly.";
+  }
+
+  return null;
+}
+
+/**
+ * Layer 1 observer: detect actionable intent from the user's message.
+ * Returns task/artifact info to create immediately, before the CEO responds.
+ */
+function detectUserIntent(message: string): { taskTitle: string; artifactTitle: string } | null {
+  const lower = message.toLowerCase().trim();
+
+  // Hiring plan
+  if (/hiring\s*plan|build.*team|team\s*plan|staffing\s*plan/.test(lower)) {
+    return { taskTitle: "Create hiring plan", artifactTitle: "Hiring Plan" };
+  }
+
+  // Strategy
+  if (/strateg(?:y|ic)\s*(?:doc|document|plan|brief)?|roadmap/.test(lower)) {
+    return { taskTitle: "Create strategy document", artifactTitle: "Strategy Document" };
+  }
+
+  // Generic "build/create X"
+  const buildMatch = lower.match(/(?:build|create|draft|write|make)\s+(?:a\s+|an\s+|the\s+)?(.+?)(?:\s+for\s+|\s+about\s+|$)/);
+  if (buildMatch) {
+    const thing = buildMatch[1].replace(/[.!?]+$/, "").trim();
+    if (thing.length > 2 && thing.length < 60) {
+      const title = thing.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+      return { taskTitle: `Create ${thing}`, artifactTitle: title };
+    }
+  }
+
+  return null;
+}
+
+/** Metadata about actions triggered by a message */
+interface MessageAction {
+  taskId?: string;
+  taskTitle?: string;
+  artifacts?: Array<{ title: string; status: string }>;
 }
 
 /**
@@ -169,12 +240,12 @@ function getSuggestionChips(
   if (hasComments) {
     return [
       "What should we prioritize?",
-      "Create a new project",
+      "Build a hiring plan",
     ];
   }
   return [
+    "Build a hiring plan",
     "Let's talk strategy",
-    "What do you need from me?",
   ];
 }
 
@@ -211,6 +282,8 @@ export function CEOChatPanel({
   const inputRef = useRef<HTMLInputElement>(null);
   // Track whether we've already created a draft artifact in the current send cycle
   const draftCreatedRef = useRef(false);
+  // Track actions (tasks/artifacts) associated with messages
+  const [messageActions, setMessageActions] = useState<Map<number, MessageAction>>(new Map());
 
   // Poll comments — faster when waiting for a response
   const { data: rawComments, isLoading } = useQuery({
@@ -321,14 +394,86 @@ export function CEOChatPanel({
     }
   }, [comments?.length, streamingText]);
 
-  // Send message — try streaming relay first, fall back to poll-based
+  // Build conversation context string from comments (used for artifact generation)
+  const buildConvoContext = useCallback(() => {
+    return comments?.map((c) => {
+      const role = c.authorAgentId ? "CEO" : "USER";
+      return `${role}: ${c.body}`;
+    }).join("\n\n") ?? "";
+  }, [comments]);
+
+  // Handle observer actions (Layer 2) — create tasks/artifacts if not already created by Layer 1
+  const handleObserverActions = useCallback(async (
+    actions: { artifacts?: Array<{ title: string; status: string }>; tasks?: Array<{ title: string; description?: string }> },
+    messageIndex: number,
+  ) => {
+    const convoContext = buildConvoContext();
+
+    for (const artifact of actions.artifacts ?? []) {
+      // Dedup: skip if Layer 1 already created this artifact
+      if (draftCreatedRef.current) continue;
+      draftCreatedRef.current = true;
+
+      try {
+        const wp = await issuesApi.createWorkProduct(taskId, {
+          type: "document",
+          title: artifact.title,
+          provider: "paperclip",
+          status: "draft",
+          reviewState: "none",
+          isPrimary: true,
+          summary: `${agentName} is working on ${artifact.title}...`,
+        });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.workProducts(taskId) });
+
+        // Update message actions metadata
+        setMessageActions((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(messageIndex) ?? {};
+          next.set(messageIndex, {
+            ...existing,
+            artifacts: [...(existing.artifacts ?? []), { title: artifact.title, status: "generating" }],
+          });
+          return next;
+        });
+
+        // Fire background generation
+        fetch(`/api/agents/${agentId}/chat/generate-artifact`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            taskId,
+            artifactTitle: artifact.title,
+            workProductId: (wp as any).id,
+            conversationContext: convoContext,
+          }),
+        }).catch(() => {});
+
+        // Assign task to CEO
+        issuesApi.update(taskId, { assigneeAgentId: agentId, status: "in_progress" }).catch(() => {});
+      } catch { /* best effort */ }
+    }
+
+    for (const task of actions.tasks ?? []) {
+      try {
+        await issuesApi.create(companyId, {
+          title: task.title,
+          description: task.description,
+          assigneeAgentId: agentId,
+          status: "todo",
+        });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
+      } catch { /* best effort */ }
+    }
+  }, [taskId, agentId, companyId, agentName, queryClient, buildConvoContext]);
+
+  // Send message — canned+stream hybrid with two-layer observer
   const sendMessage = useCallback(async (body: string) => {
     const trimmed = body.trim();
     if (!trimmed || sending) return;
     setSending(true);
     setInput("");
     setOptimisticMessage(trimmed);
-    setOptimisticTyping(true);
     commentCountAtSendRef.current = comments?.length ?? 0;
     draftCreatedRef.current = false;
 
@@ -336,8 +481,72 @@ export function CEOChatPanel({
     setIgnoreBeforeCommentId(latestId);
     setDetectedPlanCommentId(null);
 
+    const messageIndex = (comments?.length ?? 0) + 1; // Index for the CEO's response message
+
+    // --- Layer 1: Instant user intent detection ---
+    const intent = detectUserIntent(trimmed);
+    if (intent) {
+      draftCreatedRef.current = true;
+      // Create task + work product immediately
+      try {
+        const wp = await issuesApi.createWorkProduct(taskId, {
+          type: "document",
+          title: intent.artifactTitle,
+          provider: "paperclip",
+          status: "draft",
+          reviewState: "none",
+          isPrimary: true,
+          summary: `${agentName} is working on ${intent.artifactTitle}...`,
+        });
+        queryClient.invalidateQueries({ queryKey: queryKeys.issues.workProducts(taskId) });
+
+        // Set message actions metadata
+        setMessageActions((prev) => {
+          const next = new Map(prev);
+          next.set(messageIndex, {
+            taskTitle: intent.taskTitle,
+            artifacts: [{ title: intent.artifactTitle, status: "generating" }],
+          });
+          return next;
+        });
+
+        // Fire background artifact generation
+        const convoContext = buildConvoContext() + `\n\nUSER: ${trimmed}`;
+        fetch(`/api/agents/${agentId}/chat/generate-artifact`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            taskId,
+            artifactTitle: intent.artifactTitle,
+            workProductId: (wp as any).id,
+            conversationContext: convoContext,
+          }),
+        }).catch(() => {});
+
+        // Update task status
+        issuesApi.update(taskId, { assigneeAgentId: agentId, status: "in_progress" }).catch(() => {});
+      } catch { /* best effort — proceed with chat */ }
+    }
+
+    // --- Canned + Stream hybrid ---
+    const cannedText = getCannedOpener(trimmed);
+
+    // Initialize streaming buffer
+    setStreamingText("");
+    streamingBufferRef.current = "";
+    if (streamingTimerRef.current) { clearInterval(streamingTimerRef.current); streamingTimerRef.current = null; }
+
+    if (cannedText) {
+      // Start typewriter with canned text immediately — no typing indicator
+      setOptimisticTyping(false);
+      streamingBufferRef.current = cannedText;
+      setStreamingText(cannedText.slice(0, 1)); // Kick typewriter
+    } else {
+      // No canned match — show typing indicator until first chunk
+      setOptimisticTyping(true);
+    }
+
     try {
-      // Try lightweight streaming endpoint (longer timeout — CLI needs startup time)
       const controller = new AbortController();
       const fetchTimeout = setTimeout(() => controller.abort(), 60000);
       const res = await fetch(`/api/agents/${agentId}/chat/stream`, {
@@ -351,10 +560,6 @@ export function CEOChatPanel({
       if (!res.ok || !res.body) {
         throw new Error("Relay not available");
       }
-
-      setStreamingText("");
-      streamingBufferRef.current = "";
-      if (streamingTimerRef.current) { clearInterval(streamingTimerRef.current); streamingTimerRef.current = null; }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -373,99 +578,49 @@ export function CEOChatPanel({
           try {
             const event = JSON.parse(line.slice(6));
             if (event.type === "chunk" && !isSystemChunk(event.text)) {
-              // Clear typing indicator on first real chunk
               setOptimisticTyping(false);
-              // Add to buffer — typewriter effect will reveal progressively
-              streamingBufferRef.current += event.text;
-              // Kick the typewriter if it hasn't started
+              if (cannedText) {
+                // Append real stream after canned text with a space separator
+                const separator = streamingBufferRef.current.length === cannedText.length ? " " : "";
+                streamingBufferRef.current += separator + event.text;
+              } else {
+                streamingBufferRef.current += event.text;
+              }
+              // Kick typewriter if not started
               setStreamingText((prev) => prev || streamingBufferRef.current.slice(0, 1));
             } else if (event.type === "done") {
-              // Flush remaining buffer instantly
+              // Flush remaining buffer
               setStreamingText(streamingBufferRef.current);
               if (streamingTimerRef.current) clearInterval(streamingTimerRef.current);
               streamingTimerRef.current = null;
-              // Refresh comments to pick up persisted messages
-              queryClient.invalidateQueries({
-                queryKey: queryKeys.issues.comments(taskId),
-              });
+              queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(taskId) });
             } else if (event.type === "observer" && event.actions) {
-              // Observer agent detected artifacts or tasks to create
-              const actions = event.actions as {
-                artifacts?: Array<{ title: string; status: string }>;
-                tasks?: Array<{ title: string; description: string }>;
-              };
-              // Build conversation context for artifact generation
-              const convoContext = comments?.map((c) => {
-                const role = c.authorAgentId ? "CEO" : "USER";
-                return `${role}: ${c.body}`;
-              }).join("\n\n") ?? "";
-
-              for (const artifact of actions.artifacts ?? []) {
-                issuesApi.createWorkProduct(taskId, {
-                  type: "document",
-                  title: artifact.title,
-                  provider: "paperclip",
-                  status: "draft",
-                  reviewState: "none",
-                  isPrimary: true,
-                  summary: `${agentName} is working on ${artifact.title}...`,
-                }).then((wp) => {
-                  queryClient.invalidateQueries({ queryKey: queryKeys.issues.workProducts(taskId) });
-                  // Trigger background document generation
-                  fetch(`/api/agents/${agentId}/chat/generate-artifact`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      taskId,
-                      artifactTitle: artifact.title,
-                      workProductId: (wp as any).id,
-                      conversationContext: convoContext,
-                    }),
-                  }).catch(() => {});
-                }).catch(() => {});
-                // Assign task to CEO
-                issuesApi.update(taskId, { assigneeAgentId: agentId, status: "in_progress" }).catch(() => {});
-              }
-              for (const task of actions.tasks ?? []) {
-                issuesApi.create(companyId, {
-                  title: task.title,
-                  description: task.description,
-                  assigneeAgentId: agentId,
-                  status: "todo",
-                }).then(() => {
-                  queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(companyId) });
-                }).catch(() => {});
-              }
+              // Layer 2: CEO structured signal — create tasks/artifacts if Layer 1 didn't
+              handleObserverActions(event.actions, messageIndex);
             } else if (event.type === "error") {
               setStreamingText("");
               streamingBufferRef.current = "";
               if (streamingTimerRef.current) { clearInterval(streamingTimerRef.current); streamingTimerRef.current = null; }
             }
-          } catch { /* malformed SSE line, skip */ }
+          } catch { /* malformed SSE line */ }
         }
       }
 
-      // Wait briefly for typewriter to finish, then clear
+      // Brief delay for typewriter to finish, then clear
       setTimeout(() => {
         setStreamingText("");
         streamingBufferRef.current = "";
         if (streamingTimerRef.current) { clearInterval(streamingTimerRef.current); streamingTimerRef.current = null; }
       }, 500);
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.issues.comments(taskId),
-      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(taskId) });
     } catch {
-      // Stream endpoint failed or timed out — message was already saved server-side,
-      // so just refresh comments and let polling pick up any response
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.issues.comments(taskId),
-      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(taskId) });
     } finally {
       setSending(false);
       setOptimisticTyping(false);
       inputRef.current?.focus();
     }
-  }, [sending, taskId, agentId, companyId, agentName, queryClient, comments]);
+  }, [sending, taskId, agentId, companyId, agentName, queryClient, comments, buildConvoContext, handleObserverActions]);
 
   const handleSend = useCallback(() => {
     sendMessage(input);
@@ -636,11 +791,12 @@ export function CEOChatPanel({
           </div>
         )}
 
-        {comments?.map((comment) => {
+        {comments?.map((comment, idx) => {
           const isAgent = Boolean(comment.authorAgentId);
           // Hide comments that are entirely system output
           const displayBody = isAgent ? cleanAgentMessage(comment.body) : comment.body;
           if (isAgent && !displayBody) return null;
+          const actions = isAgent ? messageActions.get(idx) : undefined;
           return (
             <div key={comment.id}>
               <div
@@ -665,7 +821,28 @@ export function CEOChatPanel({
                   <MarkdownBody>{displayBody}</MarkdownBody>
                 </div>
               </div>
-
+              {/* Task/artifact metadata bar */}
+              {actions && (
+                <div className="flex items-center gap-2 mt-1 ml-1 text-[11px] text-muted-foreground">
+                  {actions.taskTitle && (
+                    <span className="flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3 text-cyan-500" />
+                      Task created
+                    </span>
+                  )}
+                  {actions.artifacts?.map((a) => (
+                    <button
+                      key={a.title}
+                      className="flex items-center gap-1 hover:text-foreground transition-colors"
+                      onClick={() => onOpenArtifact?.(a.title.toLowerCase().replace(/\s+/g, "-"), a.title)}
+                    >
+                      <span className="text-muted-foreground/60">&middot;</span>
+                      <Loader2 className={cn("h-3 w-3", a.status === "generating" ? "animate-spin text-cyan-500" : "text-green-500")} />
+                      {a.title} &mdash; {a.status === "generating" ? "generating..." : "ready for review"}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
