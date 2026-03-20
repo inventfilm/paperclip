@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Issue, IssueDocument } from "@paperclipai/shared";
 import { useLocation } from "@/lib/router";
@@ -39,15 +39,17 @@ const DOCUMENT_AUTOSAVE_DEBOUNCE_MS = 900;
 const DOCUMENT_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 const getFoldedDocumentsStorageKey = (issueId: string) => `paperclip:issue-document-folds:${issueId}`;
 
-function loadFoldedDocumentKeys(issueId: string) {
-  if (typeof window === "undefined") return [];
+const NO_STORED_PREFERENCE = Symbol("no-stored-preference");
+
+function loadFoldedDocumentKeys(issueId: string): string[] | typeof NO_STORED_PREFERENCE {
+  if (typeof window === "undefined") return NO_STORED_PREFERENCE;
   try {
     const raw = window.localStorage.getItem(getFoldedDocumentsStorageKey(issueId));
-    if (!raw) return [];
+    if (!raw) return NO_STORED_PREFERENCE;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : NO_STORED_PREFERENCE;
   } catch {
-    return [];
+    return NO_STORED_PREFERENCE;
   }
 }
 
@@ -84,26 +86,40 @@ function downloadDocumentFile(key: string, body: string) {
   URL.revokeObjectURL(url);
 }
 
-export function IssueDocumentsSection({
-  issue,
-  canDeleteDocuments,
-  mentions,
-  imageUploadHandler,
-  extraActions,
-}: {
+export interface IssueDocumentsSectionHandle {
+  beginNewDocument: () => void;
+}
+
+export const IssueDocumentsSection = forwardRef<IssueDocumentsSectionHandle, {
   issue: Issue;
   canDeleteDocuments: boolean;
   mentions?: MentionOption[];
   imageUploadHandler?: (file: File) => Promise<string>;
   extraActions?: ReactNode;
-}) {
+  /** When true, hides the "New document" and extra action buttons. The section is only rendered when documents exist. */
+  hideActions?: boolean;
+  /** When true, all documents start collapsed unless the user has explicitly expanded them. */
+  defaultCollapsed?: boolean;
+}>(function IssueDocumentsSection({
+  issue,
+  canDeleteDocuments,
+  mentions,
+  imageUploadHandler,
+  extraActions,
+  hideActions = false,
+  defaultCollapsed = false,
+}, ref) {
   const queryClient = useQueryClient();
   const location = useLocation();
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [documentConflict, setDocumentConflict] = useState<DocumentConflictState | null>(null);
-  const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() => loadFoldedDocumentKeys(issue.id));
+  const [hasStoredPreference] = useState(() => loadFoldedDocumentKeys(issue.id) !== NO_STORED_PREFERENCE);
+  const [foldedDocumentKeys, setFoldedDocumentKeys] = useState<string[]>(() => {
+    const stored = loadFoldedDocumentKeys(issue.id);
+    return stored === NO_STORED_PREFERENCE ? [] : stored;
+  });
   const [autosaveDocumentKey, setAutosaveDocumentKey] = useState<string | null>(null);
   const [copiedDocumentKey, setCopiedDocumentKey] = useState<string | null>(null);
   const [highlightDocumentKey, setHighlightDocumentKey] = useState<string | null>(null);
@@ -186,6 +202,8 @@ export function IssueDocumentsSection({
     });
     setError(null);
   };
+
+  useImperativeHandle(ref, () => ({ beginNewDocument }), []);
 
   const beginEdit = (key: string) => {
     const doc = sortedDocuments.find((entry) => entry.key === key);
@@ -415,23 +433,29 @@ export function IssueDocumentsSection({
   };
 
   useEffect(() => {
-    setFoldedDocumentKeys(loadFoldedDocumentKeys(issue.id));
+    const stored = loadFoldedDocumentKeys(issue.id);
+    setFoldedDocumentKeys(stored === NO_STORED_PREFERENCE ? [] : stored);
   }, [issue.id]);
 
   useEffect(() => {
     hasScrolledToHashRef.current = false;
   }, [issue.id, location.hash]);
 
+  // When defaultCollapsed and no stored user preference, fold all documents.
+  // Also prune folded keys that reference deleted documents.
   useEffect(() => {
     const validKeys = new Set(sortedDocuments.map((doc) => doc.key));
     setFoldedDocumentKeys((current) => {
+      if (defaultCollapsed && !hasStoredPreference && sortedDocuments.length > 0) {
+        return sortedDocuments.map((doc) => doc.key);
+      }
       const next = current.filter((key) => validKeys.has(key));
       if (next.length !== current.length) {
         saveFoldedDocumentKeys(issue.id, next);
       }
       return next;
     });
-  }, [issue.id, sortedDocuments]);
+  }, [issue.id, sortedDocuments, defaultCollapsed, hasStoredPreference]);
 
   useEffect(() => {
     saveFoldedDocumentKeys(issue.id, foldedDocumentKeys);
@@ -516,9 +540,17 @@ export function IssueDocumentsSection({
     );
   };
 
+  // When actions are hidden and there's nothing to show, render nothing.
+  if (hideActions && isEmpty && !draft?.isNew) return null;
+
   return (
     <div className="space-y-3">
-      {isEmpty && !draft?.isNew ? (
+      {hideActions ? (
+        /* Actions hidden — just show the "Documents" heading when there are documents */
+        !isEmpty || draft?.isNew ? (
+          <h3 className="text-sm font-medium text-muted-foreground">Documents</h3>
+        ) : null
+      ) : isEmpty && !draft?.isNew ? (
         <div className="flex items-center justify-end gap-2">
           {extraActions}
           <Button variant="outline" size="sm" onClick={beginNewDocument}>
@@ -886,4 +918,4 @@ export function IssueDocumentsSection({
       </div>
     </div>
   );
-}
+});
