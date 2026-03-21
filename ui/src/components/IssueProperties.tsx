@@ -255,6 +255,11 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
     return agent?.name ?? id.slice(0, 8);
   };
 
+  const agentTitle = (id: string | null) => {
+    if (!id || !agents) return null;
+    return agents.find((a) => a.id === id)?.title ?? null;
+  };
+
   const projectName = (id: string | null) => {
     if (!id) return id?.slice(0, 8) ?? "None";
     const project = orderedProjects.find((p) => p.id === id);
@@ -420,7 +425,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
   );
 
   const assigneeTrigger = assignee ? (
-    <Identity name={assignee.name} size="sm" />
+    <Identity name={assignee.name} title={assignee.title} size="sm" />
   ) : assigneeUserLabel ? (
     <>
       <User className="h-3.5 w-3.5 text-muted-foreground" />
@@ -771,7 +776,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
                 to={`/agents/${issue.createdByAgentId}`}
                 className="hover:underline"
               >
-                <Identity name={agentName(issue.createdByAgentId) ?? issue.createdByAgentId.slice(0, 8)} size="sm" />
+                <Identity name={agentName(issue.createdByAgentId) ?? issue.createdByAgentId.slice(0, 8)} title={agentTitle(issue.createdByAgentId)} size="sm" />
               </Link>
             ) : (
               <>

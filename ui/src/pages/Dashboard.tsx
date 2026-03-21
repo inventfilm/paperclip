@@ -163,6 +163,11 @@ export function Dashboard() {
     return agents.find((a) => a.id === id)?.name ?? null;
   };
 
+  const agentTitle = (id: string | null) => {
+    if (!id || !agents) return null;
+    return agents.find((a) => a.id === id)?.title ?? null;
+  };
+
   if (!selectedCompanyId) {
     if (companies.length === 0) {
       return (
@@ -363,8 +368,9 @@ export function Dashboard() {
                             </span>
                             {issue.assigneeAgentId && (() => {
                               const name = agentName(issue.assigneeAgentId);
+                              const title = agentTitle(issue.assigneeAgentId);
                               return name
-                                ? <span className="hidden sm:inline-flex"><Identity name={name} size="sm" /></span>
+                                ? <span className="hidden sm:inline-flex"><Identity name={name} title={title} size="sm" /></span>
                                 : null;
                             })()}
                             <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>

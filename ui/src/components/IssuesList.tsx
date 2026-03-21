@@ -143,6 +143,7 @@ function countActiveFilters(state: IssueViewState): number {
 interface Agent {
   id: string;
   name: string;
+  title?: string | null;
 }
 
 interface IssuesListProps {
@@ -236,6 +237,11 @@ export function IssuesList({
   const agentName = useCallback((id: string | null) => {
     if (!id || !agents) return null;
     return agents.find((a) => a.id === id)?.name ?? null;
+  }, [agents]);
+
+  const agentTitle = useCallback((id: string | null) => {
+    if (!id || !agents) return null;
+    return agents.find((a) => a.id === id)?.title ?? null;
   }, [agents]);
 
   const filtered = useMemo(() => {
@@ -724,7 +730,7 @@ export function IssuesList({
                             }}
                           >
                             {issue.assigneeAgentId && agentName(issue.assigneeAgentId) ? (
-                              <Identity name={agentName(issue.assigneeAgentId)!} size="sm" />
+                              <Identity name={agentName(issue.assigneeAgentId)!} title={agentTitle(issue.assigneeAgentId)} size="sm" />
                             ) : issue.assigneeUserId ? (
                               <span className="inline-flex items-center gap-1.5 text-xs">
                                 <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">

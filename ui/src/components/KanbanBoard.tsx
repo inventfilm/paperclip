@@ -39,6 +39,7 @@ function statusLabel(status: string): string {
 interface Agent {
   id: string;
   name: string;
+  title?: string | null;
 }
 
 interface KanbanBoardProps {
@@ -130,6 +131,11 @@ function KanbanCard({
     return agents.find((a) => a.id === id)?.name ?? null;
   };
 
+  const agentTitle = (id: string | null) => {
+    if (!id || !agents) return null;
+    return agents.find((a) => a.id === id)?.title ?? null;
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -164,8 +170,9 @@ function KanbanCard({
           <PriorityIcon priority={issue.priority} />
           {issue.assigneeAgentId && (() => {
             const name = agentName(issue.assigneeAgentId);
+            const title = agentTitle(issue.assigneeAgentId);
             return name ? (
-              <Identity name={name} size="xs" />
+              <Identity name={name} title={title} size="xs" />
             ) : (
               <span className="text-xs text-muted-foreground font-mono">
                 {issue.assigneeAgentId.slice(0, 8)}

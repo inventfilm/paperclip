@@ -63,6 +63,12 @@ export function ApprovalDetail() {
     return map;
   }, [agents]);
 
+  const agentTitleById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    for (const agent of agents ?? []) map.set(agent.id, agent.title);
+    return map;
+  }, [agents]);
+
   useEffect(() => {
     setBreadcrumbs([
       { label: "Approvals", href: "/approvals" },
@@ -215,6 +221,7 @@ export function ApprovalDetail() {
               <span className="text-muted-foreground text-xs">Requested by</span>
               <Identity
                 name={agentNameById.get(approval.requestedByAgentId) ?? approval.requestedByAgentId.slice(0, 8)}
+                title={agentTitleById.get(approval.requestedByAgentId)}
                 size="sm"
               />
             </div>
@@ -333,6 +340,7 @@ export function ApprovalDetail() {
                   <Link to={`/agents/${comment.authorAgentId}`} className="hover:underline">
                     <Identity
                       name={agentNameById.get(comment.authorAgentId) ?? comment.authorAgentId.slice(0, 8)}
+                      title={agentTitleById.get(comment.authorAgentId)}
                       size="sm"
                     />
                   </Link>

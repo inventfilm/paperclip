@@ -186,7 +186,7 @@ function ActorIdentity({ evt, agentMap }: { evt: ActivityEvent; agentMap: Map<st
   const id = evt.actorId;
   if (evt.actorType === "agent") {
     const agent = agentMap.get(id);
-    return <Identity name={agent?.name ?? id.slice(0, 8)} size="sm" />;
+    return <Identity name={agent?.name ?? id.slice(0, 8)} title={agent?.title} size="sm" />;
   }
   if (evt.actorType === "system") return <Identity name="System" size="sm" />;
   if (evt.actorType === "user") return <Identity name="Board" size="sm" />;
@@ -1059,9 +1059,9 @@ export function IssueDetail() {
                     <span className="truncate">{child.title}</span>
                   </div>
                   {child.assigneeAgentId && (() => {
-                    const name = agentMap.get(child.assigneeAgentId)?.name;
-                    return name
-                      ? <Identity name={name} size="sm" />
+                    const agent = agentMap.get(child.assigneeAgentId);
+                    return agent?.name
+                      ? <Identity name={agent.name} title={agent.title} size="sm" />
                       : <span className="text-muted-foreground font-mono">{child.assigneeAgentId.slice(0, 8)}</span>;
                   })()}
                 </Link>
