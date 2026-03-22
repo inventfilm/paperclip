@@ -6,7 +6,7 @@ import { useToast } from "../context/ToastContext";
 import { secretsApi } from "../api/secrets";
 import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
-import { KeyRound, Pencil, RotateCw, Trash2 } from "lucide-react";
+import { KeyRound, Pencil, Trash2 } from "lucide-react";
 import { Field } from "../components/agent-config-primitives";
 import type { CompanySecret, SecretProvider } from "@paperclipai/shared";
 
@@ -26,10 +26,11 @@ export function CompanySecrets() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
+  const [editValue, setEditValue] = useState("");
 
-  // --- Rotate state ---
-  const [rotatingId, setRotatingId] = useState<string | null>(null);
-  const [rotateValue, setRotateValue] = useState("");
+  // --- Delete confirmation state ---
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Reset form state when company changes
   const resetForms = useCallback(() => {
@@ -37,8 +38,7 @@ export function CompanySecrets() {
     setNewValue("");
     setNewDescription("");
     setEditingId(null);
-    setRotatingId(null);
-    setRotateValue("");
+    setConfirmDeleteId(null);
   }, []);
 
   useEffect(() => {
@@ -66,8 +66,10 @@ export function CompanySecrets() {
   }, [providers, newProvider]);
 
   // --- Mutations ---
-  const invalidateSecrets = () =>
-    queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(selectedCompanyId!) });
+  const invalidateSecrets = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(selectedCompanyId!) }),
+    [queryClient, selectedCompanyId],
+  );
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -87,11 +89,16 @@ export function CompanySecrets() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name, description }: { id: string; name: string; description: string }) =>
-      secretsApi.update(id, {
+    mutationFn: async ({ id, name, description, value }: { id: string; name: string; description: string; value: string }) => {
+      const updated = await secretsApi.update(id, {
         name: name.trim(),
         description: description.trim() || null,
-      }),
+      });
+      if (value) {
+        await secretsApi.rotate(id, { value });
+      }
+      return updated;
+    },
     onSuccess: () => {
       setEditingId(null);
       pushToast({ title: "Secret updated" });
@@ -99,22 +106,16 @@ export function CompanySecrets() {
     },
   });
 
-  const rotateMutation = useMutation({
-    mutationFn: ({ id, value }: { id: string; value: string }) =>
-      secretsApi.rotate(id, { value }),
-    onSuccess: () => {
-      setRotatingId(null);
-      setRotateValue("");
-      pushToast({ title: "Secret rotated" });
-      invalidateSecrets();
-    },
-  });
-
   const deleteMutation = useMutation({
     mutationFn: (id: string) => secretsApi.remove(id),
     onSuccess: () => {
+      setConfirmDeleteId(null);
+      setDeletingId(null);
       pushToast({ title: "Secret deleted" });
       invalidateSecrets();
+    },
+    onError: () => {
+      setDeletingId(null);
     },
   });
 
@@ -135,25 +136,17 @@ export function CompanySecrets() {
   }
 
   function startEditing(secret: CompanySecret) {
-    setRotatingId(null);
-    setRotateValue("");
+    updateMutation.reset();
+    setConfirmDeleteId(null);
     setEditingId(secret.id);
     setEditName(secret.name);
     setEditDescription(secret.description ?? "");
+    setEditValue("");
   }
 
-  function startRotating(id: string) {
-    setEditingId(null);
-    setRotatingId(id);
-    setRotateValue("");
-  }
-
-  function handleDelete(secret: CompanySecret) {
-    const confirmed = window.confirm(
-      `Delete secret "${secret.name}"? This cannot be undone.`
-    );
-    if (!confirmed) return;
-    deleteMutation.mutate(secret.id);
+  function handleDelete(id: string) {
+    setDeletingId(id);
+    deleteMutation.mutate(id);
   }
 
   return (
@@ -276,7 +269,7 @@ export function CompanySecrets() {
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      title="Edit name/description"
+                      title="Edit secret"
                       onClick={() => startEditing(secret)}
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -284,22 +277,39 @@ export function CompanySecrets() {
                     <Button
                       size="icon-sm"
                       variant="ghost"
-                      title="Rotate value"
-                      onClick={() => startRotating(secret.id)}
-                    >
-                      <RotateCw className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
                       title="Delete secret"
-                      onClick={() => handleDelete(secret)}
-                      disabled={deleteMutation.isPending}
+                      onClick={() => setConfirmDeleteId(secret.id)}
+                      disabled={deletingId === secret.id}
                     >
                       <Trash2 className="h-3.5 w-3.5 text-destructive" />
                     </Button>
                   </div>
                 </div>
+
+                {/* Inline delete confirmation */}
+                {confirmDeleteId === secret.id && (
+                  <div className="flex items-center gap-2 border-t border-border pt-2">
+                    <span className="text-xs text-muted-foreground">
+                      Delete &quot;{secret.name}&quot;? This cannot be undone.
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleDelete(secret.id)}
+                      disabled={deletingId === secret.id}
+                    >
+                      {deletingId === secret.id ? "Deleting..." : "Confirm"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setConfirmDeleteId(null)}
+                      disabled={deletingId === secret.id}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
 
                 {/* Inline edit form */}
                 {editingId === secret.id && (
@@ -321,6 +331,16 @@ export function CompanySecrets() {
                         onChange={(e) => setEditDescription(e.target.value)}
                       />
                     </Field>
+                    <Field label="Value" hint="Leave blank to keep current value.">
+                      <input
+                        className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none font-mono"
+                        type="password"
+                        autoComplete="new-password"
+                        value={editValue}
+                        placeholder="••••••••"
+                        onChange={(e) => setEditValue(e.target.value)}
+                      />
+                    </Field>
                     <div className="flex items-center gap-2">
                       <Button
                         size="sm"
@@ -329,6 +349,7 @@ export function CompanySecrets() {
                             id: secret.id,
                             name: editName,
                             description: editDescription,
+                            value: editValue,
                           })
                         }
                         disabled={updateMutation.isPending || !editName.trim()}
@@ -347,53 +368,6 @@ export function CompanySecrets() {
                           {updateMutation.error instanceof Error
                             ? updateMutation.error.message
                             : "Failed to update"}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Inline rotate form */}
-                {rotatingId === secret.id && (
-                  <div className="space-y-2 border-t border-border pt-2">
-                    <Field label="New value" hint="Enter the new secret value to rotate to.">
-                      <input
-                        className="w-full rounded-md border border-border bg-transparent px-2.5 py-1.5 text-sm outline-none font-mono"
-                        type="password"
-                        autoComplete="new-password"
-                        value={rotateValue}
-                        placeholder="••••••••"
-                        onChange={(e) => setRotateValue(e.target.value)}
-                      />
-                    </Field>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() =>
-                          rotateMutation.mutate({
-                            id: secret.id,
-                            value: rotateValue,
-                          })
-                        }
-                        disabled={rotateMutation.isPending || !rotateValue}
-                      >
-                        {rotateMutation.isPending ? "Rotating..." : "Rotate"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setRotatingId(null);
-                          setRotateValue("");
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      {rotateMutation.isError && (
-                        <span className="text-xs text-destructive">
-                          {rotateMutation.error instanceof Error
-                            ? rotateMutation.error.message
-                            : "Failed to rotate"}
                         </span>
                       )}
                     </div>
