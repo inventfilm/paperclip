@@ -102,6 +102,8 @@ export function CompanySecrets() {
     onSuccess: () => {
       setEditingId(null);
       pushToast({ title: "Secret updated" });
+    },
+    onSettled: () => {
       invalidateSecrets();
     },
   });
@@ -116,6 +118,7 @@ export function CompanySecrets() {
     },
     onError: () => {
       setDeletingId(null);
+      pushToast({ title: "Failed to delete secret", variant: "destructive" });
     },
   });
 
@@ -278,7 +281,7 @@ export function CompanySecrets() {
                       size="icon-sm"
                       variant="ghost"
                       title="Delete secret"
-                      onClick={() => setConfirmDeleteId(secret.id)}
+                      onClick={() => { setEditingId(null); setConfirmDeleteId(secret.id); }}
                       disabled={deletingId === secret.id}
                     >
                       <Trash2 className="h-3.5 w-3.5 text-destructive" />
