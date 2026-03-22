@@ -1,4 +1,4 @@
-import { Link } from "@/lib/router";
+import { Link, useLocation } from "@/lib/router";
 import { Menu } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -30,10 +30,22 @@ function GlobalToolbarPlugins({ context }: { context: GlobalToolbarContext }) {
   );
 }
 
+const BOARD_ROOM_ROUTE_SEGMENT = "board-chat";
+
 export function BreadcrumbBar() {
   const { breadcrumbs } = useBreadcrumbs();
+  const location = useLocation();
   const { toggleSidebar, isMobile } = useSidebar();
   const { selectedCompanyId, selectedCompany } = useCompany();
+
+  const displayBreadcrumbs = useMemo(() => {
+    const onBoardRoom = location.pathname
+      .split("/")
+      .filter(Boolean)
+      .includes(BOARD_ROOM_ROUTE_SEGMENT);
+    if (!onBoardRoom || breadcrumbs.length !== 1) return breadcrumbs;
+    return [{ ...breadcrumbs[0], label: "Board Room" }];
+  }, [breadcrumbs, location.pathname]);
 
   const globalToolbarSlotContext = useMemo(
     () => ({
@@ -45,7 +57,7 @@ export function BreadcrumbBar() {
 
   const globalToolbarSlots = <GlobalToolbarPlugins context={globalToolbarSlotContext} />;
 
-  if (breadcrumbs.length === 0) {
+  if (displayBreadcrumbs.length === 0) {
     return (
       <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center justify-end">
         {globalToolbarSlots}
@@ -66,13 +78,13 @@ export function BreadcrumbBar() {
   );
 
   // Single breadcrumb = page title (uppercase)
-  if (breadcrumbs.length === 1) {
+  if (displayBreadcrumbs.length === 1) {
     return (
       <div className="border-b border-border px-4 md:px-6 h-12 shrink-0 flex items-center">
         {menuButton}
         <div className="min-w-0 overflow-hidden flex-1">
           <h1 className="text-sm font-semibold uppercase tracking-wider truncate">
-            {breadcrumbs[0].label}
+            {displayBreadcrumbs[0].label}
           </h1>
         </div>
         {globalToolbarSlots}
@@ -87,8 +99,8 @@ export function BreadcrumbBar() {
       <div className="min-w-0 overflow-hidden flex-1">
         <Breadcrumb className="min-w-0 overflow-hidden">
           <BreadcrumbList className="flex-nowrap">
-            {breadcrumbs.map((crumb, i) => {
-              const isLast = i === breadcrumbs.length - 1;
+            {displayBreadcrumbs.map((crumb, i) => {
+              const isLast = i === displayBreadcrumbs.length - 1;
               return (
                 <Fragment key={i}>
                   {i > 0 && <BreadcrumbSeparator />}

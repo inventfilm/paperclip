@@ -1,12 +1,20 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { Button } from "@/components/ui/button";
-import { Send } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ListFilter, Send } from "lucide-react";
 import { cn } from "../lib/utils";
 
 /**
@@ -14,14 +22,71 @@ import { cn } from "../lib/utils";
  * Uses /board/chat/stream to invoke Claude with the board skill as system prompt.
  * The user manages their Paperclip company through natural conversation.
  */
+/** Hit zone to the right of the 1px line (line sits on chat pane’s right edge). */
+const SPLIT_DIVIDER_PX = 12;
+const SPLIT_MIN_PANE_PX = 280;
+
+const AGENT_FEED_FILTER_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "in-progress", label: "In Progress" },
+  { value: "for-review", label: "In Review" },
+  { value: "completed", label: "Done" },
+] as const;
+
+type AgentFeedFilterValue = (typeof AGENT_FEED_FILTER_OPTIONS)[number]["value"];
+
+/** One row of content; bubble scrolls horizontally so nothing wraps to a second line. */
+const BOARD_CHAT_MARKDOWN_SINGLE_LINE =
+  "!flex w-max max-w-none flex-nowrap items-center gap-x-2 [&>*]:!my-0 [&>*]:shrink-0 [&>*]:whitespace-nowrap [&>ul]:inline-flex [&>ul]:flex-nowrap [&>ul]:gap-x-2 [&>ul]:!m-0 [&>ul]:!py-0 [&>ul]:!pl-0 [&>ol]:inline-flex [&>ol]:flex-nowrap [&>ol]:gap-x-2 [&>ol]:!m-0 [&>ol]:!py-0 [&>ol]:!pl-0 [&_li]:whitespace-nowrap";
+
+const boardChatBubbleShell = "min-w-0 max-w-[85%] overflow-x-auto overflow-y-hidden px-3 py-2 text-sm";
+
 export function BoardChat() {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Board Chat" }]);
+    setBreadcrumbs([{ label: "Board Room" }]);
   }, [setBreadcrumbs]);
+
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const [leftPaneWidth, setLeftPaneWidth] = useState(480);
+  const splitDragging = useRef(false);
+  const [agentFeedFilter, setAgentFeedFilter] = useState<AgentFeedFilterValue>("all");
+
+  const handleSplitDragStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      splitDragging.current = true;
+      const startX = e.clientX;
+      const startWidth = leftPaneWidth;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        if (!splitDragging.current) return;
+        const containerW = splitContainerRef.current?.clientWidth ?? startWidth + 400;
+        const inner = containerW - SPLIT_DIVIDER_PX;
+        const lower = SPLIT_MIN_PANE_PX;
+        const upper = inner - SPLIT_MIN_PANE_PX;
+        const next = startWidth + ev.clientX - startX;
+        if (upper < lower) {
+          setLeftPaneWidth(Math.max(0, Math.round(inner / 2)));
+        } else {
+          setLeftPaneWidth(Math.min(upper, Math.max(lower, next)));
+        }
+      };
+
+      const onMouseUp = () => {
+        splitDragging.current = false;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [leftPaneWidth],
+  );
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -50,6 +115,17 @@ export function BoardChat() {
       prevCompanyRef.current = selectedCompanyId;
     }
   }, [selectedCompanyId, boardIssueId, queryClient]);
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const ceoAgent = useMemo(
+    () => agents?.find((a) => a.role === "ceo" && a.status !== "terminated"),
+    [agents],
+  );
 
   // Find or detect the board operations issue
   const { data: issues } = useQuery({
@@ -234,116 +310,210 @@ export function BoardChat() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100%+3rem)] -m-6">
-      {/* Header */}
-      <div className="shrink-0 border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">Board Concierge</h2>
-        <p className="text-xs text-muted-foreground">
-          {selectedCompany?.name ?? "Your company"} — manage your org through chat
-        </p>
-      </div>
-
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-        {sortedComments.length === 0 && !streamingText && !sending && !optimisticMessage && (
-          <div className="text-center py-12">
-            <p className="text-sm text-muted-foreground mb-4">
-              Ask me anything about your company — hiring, tasks, costs, approvals.
-            </p>
-            <div className="flex flex-wrap gap-2 justify-center">
-              {[
-                "What's happening today?",
-                "Help me build a hiring plan",
-                "Show me my costs",
-                "List pending approvals",
-              ].map((suggestion) => (
-                <button
-                  key={suggestion}
-                  onClick={() => sendMessage(suggestion)}
-                  className="px-3 py-1.5 text-xs rounded-full border border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-                >
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {sortedComments.map((comment) => {
-          const isUser = !comment.authorAgentId && comment.authorUserId !== "board-concierge";
-          return (
+    <div className="flex h-[calc(100%+3rem)] flex-col -m-6">
+      <div
+        ref={splitContainerRef}
+        className="flex min-h-0 min-w-0 flex-1 flex-row"
+      >
+        {/* Left: chat (self-contained pane) */}
+        <div
+          className="flex min-h-0 min-w-0 shrink-0 flex-col bg-background"
+          style={{ width: leftPaneWidth }}
+        >
+          <div className="relative shrink-0 px-4 py-3">
             <div
-              key={comment.id}
-              className={cn("flex", isUser ? "justify-end" : "justify-start")}
-            >
-              <div
-                className={cn(
-                  "max-w-[85%] px-3 py-2 text-sm",
-                  isUser
-                    ? "bg-blue-600 text-white [border-radius:12px_12px_0px_12px]"
-                    : "bg-muted text-foreground [border-radius:12px_12px_12px_0px]",
-                )}
+              className="pointer-events-none absolute bottom-0 left-0 right-0 h-px bg-border"
+              aria-hidden
+            />
+            <h3 className="text-sm font-semibold">
+              {ceoAgent?.name ?? "Board Room"}
+            </h3>
+            <p className="text-xs text-muted-foreground">
+              {selectedCompany?.name ?? "Your company"}
+            </p>
+          </div>
+          {/* Messages — scroll viewport flush right so the scrollbar sits on the pane/divider edge */}
+          <div className="scrollbar-auto-hide min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+            <div className="flex flex-col gap-4 px-4 py-3">
+              {sortedComments.length === 0 && !streamingText && !sending && !optimisticMessage && (
+                <div className="py-12 text-center">
+                  <p className="mb-4 text-sm text-muted-foreground">
+                    Ask me anything about your company — hiring, tasks, costs, approvals.
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {[
+                      "What's happening today?",
+                      "Help me build a hiring plan",
+                      "Show me my costs",
+                      "List pending approvals",
+                    ].map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        onClick={() => sendMessage(suggestion)}
+                        className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sortedComments.map((comment) => {
+                const isUser = !comment.authorAgentId && comment.authorUserId !== "board-concierge";
+                return (
+                  <div
+                    key={comment.id}
+                    className={cn("flex", isUser ? "justify-end" : "justify-start")}
+                  >
+                    <div
+                      className={cn(
+                        boardChatBubbleShell,
+                        isUser
+                          ? "bg-blue-600 text-white [border-radius:12px_12px_0px_12px]"
+                          : "bg-muted text-foreground [border-radius:12px_12px_12px_0px]",
+                      )}
+                    >
+                      <MarkdownBody className={BOARD_CHAT_MARKDOWN_SINGLE_LINE}>
+                        {comment.body ?? ""}
+                      </MarkdownBody>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Optimistic user message — shows instantly before server persists */}
+              {optimisticMessage && (
+                <div className="flex justify-end">
+                  <div
+                    className={cn(
+                      boardChatBubbleShell,
+                      "whitespace-nowrap bg-blue-600 text-white [border-radius:12px_12px_0px_12px]",
+                    )}
+                  >
+                    {optimisticMessage}
+                  </div>
+                </div>
+              )}
+
+              {/* Streaming response */}
+              {streamingText && (
+                <div className="flex justify-start">
+                  <div
+                    className={cn(
+                      boardChatBubbleShell,
+                      "bg-muted text-foreground [border-radius:12px_12px_12px_0px]",
+                    )}
+                  >
+                    <MarkdownBody className={BOARD_CHAT_MARKDOWN_SINGLE_LINE}>{streamingText}</MarkdownBody>
+                  </div>
+                </div>
+              )}
+
+              {/* Status bar — always visible while sending, independent from the chat bubble */}
+              {sending && (
+                <div className="flex items-center gap-2 pl-1 text-xs text-muted-foreground">
+                  <img src="/paperclip-thinking.svg" alt="" className="inline-block shrink-0" style={{ width: 14, height: 14 }} />
+                  <span>{statusText || "Thinking..."}</span>
+                  {elapsedSec > 0 && (
+                    <span className="opacity-50">{elapsedSec}s</span>
+                  )}
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          </div>
+
+          {/* Input */}
+          <div className="shrink-0 border-t border-border px-3 py-3">
+            <div className="flex items-center gap-2">
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value.replace(/\r?\n/g, " "))}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask anything about your company..."
+                rows={1}
+                wrap="off"
+                className="min-h-9 min-w-0 flex-1 resize-none overflow-x-auto whitespace-nowrap [border-radius:12px] border border-border bg-background px-3 py-1.5 text-sm leading-5 focus:outline-none focus:ring-1 focus:ring-ring"
+                disabled={sending}
+              />
+              <Button
+                size="icon-sm"
+                onClick={handleSend}
+                disabled={!input.trim() || sending}
+                className="shrink-0"
               >
-                <MarkdownBody>{comment.body ?? ""}</MarkdownBody>
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Optimistic user message — shows instantly before server persists */}
-        {optimisticMessage && (
-          <div className="flex justify-end">
-            <div className="max-w-[85%] px-3 py-2 text-sm bg-blue-600 text-white [border-radius:12px_12px_0px_12px]">
-              {optimisticMessage}
+                <Send className="h-4 w-4" />
+              </Button>
             </div>
           </div>
-        )}
-
-        {/* Streaming response */}
-        {streamingText && (
-          <div className="flex justify-start">
-            <div className="max-w-[85%] [border-radius:12px_12px_12px_0px] px-3 py-2 text-sm bg-muted text-foreground">
-              <MarkdownBody>{streamingText}</MarkdownBody>
-            </div>
-          </div>
-        )}
-
-        {/* Status bar — always visible while sending, independent from the chat bubble */}
-        {sending && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground pl-1">
-            <img src="/paperclip-thinking.svg" alt="" className="inline-block shrink-0" style={{ width: 14, height: 14 }} />
-            <span>{statusText || "Thinking..."}</span>
-            {elapsedSec > 0 && (
-              <span className="opacity-50">{elapsedSec}s</span>
-            )}
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input */}
-      <div className="shrink-0 border-t border-border p-3">
-        <div className="flex gap-2 items-end">
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask anything about your company..."
-            rows={1}
-            className="flex-1 resize-none [border-radius:12px] border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
-            disabled={sending}
-          />
-          <Button
-            size="icon"
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            className="shrink-0"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
         </div>
+
+        {/* Resize handle: 1px line on chat edge; drag target extends into gutter */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize board chat and agent feed"
+          className="group relative flex w-3 shrink-0 cursor-col-resize bg-background"
+          onMouseDown={handleSplitDragStart}
+        >
+          <div
+            className="pointer-events-none absolute top-0 bottom-0 left-0 w-px bg-border transition-colors group-hover:bg-foreground/20"
+            aria-hidden
+          />
+        </div>
+
+        {/* Right: Agent Feed (self-contained pane) */}
+        <aside className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+          <div className="relative flex shrink-0 items-start justify-between gap-2 px-4 py-3">
+            <div
+              className="pointer-events-none absolute bottom-0 h-px bg-border"
+              style={{
+                left: -SPLIT_DIVIDER_PX,
+                right: 0,
+              }}
+              aria-hidden
+            />
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold">Agent Feed</h3>
+              <p className="text-xs text-muted-foreground">
+                Live activity from your agents
+              </p>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="shrink-0 text-muted-foreground"
+                  aria-label="Filter agent feed"
+                >
+                  <ListFilter />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuRadioGroup
+                  value={agentFeedFilter}
+                  onValueChange={(v) => setAgentFeedFilter(v as AgentFeedFilterValue)}
+                >
+                  {AGENT_FEED_FILTER_OPTIONS.map(({ value, label }) => (
+                    <DropdownMenuRadioItem key={value} value={value}>
+                      {label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+          <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+            <p className="max-w-[14rem] text-center text-sm text-muted-foreground">
+              Activity from your agents will appear here.
+            </p>
+          </div>
+        </aside>
       </div>
     </div>
   );

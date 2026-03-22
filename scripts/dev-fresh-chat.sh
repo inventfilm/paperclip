@@ -108,7 +108,7 @@ TASK=$(curl -s -X POST "$BASE/companies/$COMPANY_ID/issues" \
 TASK_ID=$(echo "$TASK" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 echo "  task id: $TASK_ID"
 
-URL="http://localhost:3000/$PREFIX/chat?taskId=$TASK_ID"
+URL="http://localhost:3000/$PREFIX/board-chat"
 echo ""
 echo "Ready! Open:"
 echo "  $URL"

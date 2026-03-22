@@ -1,5 +1,12 @@
 import { useEffect, useRef } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation, useParams } from "@/lib/router";
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Layout } from "./components/Layout";
@@ -7,7 +14,6 @@ import { OnboardingWizard } from "./components/OnboardingWizard";
 import { authApi } from "./api/auth";
 import { healthApi } from "./api/health";
 import { Artifacts } from "./pages/Artifacts";
-import { Chat } from "./pages/Chat";
 import { BoardChat } from "./pages/BoardChat";
 import { Dashboard } from "./pages/Dashboard";
 import { Companies } from "./pages/Companies";
@@ -111,12 +117,17 @@ function CloudAccessGate() {
   return <Outlet />;
 }
 
+function LegacyChatToBoardRoomRedirect() {
+  const { search, hash } = useLocation();
+  return <Navigate to={{ pathname: "/board-chat", search, hash }} replace />;
+}
+
 function boardRoutes() {
   return (
     <>
       <Route index element={<Navigate to="dashboard" replace />} />
       <Route path="dashboard" element={<Dashboard />} />
-      <Route path="chat" element={<Chat />} />
+      <Route path="chat" element={<LegacyChatToBoardRoomRedirect />} />
       <Route path="board-chat" element={<BoardChat />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="onboarding" element={<OnboardingRoutePage />} />

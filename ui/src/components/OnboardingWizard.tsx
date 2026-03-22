@@ -605,10 +605,9 @@ export function OnboardingWizard() {
 
   function handleLaunchToChat() {
     const prefix = createdCompanyPrefix;
-    const taskId = planningTaskId;
     reset();
     closeOnboarding();
-    navigate(prefix ? `/${prefix}/chat${taskId ? `?taskId=${taskId}` : ""}` : "/dashboard");
+    navigate(prefix ? `/${prefix}/board-chat` : "/dashboard");
   }
 
   function buildAdapterConfig(): Record<string, unknown> {

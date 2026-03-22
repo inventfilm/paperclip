@@ -286,7 +286,7 @@ export function Layout() {
               <CompanyRail />
               {isInstanceSettingsRoute ? <InstanceSidebar /> : <Sidebar />}
             </div>
-            <div className="border-t border-r border-border px-3 py-2 bg-background">
+            <div className="border-t border-r border-border px-3 py-3 bg-background">
               <div className="flex items-center gap-1">
                 <a
                   href="https://docs.paperclip.ing/"
@@ -339,7 +339,7 @@ export function Layout() {
                 {isInstanceSettingsRoute ? <InstanceSidebar /> : <Sidebar />}
               </div>
             </div>
-            <div className="border-t border-r border-border px-3 py-2">
+            <div className="border-t border-r border-border px-3 py-3">
               <div className="flex items-center gap-1">
                 <a
                   href="https://docs.paperclip.ing/"
