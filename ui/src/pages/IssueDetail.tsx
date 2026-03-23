@@ -1039,35 +1039,57 @@ export function IssueDetail() {
         </TabsContent>
 
         <TabsContent value="subissues">
-          {childIssues.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No sub-issues.</p>
-          ) : (
-            <div className="border border-border rounded-lg divide-y divide-border">
-              {childIssues.map((child) => (
-                <Link
-                  key={child.id}
-                  to={`/issues/${child.identifier ?? child.id}`}
-                  state={location.state}
-                  className="flex items-center justify-between px-3 py-2 text-sm hover:bg-accent/20 transition-colors"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <StatusIcon status={child.status} />
-                    <PriorityIcon priority={child.priority} />
-                    <span className="font-mono text-muted-foreground shrink-0">
-                      {child.identifier ?? child.id.slice(0, 8)}
-                    </span>
-                    <span className="truncate">{child.title}</span>
-                  </div>
-                  {child.assigneeAgentId && (() => {
-                    const name = agentMap.get(child.assigneeAgentId)?.name;
-                    return name
-                      ? <Identity name={name} size="sm" />
-                      : <span className="text-muted-foreground font-mono">{child.assigneeAgentId.slice(0, 8)}</span>;
-                  })()}
-                </Link>
-              ))}
+          {ancestors.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs font-medium text-muted-foreground mb-1.5">Parent issue</p>
+              <Link
+                to={`/issues/${ancestors[0].identifier ?? ancestors[0].id}`}
+                state={location.state}
+                className="flex items-center gap-2 px-3 py-2 text-sm border border-border rounded-lg hover:bg-accent/20 transition-colors"
+              >
+                <StatusIcon status={ancestors[0].status} />
+                <PriorityIcon priority={ancestors[0].priority} />
+                <span className="font-mono text-muted-foreground shrink-0">
+                  {ancestors[0].identifier ?? ancestors[0].id.slice(0, 8)}
+                </span>
+                <span className="truncate">{ancestors[0].title}</span>
+              </Link>
             </div>
           )}
+          {childIssues.length === 0 && ancestors.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No sub-issues.</p>
+          ) : childIssues.length > 0 ? (
+            <>
+              {ancestors.length > 0 && (
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">Sub-issues</p>
+              )}
+              <div className="border border-border rounded-lg divide-y divide-border">
+                {childIssues.map((child) => (
+                  <Link
+                    key={child.id}
+                    to={`/issues/${child.identifier ?? child.id}`}
+                    state={location.state}
+                    className="flex items-center justify-between px-3 py-2 text-sm hover:bg-accent/20 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <StatusIcon status={child.status} />
+                      <PriorityIcon priority={child.priority} />
+                      <span className="font-mono text-muted-foreground shrink-0">
+                        {child.identifier ?? child.id.slice(0, 8)}
+                      </span>
+                      <span className="truncate">{child.title}</span>
+                    </div>
+                    {child.assigneeAgentId && (() => {
+                      const name = agentMap.get(child.assigneeAgentId)?.name;
+                      return name
+                        ? <Identity name={name} size="sm" />
+                        : <span className="text-muted-foreground font-mono">{child.assigneeAgentId.slice(0, 8)}</span>;
+                    })()}
+                  </Link>
+                ))}
+              </div>
+            </>
+          ) : null}
         </TabsContent>
 
         <TabsContent value="activity">
