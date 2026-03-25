@@ -18,7 +18,7 @@ import { StatusIcon } from "./StatusIcon";
 import { PriorityIcon } from "./PriorityIcon";
 import { Identity } from "./Identity";
 import { formatDate, cn, projectUrl } from "../lib/utils";
-import { timeAgo } from "../lib/timeAgo";
+import { timeAgo, absoluteDate } from "../lib/timeAgo";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { User, Hexagon, ArrowUpRight, Tag, Plus, Trash2, Copy, Check } from "lucide-react";
@@ -813,7 +813,7 @@ export function IssueProperties({ issue, onUpdate, inline }: IssuePropertiesProp
           <span className="text-sm">{formatDate(issue.createdAt)}</span>
         </PropertyRow>
         <PropertyRow label="Updated">
-          <span className="text-sm">{timeAgo(issue.updatedAt)}</span>
+          <span className="text-sm" title={absoluteDate(issue.updatedAt)}>{timeAgo(issue.updatedAt)}</span>
         </PropertyRow>
       </div>
     </div>
