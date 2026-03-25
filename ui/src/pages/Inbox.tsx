@@ -37,6 +37,7 @@ import {
   X,
   RotateCcw,
   UserPlus,
+  Loader2,
 } from "lucide-react";
 import { PageTabBar } from "../components/PageTabBar";
 import type { Approval, HeartbeatRun, Issue, JoinRequest } from "@paperclipai/shared";
@@ -242,6 +243,7 @@ function ApprovalInboxRow({
               onClick={onApprove}
               disabled={isPending}
             >
+              {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
               Approve
             </Button>
             <Button
@@ -251,6 +253,7 @@ function ApprovalInboxRow({
               onClick={onReject}
               disabled={isPending}
             >
+              {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
               Reject
             </Button>
           </div>
@@ -264,6 +267,7 @@ function ApprovalInboxRow({
             onClick={onApprove}
             disabled={isPending}
           >
+            {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
             Approve
           </Button>
           <Button
@@ -273,6 +277,7 @@ function ApprovalInboxRow({
             onClick={onReject}
             disabled={isPending}
           >
+            {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
             Reject
           </Button>
         </div>
@@ -323,6 +328,7 @@ function JoinRequestInboxRow({
             onClick={onApprove}
             disabled={isPending}
           >
+            {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
             Approve
           </Button>
           <Button
@@ -332,6 +338,7 @@ function JoinRequestInboxRow({
             onClick={onReject}
             disabled={isPending}
           >
+            {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
             Reject
           </Button>
         </div>
@@ -343,6 +350,7 @@ function JoinRequestInboxRow({
           onClick={onApprove}
           disabled={isPending}
         >
+          {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
           Approve
         </Button>
         <Button
@@ -352,6 +360,7 @@ function JoinRequestInboxRow({
           onClick={onReject}
           disabled={isPending}
         >
+          {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
           Reject
         </Button>
       </div>
