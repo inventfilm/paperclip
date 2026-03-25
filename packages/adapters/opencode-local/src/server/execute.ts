@@ -19,6 +19,7 @@ import {
   runChildProcess,
   readPaperclipRuntimeSkillEntries,
   resolvePaperclipDesiredSkillNames,
+  applyBillingModeOverride,
 } from "@paperclipai/adapter-utils/server-utils";
 import { isOpenCodeUnknownSessionError, parseOpenCodeJsonl } from "./parse.js";
 import { ensureOpenCodeModelConfiguredAndAvailable } from "./models.js";
@@ -371,7 +372,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       provider: parseModelProvider(modelId),
       biller: resolveOpenCodeBiller(runtimeEnv, parseModelProvider(modelId)),
       model: modelId,
-      billingType: "unknown",
+      billingType: applyBillingModeOverride("api", asString(config.billingMode, "auto")) === "subscription" ? "subscription" : "unknown",
       costUsd: attempt.parsed.costUsd,
       resultJson: {
         stdout: attempt.proc.stdout,
