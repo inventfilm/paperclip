@@ -8,7 +8,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { KeyRound, Pencil, Trash2 } from "lucide-react";
 import { Field } from "../components/agent-config-primitives";
-import type { CompanySecret, SecretProvider } from "@paperclipai/shared";
+import type { CompanySecret, SecretProvider, SecretProviderDescriptor } from "@paperclipai/shared";
 
 export function CompanySecrets() {
   const { selectedCompany, selectedCompanyId } = useCompany();
@@ -61,10 +61,12 @@ export function CompanySecrets() {
 
   // Sync default provider when providers data loads
   useEffect(() => {
-    if (providers.length > 0 && !providers.some((p) => p.id === newProvider)) {
-      setNewProvider(providers[0]!.id);
+    if (providers.length > 0) {
+      setNewProvider((prev) =>
+        providers.some((p) => p.id === prev) ? prev : providers[0]!.id,
+      );
     }
-  }, [providers, newProvider]);
+  }, [providers]);
 
   // --- Mutations ---
   const invalidateCompanySecrets = useCallback(
@@ -90,7 +92,11 @@ export function CompanySecrets() {
       setNewName("");
       setNewValue("");
       setNewDescription("");
-      setNewProvider(providers[0]?.id ?? "local_encrypted");
+      // Read providers from the query cache to avoid stale closure
+      const cached = queryClient.getQueryData<SecretProviderDescriptor[]>(
+        queryKeys.secrets.providers(vars.companyId),
+      );
+      setNewProvider(cached?.[0]?.id ?? "local_encrypted");
       pushToast({ title: "Secret created" });
       invalidateCompanySecrets(vars.companyId);
     },
@@ -128,9 +134,10 @@ export function CompanySecrets() {
       pushToast({ title: "Secret deleted" });
       invalidateCompanySecrets(vars.companyId);
     },
-    onError: () => {
+    onError: (_error, vars) => {
       setDeletingId(null);
       pushToast({ title: "Failed to delete secret", tone: "error" });
+      invalidateCompanySecrets(vars.companyId);
     },
   });
 
@@ -141,14 +148,6 @@ export function CompanySecrets() {
       { label: "Secrets" },
     ]);
   }, [setBreadcrumbs, selectedCompany?.name]);
-
-  if (!selectedCompany) {
-    return (
-      <div className="text-sm text-muted-foreground">
-        No company selected. Select a company from the switcher above.
-      </div>
-    );
-  }
 
   function startEditing(secret: CompanySecret) {
     updateMutation.reset();
@@ -162,6 +161,14 @@ export function CompanySecrets() {
   function handleDelete(id: string) {
     setDeletingId(id);
     deleteMutation.mutate({ companyId: selectedCompanyId!, id });
+  }
+
+  if (!selectedCompany) {
+    return (
+      <div className="text-sm text-muted-foreground">
+        No company selected. Select a company from the switcher above.
+      </div>
+    );
   }
 
   return (
