@@ -68,6 +68,8 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
         agentId: activeRun.agentId,
         agentName: activeRun.agentName,
         adapterType: activeRun.adapterType,
+        errorCode: activeRun.errorCode,
+        lastOutputAt: toIsoString(activeRun.lastOutputAt),
         issueId,
       });
     }

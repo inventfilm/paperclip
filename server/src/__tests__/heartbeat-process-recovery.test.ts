@@ -332,4 +332,22 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(run?.errorCode).toBeNull();
     expect(run?.error).toBeNull();
   });
+
+  it("clears the idle warning when the run reports activity again", async () => {
+    const { runId } = await seedRunFixture({
+      includeIssue: false,
+      runErrorCode: "idle_warning",
+      runError: "Idle warning: no output for 10 minutes",
+    });
+    const heartbeat = heartbeatService(db);
+
+    const updated = await heartbeat.reportRunActivity(runId);
+    expect(updated?.errorCode).toBeNull();
+    expect(updated?.error).toBeNull();
+    expect(updated?.lastOutputAt).toBeTruthy();
+
+    const run = await heartbeat.getRun(runId);
+    expect(run?.errorCode).toBeNull();
+    expect(run?.error).toBeNull();
+  });
 });
