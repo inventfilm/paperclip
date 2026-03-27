@@ -661,11 +661,14 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
 
 .paperclip-markdown a {
   color: color-mix(in oklab, var(--foreground) 76%, #0969da 24%);
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, currentColor 30%, transparent);
+  text-underline-offset: 0.15em;
 }
 
 .paperclip-markdown a:hover {
   text-decoration: underline;
+  text-decoration-color: currentColor;
   text-underline-offset: 0.15em;
 }
 
