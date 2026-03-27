@@ -1837,20 +1837,13 @@ export function heartbeatService(db: Db) {
       logger.warn({ reapedCount: reaped.length, runIds: reaped }, "reaped orphaned heartbeat runs");
     }
 
-    // ── Idle-timeout pass: check all running runs for stalled output ──
+    // ── Idle-timeout pass: reuse activeRuns query result (no duplicate DB call) ──
     const idleWarned: string[] = [];
     const idleKilled: string[] = [];
 
-    const allRunningRuns = await db
-      .select({
-        run: heartbeatRuns,
-        adapterType: agents.adapterType,
-      })
-      .from(heartbeatRuns)
-      .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
-      .where(eq(heartbeatRuns.status, "running"));
-
-    for (const { run, adapterType } of allRunningRuns) {
+    for (const { run, adapterType } of activeRuns) {
+      // Idle check applies to all running runs, including tracked ones
+      if (reaped.includes(run.id)) continue;
       const tracksLocalChild = isTrackedLocalChildProcessAdapter(adapterType);
       if (!tracksLocalChild) continue;
 

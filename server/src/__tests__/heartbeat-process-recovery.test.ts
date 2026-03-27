@@ -240,6 +240,58 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(issue?.checkoutRunId).toBe(runId);
   });
 
+  it("sets idle_warning when a run has no output for over 10 minutes", async () => {
+    const elevenMinutesAgo = new Date(Date.now() - 11 * 60 * 1000);
+    const { runId } = await seedRunFixture({
+      includeIssue: false,
+      startedAt: elevenMinutesAgo,
+      lastOutputAt: elevenMinutesAgo,
+    });
+    const heartbeat = heartbeatService(db);
+
+    const result = await heartbeat.reapOrphanedRuns();
+    expect(result.idleWarned).toBe(1);
+    expect(result.idleKilled).toBe(0);
+
+    const run = await heartbeat.getRun(runId);
+    expect(run?.status).toBe("running");
+    expect(run?.errorCode).toBe("idle_warning");
+  });
+
+  it("kills a run that has been idle for over 15 minutes", async () => {
+    const sixteenMinutesAgo = new Date(Date.now() - 16 * 60 * 1000);
+    const { runId } = await seedRunFixture({
+      processPid: 999_999_999,
+      startedAt: sixteenMinutesAgo,
+      lastOutputAt: sixteenMinutesAgo,
+    });
+    const heartbeat = heartbeatService(db);
+
+    const result = await heartbeat.reapOrphanedRuns();
+    expect(result.idleKilled).toBe(1);
+
+    const run = await heartbeat.getRun(runId);
+    expect(run?.status).toBe("failed");
+    expect(run?.errorCode).toBe("idle_timeout");
+  });
+
+  it("does not idle-warn a run with recent output", async () => {
+    const { runId } = await seedRunFixture({
+      includeIssue: false,
+      startedAt: new Date(Date.now() - 20 * 60 * 1000),
+      lastOutputAt: new Date(),
+    });
+    const heartbeat = heartbeatService(db);
+
+    const result = await heartbeat.reapOrphanedRuns();
+    expect(result.idleWarned).toBe(0);
+    expect(result.idleKilled).toBe(0);
+
+    const run = await heartbeat.getRun(runId);
+    expect(run?.status).toBe("running");
+    expect(run?.errorCode).toBeNull();
+  });
+
   it("clears the detached warning when the run reports activity again", async () => {
     const { runId } = await seedRunFixture({
       includeIssue: false,
