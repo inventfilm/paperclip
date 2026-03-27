@@ -131,6 +131,13 @@ export function Agents() {
 
   const filtered = filterAgents(agents ?? [], tab, showTerminated);
   const filteredOrg = filterOrgTree(orgTree ?? [], tab, showTerminated);
+  const allAgents = agents ?? [];
+  const counts = {
+    all: allAgents.filter((a) => a.status !== "terminated").length,
+    active: allAgents.filter((a) => a.status === "active" || a.status === "running" || a.status === "idle").length,
+    paused: allAgents.filter((a) => a.status === "paused").length,
+    error: allAgents.filter((a) => a.status === "error").length,
+  };
 
   return (
     <div className="space-y-4">
@@ -138,10 +145,10 @@ export function Agents() {
         <Tabs value={tab} onValueChange={(v) => navigate(`/agents/${v}`)}>
           <PageTabBar
             items={[
-              { value: "all", label: "All" },
-              { value: "active", label: "Active" },
-              { value: "paused", label: "Paused" },
-              { value: "error", label: "Error" },
+              { value: "all", label: `All (${counts.all})` },
+              { value: "active", label: `Active (${counts.active})` },
+              { value: "paused", label: `Paused (${counts.paused})` },
+              { value: "error", label: `Error (${counts.error})` },
             ]}
             value={tab}
             onValueChange={(v) => navigate(`/agents/${v}`)}
