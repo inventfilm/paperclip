@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { heartbeatsApi, type LiveRunForIssue } from "../api/heartbeats";
 import { queryKeys } from "../lib/queryKeys";
 import { formatDateTime } from "../lib/utils";
-import { ExternalLink, Square } from "lucide-react";
+import { AlertTriangle, ExternalLink, Square } from "lucide-react";
 import { Identity } from "./Identity";
 import { StatusBadge } from "./StatusBadge";
 import { RunTranscriptView } from "./transcript/RunTranscriptView";
@@ -22,6 +22,15 @@ function toIsoString(value: string | Date | null | undefined): string | null {
 
 function isRunActive(status: string): boolean {
   return status === "queued" || status === "running";
+}
+
+function formatRelativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return "just now";
+  const min = Math.floor(ms / 60_000);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  return `${hr}h ${min % 60}m ago`;
 }
 
 export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
@@ -116,7 +125,18 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
                       {run.id.slice(0, 8)}
                     </Link>
                     <StatusBadge status={run.status} />
-                    <span>{formatDateTime(run.startedAt ?? run.createdAt)}</span>
+                    {run.errorCode === "idle_warning" && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-orange-500/20 bg-orange-500/[0.06] px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300">
+                        <AlertTriangle className="h-3 w-3" />
+                        Idle
+                      </span>
+                    )}
+                    {run.lastOutputAt && (
+                      <span title={`Last output: ${formatDateTime(run.lastOutputAt)}`}>
+                        Last output {formatRelativeTime(run.lastOutputAt)}
+                      </span>
+                    )}
+                    {!run.lastOutputAt && <span>{formatDateTime(run.startedAt ?? run.createdAt)}</span>}
                   </div>
                 </div>
 

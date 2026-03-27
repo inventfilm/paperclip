@@ -73,6 +73,8 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     includeIssue?: boolean;
     runErrorCode?: string | null;
     runError?: string | null;
+    lastOutputAt?: Date | null;
+    startedAt?: Date | null;
   }) {
     const companyId = randomUUID();
     const agentId = randomUUID();
