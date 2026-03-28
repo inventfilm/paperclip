@@ -76,6 +76,12 @@ export interface IssueFilters {
   q?: string;
 }
 
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 type IssueRow = typeof issues.$inferSelect;
 type IssueLabelRow = typeof labels.$inferSelect;
 type IssueActiveRunRow = {
@@ -554,11 +560,22 @@ export function issueService(db: Db) {
 
   return {
     list: async (companyId: string, filters?: IssueFilters) => {
+      const statusFilter = asNonEmptyString(filters?.status);
+      const assigneeAgentIdFilter = asNonEmptyString(filters?.assigneeAgentId);
+      const participantAgentIdFilter = asNonEmptyString(filters?.participantAgentId);
+      const assigneeUserIdFilter = asNonEmptyString(filters?.assigneeUserId);
+      const touchedByUserIdFilter = asNonEmptyString(filters?.touchedByUserId);
+      const unreadForUserIdFilter = asNonEmptyString(filters?.unreadForUserId);
+      const projectIdFilter = asNonEmptyString(filters?.projectId);
+      const parentIdFilter = asNonEmptyString(filters?.parentId);
+      const labelIdFilter = asNonEmptyString(filters?.labelId);
+      const originKindFilter = asNonEmptyString(filters?.originKind);
+      const originIdFilter = asNonEmptyString(filters?.originId);
+      const rawSearch = asNonEmptyString(filters?.q) ?? "";
       const conditions = [eq(issues.companyId, companyId)];
-      const touchedByUserId = filters?.touchedByUserId?.trim() || undefined;
-      const unreadForUserId = filters?.unreadForUserId?.trim() || undefined;
+      const touchedByUserId = touchedByUserIdFilter;
+      const unreadForUserId = unreadForUserIdFilter;
       const contextUserId = unreadForUserId ?? touchedByUserId;
-      const rawSearch = filters?.q?.trim() ?? "";
       const hasSearch = rawSearch.length > 0;
       const escapedSearch = hasSearch ? escapeLikePattern(rawSearch) : "";
       const startsWithPattern = `${escapedSearch}%`;
@@ -577,18 +594,18 @@ export function issueService(db: Db) {
             AND ${issueComments.body} ILIKE ${containsPattern} ESCAPE '\\'
         )
       `;
-      if (filters?.status) {
-        const statuses = filters.status.split(",").map((s) => s.trim());
+      if (statusFilter) {
+        const statuses = statusFilter.split(",").map((s) => s.trim());
         conditions.push(statuses.length === 1 ? eq(issues.status, statuses[0]) : inArray(issues.status, statuses));
       }
-      if (filters?.assigneeAgentId) {
-        conditions.push(eq(issues.assigneeAgentId, filters.assigneeAgentId));
+      if (assigneeAgentIdFilter) {
+        conditions.push(eq(issues.assigneeAgentId, assigneeAgentIdFilter));
       }
-      if (filters?.participantAgentId) {
-        conditions.push(participatedByAgentCondition(companyId, filters.participantAgentId));
+      if (participantAgentIdFilter) {
+        conditions.push(participatedByAgentCondition(companyId, participantAgentIdFilter));
       }
-      if (filters?.assigneeUserId) {
-        conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
+      if (assigneeUserIdFilter) {
+        conditions.push(eq(issues.assigneeUserId, assigneeUserIdFilter));
       }
       if (touchedByUserId) {
         conditions.push(touchedByUserCondition(companyId, touchedByUserId));
@@ -596,15 +613,15 @@ export function issueService(db: Db) {
       if (unreadForUserId) {
         conditions.push(unreadForUserCondition(companyId, unreadForUserId));
       }
-      if (filters?.projectId) conditions.push(eq(issues.projectId, filters.projectId));
-      if (filters?.parentId) conditions.push(eq(issues.parentId, filters.parentId));
-      if (filters?.originKind) conditions.push(eq(issues.originKind, filters.originKind));
-      if (filters?.originId) conditions.push(eq(issues.originId, filters.originId));
-      if (filters?.labelId) {
+      if (projectIdFilter) conditions.push(eq(issues.projectId, projectIdFilter));
+      if (parentIdFilter) conditions.push(eq(issues.parentId, parentIdFilter));
+      if (originKindFilter) conditions.push(eq(issues.originKind, originKindFilter));
+      if (originIdFilter) conditions.push(eq(issues.originId, originIdFilter));
+      if (labelIdFilter) {
         const labeledIssueIds = await db
           .select({ issueId: issueLabels.issueId })
           .from(issueLabels)
-          .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId)));
+          .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, labelIdFilter)));
         if (labeledIssueIds.length === 0) return [];
         conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
       }

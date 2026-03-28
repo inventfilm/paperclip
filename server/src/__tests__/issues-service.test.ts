@@ -377,4 +377,32 @@ describe("issueService.list participantAgentId", () => {
 
     expect(comments).toEqual([]);
   });
+
+  it("ignores malformed non-string list filters instead of throwing", async () => {
+    const companyId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Malformed filter safety",
+      status: "todo",
+      priority: "medium",
+    });
+
+    const result = await svc.list(companyId, {
+      status: { bad: true } as unknown as string,
+      q: ["broken"] as unknown as string,
+      assigneeAgentId: 123 as unknown as string,
+    });
+
+    expect(result.map((issue) => issue.id)).toContain(issueId);
+  });
 });
