@@ -202,6 +202,7 @@ export function IssueDetail() {
   const [detailTab, setDetailTab] = useState("comments");
   const [secondaryOpen, setSecondaryOpen] = useState({
     approvals: false,
+    cost: false,
   });
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [attachmentDragActive, setAttachmentDragActive] = useState(false);
@@ -381,6 +382,12 @@ export function IssueDetail() {
     () => suggestedCommentAssigneeValue(issue ?? {}, comments, currentUserId),
     [issue, comments, currentUserId],
   );
+
+  const currentAssigneeValue = useMemo(() => {
+    if (issue?.assigneeAgentId) return `agent:${issue.assigneeAgentId}`;
+    if (issue?.assigneeUserId) return `user:${issue.assigneeUserId}`;
+    return "";
+  }, [issue?.assigneeAgentId, issue?.assigneeUserId]);
 
   const commentsWithRunMeta = useMemo(() => {
     const runMetaByCommentId = new Map<string, { runId: string; runAgentId: string | null }>();
@@ -663,6 +670,12 @@ export function IssueDetail() {
           </div>
         )}
 
+        <BlockerBanner
+          issueId={issueId!}
+          companyId={issue.companyId}
+          issueStatus={issue.status}
+        />
+
         {/* Header: title + meta */}
         <div className="space-y-2">
           <InlineEditor
@@ -867,9 +880,9 @@ export function IssueDetail() {
                       <span className="truncate">{child.title}</span>
                     </div>
                     {child.assigneeAgentId && (() => {
-                      const name = agentMap.get(child.assigneeAgentId)?.name;
-                      return name
-                        ? <Identity name={name} size="sm" />
+                      const agent = agentMap.get(child.assigneeAgentId);
+                      return agent?.name
+                        ? <Identity name={agent.name} title={agent.title} size="sm" />
                         : <span className="text-muted-foreground font-mono">{child.assigneeAgentId.slice(0, 8)}</span>;
                     })()}
                   </Link>
