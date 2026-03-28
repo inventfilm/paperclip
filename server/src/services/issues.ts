@@ -1077,14 +1077,33 @@ export function issueService(db: Db) {
         current.assigneeAgentId === agentId &&
         current.status === "in_progress" &&
         current.checkoutRunId == null &&
-        (current.executionRunId == null || current.executionRunId === checkoutRunId) &&
         checkoutRunId
       ) {
+        const staleExecutionLock =
+          current.executionRunId !== null &&
+          current.executionRunId !== checkoutRunId &&
+          (await isTerminalOrMissingHeartbeatRun(current.executionRunId));
+        const executionCondition =
+          current.executionRunId == null || current.executionRunId === checkoutRunId
+            ? or(isNull(issues.executionRunId), eq(issues.executionRunId, checkoutRunId))
+            : staleExecutionLock
+              ? eq(issues.executionRunId, current.executionRunId)
+              : null;
+        if (!executionCondition) {
+          throw conflict("Issue checkout conflict", {
+            issueId: current.id,
+            status: current.status,
+            assigneeAgentId: current.assigneeAgentId,
+            checkoutRunId: current.checkoutRunId,
+            executionRunId: current.executionRunId,
+          });
+        }
         const adopted = await db
           .update(issues)
           .set({
             checkoutRunId,
             executionRunId: checkoutRunId,
+            executionLockedAt: new Date(),
             updatedAt: new Date(),
           })
           .where(
@@ -1093,7 +1112,7 @@ export function issueService(db: Db) {
               eq(issues.status, "in_progress"),
               eq(issues.assigneeAgentId, agentId),
               isNull(issues.checkoutRunId),
-              or(isNull(issues.executionRunId), eq(issues.executionRunId, checkoutRunId)),
+              executionCondition,
             ),
           )
           .returning()
