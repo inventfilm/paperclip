@@ -11,6 +11,7 @@ import {
   companies,
   createDb,
   ensurePostgresDatabase,
+  heartbeatRuns,
   issueComments,
   issues,
 } from "@paperclipai/db";
@@ -100,6 +101,7 @@ describe("issueService.list participantAgentId", () => {
     await db.delete(issueComments);
     await db.delete(activityLog);
     await db.delete(issues);
+    await db.delete(heartbeatRuns);
     await db.delete(agents);
     await db.delete(companies);
   });
@@ -280,5 +282,66 @@ describe("issueService.list participantAgentId", () => {
     });
 
     expect(result.map((issue) => issue.id)).toEqual([matchedIssueId]);
+  });
+
+  it("adopts stale execution locks when same-assignee checkout lock is missing", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const staleRunId = randomUUID();
+    const actorRunId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "ReleaseLead",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+
+    await db.insert(heartbeatRuns).values([
+      {
+        id: staleRunId,
+        companyId,
+        agentId,
+        invocationSource: "scheduler",
+        status: "failed",
+      },
+      {
+        id: actorRunId,
+        companyId,
+        agentId,
+        invocationSource: "scheduler",
+        status: "running",
+      },
+    ]);
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Adopt stale execution lock",
+      status: "in_progress",
+      priority: "high",
+      assigneeAgentId: agentId,
+      checkoutRunId: null,
+      executionRunId: staleRunId,
+    });
+
+    const updated = await svc.checkout(issueId, agentId, ["todo", "backlog", "blocked"], actorRunId);
+    expect(updated?.id).toBe(issueId);
+    expect(updated?.status).toBe("in_progress");
+    expect(updated?.checkoutRunId).toBe(actorRunId);
+    expect(updated?.executionRunId).toBe(actorRunId);
   });
 });
