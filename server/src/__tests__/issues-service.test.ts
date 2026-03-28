@@ -350,4 +350,33 @@ describe("issueService.list participantAgentId", () => {
     await expect(svc.listComments(issueId, { afterCommentId: "not-a-uuid" })).resolves.toEqual([]);
     await expect(svc.getComment("not-a-uuid")).resolves.toBeNull();
   });
+
+  it("ignores non-string filter shapes without throwing", async () => {
+    const companyId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Issue survives malformed query shape",
+      status: "todo",
+      priority: "medium",
+    });
+
+    const result = await svc.list(companyId, {
+      status: ["todo", "done"] as unknown as string,
+      touchedByUserId: { me: true } as unknown as string,
+      unreadForUserId: ["me"] as unknown as string,
+      q: { text: "issue" } as unknown as string,
+    });
+
+    expect(result.map((issue) => issue.id)).toContain(issueId);
+  });
 });
