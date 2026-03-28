@@ -9,6 +9,11 @@ const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
   listComments: vi.fn(),
   getByIdentifier: vi.fn(),
+  getAttachmentById: vi.fn(),
+}));
+
+const mockWorkProductService = vi.hoisted(() => ({
+  getById: vi.fn(),
 }));
 
 vi.mock("../services/index.js", () => ({
@@ -33,7 +38,7 @@ vi.mock("../services/index.js", () => ({
   routineService: () => ({
     syncRunStatusForIssue: vi.fn(async () => undefined),
   }),
-  workProductService: () => ({}),
+  workProductService: () => mockWorkProductService,
 }));
 
 function createApp() {
@@ -65,6 +70,8 @@ describe("issues routes UUID validation", () => {
       status: "todo",
     });
     mockIssueService.listComments.mockResolvedValue([]);
+    mockIssueService.getAttachmentById.mockResolvedValue(null);
+    mockWorkProductService.getById.mockResolvedValue(null);
   });
 
   it("returns 400 for invalid UUID-based list filters", async () => {
@@ -88,5 +95,21 @@ describe("issues routes UUID validation", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("after comment cursor");
     expect(mockIssueService.listComments).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for invalid attachment ids before attachment lookup", async () => {
+    const res = await request(createApp()).get("/api/attachments/not-a-uuid/content");
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("attachmentId");
+    expect(mockIssueService.getAttachmentById).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for invalid work-product ids before work-product lookup", async () => {
+    const res = await request(createApp())
+      .patch("/api/work-products/not-a-uuid")
+      .send({ title: "noop" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("work product id");
+    expect(mockWorkProductService.getById).not.toHaveBeenCalled();
   });
 });

@@ -684,8 +684,12 @@ export function issueRoutes(db: Db, storage: StorageService) {
     res.status(201).json(product);
   });
 
-  router.patch("/work-products/:id", validate(updateIssueWorkProductSchema), async (req, res) => {
-    const id = req.params.id as string;
+  router.patch("/work-products/:workProductId", validate(updateIssueWorkProductSchema), async (req, res) => {
+    const id = req.params.workProductId as string;
+    if (!isUuidLike(id)) {
+      res.status(400).json({ error: "Invalid work product id" });
+      return;
+    }
     const existing = await workProductsSvc.getById(id);
     if (!existing) {
       res.status(404).json({ error: "Work product not found" });
@@ -712,8 +716,12 @@ export function issueRoutes(db: Db, storage: StorageService) {
     res.json(product);
   });
 
-  router.delete("/work-products/:id", async (req, res) => {
-    const id = req.params.id as string;
+  router.delete("/work-products/:workProductId", async (req, res) => {
+    const id = req.params.workProductId as string;
+    if (!isUuidLike(id)) {
+      res.status(400).json({ error: "Invalid work product id" });
+      return;
+    }
     const existing = await workProductsSvc.getById(id);
     if (!existing) {
       res.status(404).json({ error: "Work product not found" });
@@ -1619,6 +1627,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
   router.get("/attachments/:attachmentId/content", async (req, res, next) => {
     const attachmentId = req.params.attachmentId as string;
+    if (!isUuidLike(attachmentId)) {
+      res.status(400).json({ error: "Invalid attachmentId" });
+      return;
+    }
     const attachment = await svc.getAttachmentById(attachmentId);
     if (!attachment) {
       res.status(404).json({ error: "Attachment not found" });
@@ -1641,6 +1653,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
   router.delete("/attachments/:attachmentId", async (req, res) => {
     const attachmentId = req.params.attachmentId as string;
+    if (!isUuidLike(attachmentId)) {
+      res.status(400).json({ error: "Invalid attachmentId" });
+      return;
+    }
     const attachment = await svc.getAttachmentById(attachmentId);
     if (!attachment) {
       res.status(404).json({ error: "Attachment not found" });
