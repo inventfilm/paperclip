@@ -830,6 +830,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
   router.delete("/issues/:id/approvals/:approvalId", async (req, res) => {
     const id = req.params.id as string;
     const approvalId = req.params.approvalId as string;
+    if (!isUuidLike(approvalId)) {
+      res.status(400).json({ error: "Invalid approvalId" });
+      return;
+    }
     const issue = await svc.getById(id);
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });

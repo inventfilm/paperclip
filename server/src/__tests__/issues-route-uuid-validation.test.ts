@@ -12,6 +12,10 @@ const mockIssueService = vi.hoisted(() => ({
   getAttachmentById: vi.fn(),
 }));
 
+const mockIssueApprovalService = vi.hoisted(() => ({
+  unlink: vi.fn(),
+}));
+
 const mockWorkProductService = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
@@ -31,7 +35,7 @@ vi.mock("../services/index.js", () => ({
     wakeup: vi.fn(async () => undefined),
     reportRunActivity: vi.fn(async () => undefined),
   }),
-  issueApprovalService: () => ({}),
+  issueApprovalService: () => mockIssueApprovalService,
   issueService: () => mockIssueService,
   logActivity: vi.fn(async () => undefined),
   projectService: () => ({}),
@@ -72,6 +76,7 @@ describe("issues routes UUID validation", () => {
     mockIssueService.listComments.mockResolvedValue([]);
     mockIssueService.getAttachmentById.mockResolvedValue(null);
     mockWorkProductService.getById.mockResolvedValue(null);
+    mockIssueApprovalService.unlink.mockResolvedValue(undefined);
   });
 
   it("returns 400 for invalid UUID-based list filters", async () => {
@@ -121,5 +126,15 @@ describe("issues routes UUID validation", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("work product id");
     expect(mockWorkProductService.getById).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for invalid approval ids before unlinking issue approvals", async () => {
+    const res = await request(createApp()).delete(
+      "/api/issues/11111111-1111-4111-8111-111111111111/approvals/not-a-uuid",
+    );
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("approvalId");
+    expect(mockIssueApprovalService.unlink).not.toHaveBeenCalled();
   });
 });
