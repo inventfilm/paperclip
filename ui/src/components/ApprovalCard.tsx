@@ -1,4 +1,4 @@
-import { CheckCircle2, XCircle, Clock } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Identity } from "./Identity";
@@ -78,6 +78,7 @@ export function ApprovalCard({
             onClick={onApprove}
             disabled={isPending}
           >
+            {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
             Approve
           </Button>
           <Button
@@ -86,6 +87,7 @@ export function ApprovalCard({
             onClick={onReject}
             disabled={isPending}
           >
+            {isPending && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
             Reject
           </Button>
         </div>
