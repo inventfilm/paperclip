@@ -369,6 +369,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
   router.delete("/labels/:labelId", async (req, res) => {
     const labelId = req.params.labelId as string;
+    if (!isUuidLike(labelId)) {
+      res.status(400).json({ error: "Invalid labelId" });
+      return;
+    }
     const existing = await svc.getLabelById(labelId);
     if (!existing) {
       res.status(404).json({ error: "Label not found" });
