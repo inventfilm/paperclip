@@ -67,4 +67,24 @@ describe("activity routes", () => {
     expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1");
     expect(res.body).toEqual([{ runId: "run-1" }]);
   });
+
+  it("returns 400 for malformed issue ids on runs route", async () => {
+    const res = await request(createApp()).get("/api/issues/not-a-valid-ref/runs");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid issue id");
+    expect(mockIssueService.getById).not.toHaveBeenCalled();
+    expect(mockIssueService.getByIdentifier).not.toHaveBeenCalled();
+    expect(mockActivityService.runsForIssue).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for malformed issue ids on activity route", async () => {
+    const res = await request(createApp()).get("/api/issues/not-a-valid-ref/activity");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid issue id");
+    expect(mockIssueService.getById).not.toHaveBeenCalled();
+    expect(mockIssueService.getByIdentifier).not.toHaveBeenCalled();
+    expect(mockActivityService.forIssue).not.toHaveBeenCalled();
+  });
 });

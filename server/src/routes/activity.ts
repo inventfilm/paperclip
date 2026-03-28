@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { Db } from "@paperclipai/db";
+import { isUuidLike } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
 import { activityService } from "../services/activity.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
@@ -24,9 +25,12 @@ export function activityRoutes(db: Db) {
 
   async function resolveIssueByRef(rawId: string) {
     if (/^[A-Z]+-\d+$/i.test(rawId)) {
-      return issueSvc.getByIdentifier(rawId);
+      return { issue: await issueSvc.getByIdentifier(rawId), invalidRef: false };
     }
-    return issueSvc.getById(rawId);
+    if (isUuidLike(rawId)) {
+      return { issue: await issueSvc.getById(rawId), invalidRef: false };
+    }
+    return { issue: null, invalidRef: true };
   }
 
   router.get("/companies/:companyId/activity", async (req, res) => {
@@ -56,7 +60,11 @@ export function activityRoutes(db: Db) {
 
   router.get("/issues/:id/activity", async (req, res) => {
     const rawId = req.params.id as string;
-    const issue = await resolveIssueByRef(rawId);
+    const { issue, invalidRef } = await resolveIssueByRef(rawId);
+    if (invalidRef) {
+      res.status(400).json({ error: "Invalid issue id. Use UUID or identifier like PAP-123." });
+      return;
+    }
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;
@@ -68,7 +76,11 @@ export function activityRoutes(db: Db) {
 
   router.get("/issues/:id/runs", async (req, res) => {
     const rawId = req.params.id as string;
-    const issue = await resolveIssueByRef(rawId);
+    const { issue, invalidRef } = await resolveIssueByRef(rawId);
+    if (invalidRef) {
+      res.status(400).json({ error: "Invalid issue id. Use UUID or identifier like PAP-123." });
+      return;
+    }
     if (!issue) {
       res.status(404).json({ error: "Issue not found" });
       return;
