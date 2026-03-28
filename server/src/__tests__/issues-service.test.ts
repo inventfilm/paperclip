@@ -465,4 +465,42 @@ describe("issueService.list participantAgentId", () => {
 
     expect(result.map((issue) => issue.id)).toContain(issueId);
   });
+
+  it("ignores malformed non-string unread status filters instead of throwing", async () => {
+    const companyId = randomUUID();
+    const issueId = randomUUID();
+    const userId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Unread malformed status filter safety",
+      status: "todo",
+      priority: "medium",
+      createdByUserId: userId,
+    });
+
+    await db.insert(issueComments).values({
+      issueId,
+      companyId,
+      body: "new external comment",
+      authorAgentId: null,
+      authorUserId: null,
+    });
+
+    const unreadCount = await svc.countUnreadTouchedByUser(
+      companyId,
+      userId,
+      { bad: true } as unknown as string,
+    );
+
+    expect(unreadCount).toBe(1);
+  });
 });

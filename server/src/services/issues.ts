@@ -721,8 +721,9 @@ export function issueService(db: Db) {
         unreadForUserCondition(companyId, userId),
         ne(issues.originKind, "routine_execution"),
       ];
-      if (status) {
-        const statuses = status.split(",").map((s) => s.trim()).filter(Boolean);
+      const normalizedStatus = asNonEmptyString(status);
+      if (normalizedStatus) {
+        const statuses = normalizedStatus.split(",").map((s) => s.trim()).filter(Boolean);
         if (statuses.length === 1) {
           conditions.push(eq(issues.status, statuses[0]));
         } else if (statuses.length > 1) {
