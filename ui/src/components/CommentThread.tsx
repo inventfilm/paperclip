@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent } from "re
 import { Link, useLocation } from "react-router-dom";
 import type { IssueComment, Agent } from "@paperclipai/shared";
 import { Button } from "@/components/ui/button";
-import { Check, Copy, Paperclip } from "lucide-react";
+import { ArrowDownUp, Check, Copy, Paperclip } from "lucide-react";
 import { Identity } from "./Identity";
 import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySelector";
 import { MarkdownBody } from "./MarkdownBody";
@@ -48,6 +48,10 @@ interface CommentThreadProps {
   currentAssigneeValue?: string;
   suggestedAssigneeValue?: string;
   mentions?: MentionOption[];
+  /** Timestamp of the user's last interaction with the issue. Comments from others after this are "unread". */
+  myLastTouchAt?: Date | string | null;
+  /** Current user's ID, used to determine which comments are "unread" (not authored by this user). */
+  currentUserId?: string | null;
 }
 
 const DRAFT_DEBOUNCE_MS = 800;
@@ -124,12 +128,18 @@ const TimelineList = memo(function TimelineList({
   companyId,
   projectId,
   highlightCommentId,
+  unreadAfterMs,
+  currentUserId,
 }: {
   timeline: TimelineItem[];
   agentMap?: Map<string, Agent>;
   companyId?: string | null;
   projectId?: string | null;
   highlightCommentId?: string | null;
+  /** Epoch ms: comments from others created after this time get an unread dot. */
+  unreadAfterMs?: number | null;
+  /** Current user's ID — comments authored by this user are never marked unread. */
+  currentUserId?: string | null;
 }) {
   if (timeline.length === 0) {
     return <p className="text-sm text-muted-foreground">No comments or runs yet.</p>;
@@ -169,6 +179,13 @@ const TimelineList = memo(function TimelineList({
 
         const comment = item.comment;
         const isHighlighted = highlightCommentId === comment.id;
+        // A comment is "unread" if it's from someone other than the current user
+        // and was created after the user's last interaction with the issue.
+        const isUnread = Boolean(
+          unreadAfterMs &&
+          comment.authorUserId !== currentUserId &&
+          item.createdAtMs > unreadAfterMs
+        );
         return (
           <div
             key={comment.id}
@@ -176,16 +193,21 @@ const TimelineList = memo(function TimelineList({
             className={`border p-3 overflow-hidden min-w-0 rounded-sm transition-colors duration-1000 ${isHighlighted ? "border-primary/50 bg-primary/5" : "border-border"}`}
           >
             <div className="flex items-center justify-between mb-1">
-              {comment.authorAgentId ? (
-                <Link to={`/agents/${comment.authorAgentId}`} className="hover:underline">
-                  <Identity
-                    name={agentMap?.get(comment.authorAgentId)?.name ?? comment.authorAgentId.slice(0, 8)}
-                    size="sm"
-                  />
-                </Link>
-              ) : (
-                <Identity name="You" size="sm" />
-              )}
+              <div className="flex items-center gap-1.5">
+                {isUnread && (
+                  <span className="block h-2 w-2 rounded-full bg-blue-600 dark:bg-blue-400 shrink-0" />
+                )}
+                {comment.authorAgentId ? (
+                  <Link to={`/agents/${comment.authorAgentId}`} className="hover:underline">
+                    <Identity
+                      name={agentMap?.get(comment.authorAgentId)?.name ?? comment.authorAgentId.slice(0, 8)}
+                      size="sm"
+                    />
+                  </Link>
+                ) : (
+                  <Identity name="You" size="sm" />
+                )}
+              </div>
               <span className="flex items-center gap-1.5">
                 {companyId ? (
                   <PluginSlotOutlet
@@ -270,7 +292,13 @@ export function CommentThread({
   currentAssigneeValue = "",
   suggestedAssigneeValue,
   mentions: providedMentions,
+  myLastTouchAt,
+  currentUserId,
 }: CommentThreadProps) {
+  const unreadAfterMs = useMemo(() => {
+    if (!myLastTouchAt) return null;
+    return new Date(myLastTouchAt).getTime();
+  }, [myLastTouchAt]);
   const [body, setBody] = useState("");
   const [reopen, setReopen] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -278,6 +306,7 @@ export function CommentThread({
   const effectiveSuggestedAssigneeValue = suggestedAssigneeValue ?? currentAssigneeValue;
   const [reassignTarget, setReassignTarget] = useState(effectiveSuggestedAssigneeValue);
   const [highlightCommentId, setHighlightCommentId] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const editorRef = useRef<MarkdownEditorRef>(null);
   const attachInputRef = useRef<HTMLInputElement | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -297,12 +326,13 @@ export function CommentThread({
       createdAtMs: new Date(run.startedAt ?? run.createdAt).getTime(),
       run,
     }));
+    const dir = sortOrder === "asc" ? 1 : -1;
     return [...commentItems, ...runItems].sort((a, b) => {
-      if (a.createdAtMs !== b.createdAtMs) return a.createdAtMs - b.createdAtMs;
-      if (a.kind === b.kind) return a.id.localeCompare(b.id);
-      return a.kind === "comment" ? -1 : 1;
+      if (a.createdAtMs !== b.createdAtMs) return (a.createdAtMs - b.createdAtMs) * dir;
+      if (a.kind === b.kind) return a.id.localeCompare(b.id) * dir;
+      return (a.kind === "comment" ? -1 : 1) * dir;
     });
-  }, [comments, linkedRuns]);
+  }, [comments, linkedRuns, sortOrder]);
 
   // Build mention options from agent map (exclude terminated agents)
   const mentions = useMemo<MentionOption[]>(() => {
@@ -401,17 +431,18 @@ export function CommentThread({
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold">Comments &amp; Runs ({timeline.length})</h3>
-
-      <TimelineList
-        timeline={timeline}
-        agentMap={agentMap}
-        companyId={companyId}
-        projectId={projectId}
-        highlightCommentId={highlightCommentId}
-      />
-
-      {liveRunSlot}
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Comments &amp; Runs ({timeline.length})</h3>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 text-xs text-muted-foreground"
+          onClick={() => setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"))}
+        >
+          <ArrowDownUp className="h-3.5 w-3.5" />
+          {sortOrder === "desc" ? "Newest first" : "Oldest first"}
+        </Button>
+      </div>
 
       <div className="space-y-2">
         <MarkdownEditor
@@ -430,7 +461,7 @@ export function CommentThread({
               <input
                 ref={attachInputRef}
                 type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
+                accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,text/markdown,.md,.markdown"
                 className="hidden"
                 onChange={handleAttachFile}
               />
@@ -439,7 +470,7 @@ export function CommentThread({
                 size="icon-sm"
                 onClick={() => attachInputRef.current?.click()}
                 disabled={attaching}
-                title="Attach image"
+                title="Attach file"
               >
                 <Paperclip className="h-4 w-4" />
               </Button>
@@ -497,6 +528,18 @@ export function CommentThread({
           </Button>
         </div>
       </div>
+
+      <TimelineList
+        timeline={timeline}
+        agentMap={agentMap}
+        companyId={companyId}
+        projectId={projectId}
+        highlightCommentId={highlightCommentId}
+        unreadAfterMs={unreadAfterMs}
+        currentUserId={currentUserId}
+      />
+
+      {liveRunSlot}
     </div>
   );
 }
