@@ -8,6 +8,7 @@ import {
   createIssueLabelSchema,
   checkoutIssueSchema,
   createIssueSchema,
+  ISSUE_STATUSES,
   isUuidLike,
   linkIssueApprovalSchema,
   issueDocumentKeySchema,
@@ -39,6 +40,7 @@ import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.
 import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
+const ISSUE_STATUS_SET = new Set(ISSUE_STATUSES);
 
 export function issueRoutes(db: Db, storage: StorageService) {
   const router = Router();
@@ -259,6 +261,14 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const originIdFilter = readQueryString(req.query.originId);
     const includeRoutineExecutionsFilter = readQueryString(req.query.includeRoutineExecutions);
     const searchFilter = readQueryString(req.query.q);
+    const normalizedStatuses =
+      statusFilter?.split(",").map((value) => value.trim()).filter((value) => value.length > 0) ?? [];
+    const invalidStatus = normalizedStatuses.find((status) => !ISSUE_STATUS_SET.has(status as typeof ISSUE_STATUSES[number]));
+    if (invalidStatus) {
+      res.status(400).json({ error: `Invalid status filter: ${invalidStatus}` });
+      return;
+    }
+    const statusFilterNormalized = normalizedStatuses.length > 0 ? Array.from(new Set(normalizedStatuses)).join(",") : undefined;
 
     const assigneeUserId =
       assigneeUserFilterRaw === "me" && req.actor.type === "board"
@@ -307,7 +317,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
 
     const result = await svc.list(companyId, {
-      status: statusFilter,
+      status: statusFilterNormalized,
       assigneeAgentId: assigneeAgentIdFilter,
       participantAgentId: participantAgentIdFilter,
       assigneeUserId,

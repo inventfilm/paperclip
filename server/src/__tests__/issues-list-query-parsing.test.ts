@@ -72,4 +72,24 @@ describe("issues list query parsing", () => {
       }),
     );
   });
+
+  it("normalizes comma-separated status filters before calling service", async () => {
+    const res = await request(createApp()).get("/api/companies/company-1/issues?status=todo,,in_progress,");
+
+    expect(res.status).toBe(200);
+    expect(mockIssueService.list).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({
+        status: "todo,in_progress",
+      }),
+    );
+  });
+
+  it("returns 400 for invalid status filters instead of passing bad enum values to service", async () => {
+    const res = await request(createApp()).get("/api/companies/company-1/issues?status=todo,not_a_status");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid status filter");
+    expect(mockIssueService.list).not.toHaveBeenCalled();
+  });
 });
