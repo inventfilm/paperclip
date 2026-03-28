@@ -9,6 +9,7 @@ import { api } from "./client";
 export interface ActiveRunForIssue extends HeartbeatRun {
   agentId: string;
   agentName: string;
+  agentTitle?: string | null;
   adapterType: string;
 }
 
@@ -22,6 +23,7 @@ export interface LiveRunForIssue {
   createdAt: string;
   agentId: string;
   agentName: string;
+  agentTitle?: string | null;
   adapterType: string;
   issueId?: string | null;
 }

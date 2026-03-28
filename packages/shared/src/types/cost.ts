@@ -31,6 +31,7 @@ export interface CostSummary {
 export interface CostByAgent {
   agentId: string;
   agentName: string | null;
+  agentTitle?: string | null;
   agentStatus: string | null;
   costCents: number;
   inputTokens: number;
@@ -78,6 +79,7 @@ export interface CostByBiller {
 export interface CostByAgentModel {
   agentId: string;
   agentName: string | null;
+  agentTitle?: string | null;
   provider: string;
   biller: string;
   billingType: BillingType;

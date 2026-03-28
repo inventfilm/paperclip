@@ -139,6 +139,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         .select({
           agentId: costEvents.agentId,
           agentName: agents.name,
+          agentTitle: agents.title,
           agentStatus: agents.status,
           costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
           inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)::int`,
@@ -288,6 +289,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         .select({
           agentId: costEvents.agentId,
           agentName: agents.name,
+          agentTitle: agents.title,
           provider: costEvents.provider,
           biller: costEvents.biller,
           billingType: costEvents.billingType,

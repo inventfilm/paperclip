@@ -106,7 +106,7 @@ export function LiveRunWidget({ issueId, companyId }: LiveRunWidgetProps) {
               <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <Link to={`/agents/${run.agentId}`} className="inline-flex hover:underline">
-                    <Identity name={run.agentName} size="sm" />
+                    <Identity name={run.agentName} title={run.agentTitle} size="sm" />
                   </Link>
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <Link

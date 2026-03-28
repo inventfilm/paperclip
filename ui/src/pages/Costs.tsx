@@ -741,7 +741,7 @@ export function Costs() {
                                 ) : (
                                   <span className="h-3 w-3 shrink-0" />
                                 )}
-                                <Identity name={row.agentName ?? row.agentId} size="sm" />
+                                <Identity name={row.agentName ?? row.agentId} title={row.agentTitle} size="sm" />
                                 {row.agentStatus === "terminated" ? <StatusBadge status="terminated" /> : null}
                               </div>
                               <div className="text-right text-sm tabular-nums">

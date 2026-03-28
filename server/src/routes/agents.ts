@@ -2108,6 +2108,7 @@ export function agentRoutes(db: Db) {
       createdAt: heartbeatRuns.createdAt,
       agentId: heartbeatRuns.agentId,
       agentName: agentsTable.name,
+      agentTitle: agentsTable.title,
       adapterType: agentsTable.adapterType,
       issueId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`.as("issueId"),
     };
@@ -2275,6 +2276,7 @@ export function agentRoutes(db: Db) {
         createdAt: heartbeatRuns.createdAt,
         agentId: heartbeatRuns.agentId,
         agentName: agentsTable.name,
+        agentTitle: agentsTable.title,
         adapterType: agentsTable.adapterType,
       })
       .from(heartbeatRuns)
@@ -2330,6 +2332,7 @@ export function agentRoutes(db: Db) {
       ...redactCurrentUserValue(run, await getCurrentUserRedactionOptions()),
       agentId: agent.id,
       agentName: agent.name,
+      agentTitle: agent.title,
       adapterType: agent.adapterType,
     });
   });

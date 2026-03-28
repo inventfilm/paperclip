@@ -5,6 +5,7 @@ type IdentitySize = "xs" | "sm" | "default" | "lg";
 
 export interface IdentityProps {
   name: string;
+  title?: string | null;
   avatarUrl?: string | null;
   initials?: string;
   size?: IdentitySize;
@@ -24,7 +25,7 @@ const textSize: Record<IdentitySize, string> = {
   lg: "text-sm",
 };
 
-export function Identity({ name, avatarUrl, initials, size = "default", className }: IdentityProps) {
+export function Identity({ name, title, avatarUrl, initials, size = "default", className }: IdentityProps) {
   const displayInitials = initials ?? deriveInitials(name);
 
   return (
@@ -33,7 +34,10 @@ export function Identity({ name, avatarUrl, initials, size = "default", classNam
         {avatarUrl && <AvatarImage src={avatarUrl} alt={name} />}
         <AvatarFallback>{displayInitials}</AvatarFallback>
       </Avatar>
-      <span className={cn("truncate", textSize[size])}>{name}</span>
+      <span className={cn("truncate", textSize[size])}>
+        {name}
+        {title && <span className="ml-1 text-muted-foreground font-normal">({title})</span>}
+      </span>
     </span>
   );
 }
