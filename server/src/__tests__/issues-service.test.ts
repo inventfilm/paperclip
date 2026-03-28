@@ -503,4 +503,55 @@ describe("issueService.list participantAgentId", () => {
 
     expect(unreadCount).toBe(1);
   });
+
+  it("returns not found for malformed non-uuid issue ids on createAttachment", async () => {
+    await expect(
+      svc.createAttachment({
+        issueId: "not-a-uuid",
+        provider: "local",
+        objectKey: "issues/not-a-uuid/file.txt",
+        contentType: "text/plain",
+        byteSize: 10,
+        sha256: "abc123",
+      }),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: "Issue not found",
+    });
+  });
+
+  it("returns not found for malformed non-uuid issueCommentId on createAttachment", async () => {
+    const companyId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Attachment comment id validation",
+      status: "todo",
+      priority: "medium",
+    });
+
+    await expect(
+      svc.createAttachment({
+        issueId,
+        issueCommentId: "not-a-uuid",
+        provider: "local",
+        objectKey: `issues/${issueId}/file.txt`,
+        contentType: "text/plain",
+        byteSize: 10,
+        sha256: "abc123",
+      }),
+    ).rejects.toMatchObject({
+      status: 404,
+      message: "Issue comment not found",
+    });
+  });
 });

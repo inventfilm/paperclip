@@ -1461,6 +1461,13 @@ export function issueService(db: Db) {
       createdByAgentId?: string | null;
       createdByUserId?: string | null;
     }) => {
+      if (!isUuidLike(input.issueId)) {
+        throw notFound("Issue not found");
+      }
+      if (input.issueCommentId && !isUuidLike(input.issueCommentId)) {
+        throw notFound("Issue comment not found");
+      }
+
       const issue = await db
         .select({ id: issues.id, companyId: issues.companyId })
         .from(issues)
