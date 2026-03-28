@@ -1533,8 +1533,9 @@ export function issueService(db: Db) {
       });
     },
 
-    listAttachments: async (issueId: string) =>
-      db
+    listAttachments: async (issueId: string) => {
+      if (!isUuidLike(issueId)) return [];
+      return db
         .select({
           id: issueAttachments.id,
           companyId: issueAttachments.companyId,
@@ -1555,10 +1556,12 @@ export function issueService(db: Db) {
         .from(issueAttachments)
         .innerJoin(assets, eq(issueAttachments.assetId, assets.id))
         .where(eq(issueAttachments.issueId, issueId))
-        .orderBy(desc(issueAttachments.createdAt)),
+        .orderBy(desc(issueAttachments.createdAt));
+    },
 
-    getAttachmentById: async (id: string) =>
-      db
+    getAttachmentById: async (id: string) => {
+      if (!isUuidLike(id)) return null;
+      return db
         .select({
           id: issueAttachments.id,
           companyId: issueAttachments.companyId,
@@ -1579,10 +1582,12 @@ export function issueService(db: Db) {
         .from(issueAttachments)
         .innerJoin(assets, eq(issueAttachments.assetId, assets.id))
         .where(eq(issueAttachments.id, id))
-        .then((rows) => rows[0] ?? null),
+        .then((rows) => rows[0] ?? null);
+    },
 
-    removeAttachment: async (id: string) =>
-      db.transaction(async (tx) => {
+    removeAttachment: async (id: string) => {
+      if (!isUuidLike(id)) return null;
+      return db.transaction(async (tx) => {
         const existing = await tx
           .select({
             id: issueAttachments.id,
@@ -1610,7 +1615,8 @@ export function issueService(db: Db) {
         await tx.delete(issueAttachments).where(eq(issueAttachments.id, id));
         await tx.delete(assets).where(eq(assets.id, existing.assetId));
         return existing;
-      }),
+      });
+    },
 
     findMentionedAgents: async (companyId: string, body: string) => {
       const re = /\B@([^\s@,!?.]+)/g;

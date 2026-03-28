@@ -554,4 +554,16 @@ describe("issueService.list participantAgentId", () => {
       message: "Issue comment not found",
     });
   });
+
+  it("returns an empty attachment list for malformed issue ids", async () => {
+    await expect(svc.listAttachments("not-a-uuid")).resolves.toEqual([]);
+  });
+
+  it("returns null for malformed attachment ids on getAttachmentById", async () => {
+    await expect(svc.getAttachmentById("not-a-uuid")).resolves.toBeNull();
+  });
+
+  it("returns null for malformed attachment ids on removeAttachment", async () => {
+    await expect(svc.removeAttachment("not-a-uuid")).resolves.toBeNull();
+  });
 });
