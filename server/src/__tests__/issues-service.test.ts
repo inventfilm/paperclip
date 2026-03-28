@@ -344,4 +344,37 @@ describe("issueService.list participantAgentId", () => {
     expect(updated?.checkoutRunId).toBe(actorRunId);
     expect(updated?.executionRunId).toBe(actorRunId);
   });
+
+  it("returns an empty page for malformed non-uuid comment cursors", async () => {
+    const companyId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Cursor validation",
+      status: "todo",
+      priority: "medium",
+    });
+
+    await db.insert(issueComments).values({
+      issueId,
+      companyId,
+      body: "first comment",
+    });
+
+    const comments = await svc.listComments(issueId, {
+      afterCommentId: "not-a-uuid",
+      order: "asc",
+    });
+
+    expect(comments).toEqual([]);
+  });
 });

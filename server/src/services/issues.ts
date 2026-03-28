@@ -20,7 +20,7 @@ import {
   projectWorkspaces,
   projects,
 } from "@paperclipai/db";
-import { extractAgentMentionIds, extractProjectMentionIds } from "@paperclipai/shared";
+import { extractAgentMentionIds, extractProjectMentionIds, isUuidLike } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
   defaultIssueExecutionWorkspaceSettingsForProject,
@@ -1299,6 +1299,7 @@ export function issueService(db: Db) {
         opts?.limit && opts.limit > 0
           ? Math.min(Math.floor(opts.limit), MAX_ISSUE_COMMENT_PAGE_LIMIT)
           : null;
+      if (afterCommentId && !isUuidLike(afterCommentId)) return [];
 
       const conditions = [eq(issueComments.issueId, issueId)];
       if (afterCommentId) {
