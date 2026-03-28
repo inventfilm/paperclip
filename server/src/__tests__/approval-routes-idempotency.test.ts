@@ -119,6 +119,14 @@ describe("approval routes idempotent retries", () => {
     expect(mockIssueApprovalService.listIssuesForApproval).not.toHaveBeenCalled();
   });
 
+  it("returns 400 for invalid approval status filters", async () => {
+    const res = await request(createApp()).get("/api/companies/company-1/approvals?status=not_a_status");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid approval status filter");
+    expect(mockApprovalService.list).not.toHaveBeenCalled();
+  });
+
   it("returns 400 for malformed approval ids on approve route", async () => {
     const res = await request(createApp()).post("/api/approvals/not-a-valid-id/approve").send({});
 

@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import type { Db } from "@paperclipai/db";
 import {
+  APPROVAL_STATUSES,
   addApprovalCommentSchema,
   createApprovalSchema,
   isUuidLike,
@@ -34,6 +35,16 @@ export function approvalRoutes(db: Db) {
   const issueApprovalsSvc = issueApprovalService(db);
   const secretsSvc = secretService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
+  const APPROVAL_STATUS_SET = new Set(APPROVAL_STATUSES);
+
+  function readQueryString(value: unknown): string | undefined {
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) {
+      const first = value.find((entry): entry is string => typeof entry === "string");
+      return first;
+    }
+    return undefined;
+  }
 
   function parseApprovalId(rawId: string, res: Response) {
     if (!isUuidLike(rawId)) {
@@ -46,7 +57,11 @@ export function approvalRoutes(db: Db) {
   router.get("/companies/:companyId/approvals", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const status = req.query.status as string | undefined;
+    const status = readQueryString(req.query.status);
+    if (status && !APPROVAL_STATUS_SET.has(status as typeof APPROVAL_STATUSES[number])) {
+      res.status(400).json({ error: `Invalid approval status filter: ${status}` });
+      return;
+    }
     const result = await svc.list(companyId, status);
     res.json(result.map((approval) => redactApprovalPayload(approval)));
   });
