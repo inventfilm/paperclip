@@ -345,6 +345,46 @@ describe("issueService.list participantAgentId", () => {
     expect(updated?.executionRunId).toBe(actorRunId);
   });
 
+  it("rejects checkout calls with no valid expected statuses", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "ReleaseLead",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Status validation",
+      status: "todo",
+      priority: "medium",
+    });
+
+    await expect(
+      svc.checkout(issueId, agentId, [] as string[], null),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: "expectedStatuses must include at least one valid issue status",
+    });
+  });
+
   it("returns an empty page for malformed non-uuid comment cursors", async () => {
     const companyId = randomUUID();
     const issueId = randomUUID();

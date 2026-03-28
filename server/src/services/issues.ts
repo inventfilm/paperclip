@@ -1038,6 +1038,15 @@ export function issueService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!issueCompany) throw notFound("Issue not found");
       await assertAssignableAgent(issueCompany.companyId, agentId);
+      const normalizedExpectedStatuses = (Array.isArray(expectedStatuses) ? expectedStatuses : [])
+        .filter((status): status is string => typeof status === "string")
+        .map((status) => status.trim())
+        .filter((status): status is (typeof ALL_ISSUE_STATUSES)[number] =>
+          ALL_ISSUE_STATUSES.includes(status as (typeof ALL_ISSUE_STATUSES)[number]),
+        );
+      if (normalizedExpectedStatuses.length === 0) {
+        throw unprocessable("expectedStatuses must include at least one valid issue status");
+      }
 
       const now = new Date();
       const sameRunAssigneeCondition = checkoutRunId
@@ -1063,7 +1072,7 @@ export function issueService(db: Db) {
         .where(
           and(
             eq(issues.id, id),
-            inArray(issues.status, expectedStatuses),
+            inArray(issues.status, normalizedExpectedStatuses),
             or(isNull(issues.assigneeAgentId), sameRunAssigneeCondition),
             executionLockCondition,
           ),
