@@ -106,6 +106,10 @@ export function activityRoutes(db: Db) {
 
   router.get("/heartbeat-runs/:runId/issues", async (req, res) => {
     const runId = req.params.runId as string;
+    if (!isUuidLike(runId)) {
+      res.status(400).json({ error: "Invalid run id" });
+      return;
+    }
     const result = await svc.issuesForRun(runId);
     res.json(result);
   });

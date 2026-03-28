@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { activityLog, heartbeatRuns, issues } from "@paperclipai/db";
+import { isUuidLike } from "@paperclipai/shared";
 
 export interface ActivityFilters {
   companyId: string;
@@ -93,6 +94,7 @@ export function activityService(db: Db) {
         .orderBy(desc(heartbeatRuns.createdAt)),
 
     issuesForRun: async (runId: string) => {
+      if (!isUuidLike(runId)) return [];
       const run = await db
         .select({
           companyId: heartbeatRuns.companyId,

@@ -89,6 +89,14 @@ describe("activity routes", () => {
     expect(mockActivityService.forIssue).not.toHaveBeenCalled();
   });
 
+  it("returns 400 for malformed run ids on heartbeat run issues route", async () => {
+    const res = await request(createApp()).get("/api/heartbeat-runs/not-a-uuid/issues");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid run id");
+    expect(mockActivityService.issuesForRun).not.toHaveBeenCalled();
+  });
+
   it("returns 400 for invalid agentId filter on company activity list", async () => {
     const res = await request(createApp()).get("/api/companies/company-1/activity?agentId=not-a-uuid");
 
