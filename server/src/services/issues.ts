@@ -20,7 +20,7 @@ import {
   projectWorkspaces,
   projects,
 } from "@paperclipai/db";
-import { extractAgentMentionIds, extractProjectMentionIds } from "@paperclipai/shared";
+import { extractAgentMentionIds, extractProjectMentionIds, isUuidLike } from "@paperclipai/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import {
   defaultIssueExecutionWorkspaceSettingsForProject,
@@ -112,6 +112,10 @@ const TERMINAL_HEARTBEAT_RUN_STATUSES = new Set(["succeeded", "failed", "cancell
 
 function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function isNonEmptyString(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 async function getProjectDefaultGoalId(
@@ -554,6 +558,12 @@ export function issueService(db: Db) {
 
   return {
     list: async (companyId: string, filters?: IssueFilters) => {
+      if (!isUuidLike(companyId)) return [];
+      if (isNonEmptyString(filters?.assigneeAgentId) && !isUuidLike(filters.assigneeAgentId)) return [];
+      if (isNonEmptyString(filters?.participantAgentId) && !isUuidLike(filters.participantAgentId)) return [];
+      if (isNonEmptyString(filters?.projectId) && !isUuidLike(filters.projectId)) return [];
+      if (isNonEmptyString(filters?.parentId) && !isUuidLike(filters.parentId)) return [];
+      if (isNonEmptyString(filters?.labelId) && !isUuidLike(filters.labelId)) return [];
       const conditions = [eq(issues.companyId, companyId)];
       const touchedByUserId = filters?.touchedByUserId?.trim() || undefined;
       const unreadForUserId = filters?.unreadForUserId?.trim() || undefined;
@@ -742,6 +752,7 @@ export function issueService(db: Db) {
     },
 
     getById: async (id: string) => {
+      if (!isUuidLike(id)) return null;
       const row = await db
         .select()
         .from(issues)
@@ -1274,8 +1285,10 @@ export function issueService(db: Db) {
         limit?: number | null;
       },
     ) => {
+      if (!isUuidLike(issueId)) return [];
       const order = opts?.order === "asc" ? "asc" : "desc";
       const afterCommentId = opts?.afterCommentId?.trim() || null;
+      if (afterCommentId && !isUuidLike(afterCommentId)) return [];
       const limit =
         opts?.limit && opts.limit > 0
           ? Math.min(Math.floor(opts.limit), MAX_ISSUE_COMMENT_PAGE_LIMIT)
@@ -1348,16 +1361,19 @@ export function issueService(db: Db) {
       };
     },
 
-    getComment: (commentId: string) =>
-      instanceSettings.getGeneral().then(({ censorUsernameInLogs }) =>
+    getComment: (commentId: string) => {
+      if (!isUuidLike(commentId)) return Promise.resolve(null);
+      return instanceSettings.getGeneral().then(({ censorUsernameInLogs }) =>
         db
-        .select()
-        .from(issueComments)
-        .where(eq(issueComments.id, commentId))
-        .then((rows) => {
-          const comment = rows[0] ?? null;
-          return comment ? redactIssueComment(comment, censorUsernameInLogs) : null;
-        })),
+          .select()
+          .from(issueComments)
+          .where(eq(issueComments.id, commentId))
+          .then((rows) => {
+            const comment = rows[0] ?? null;
+            return comment ? redactIssueComment(comment, censorUsernameInLogs) : null;
+          }),
+      );
+    },
 
     addComment: async (issueId: string, body: string, actor: { agentId?: string; userId?: string }) => {
       const issue = await db

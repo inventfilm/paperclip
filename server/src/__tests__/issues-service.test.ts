@@ -281,4 +281,73 @@ describe("issueService.list participantAgentId", () => {
 
     expect(result.map((issue) => issue.id)).toEqual([matchedIssueId]);
   });
+
+  it("returns no results for invalid UUID list filters instead of throwing", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "CodexCoder",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Assigned issue",
+      status: "todo",
+      priority: "medium",
+      assigneeAgentId: agentId,
+      createdByAgentId: agentId,
+    });
+
+    await expect(svc.list(companyId, { assigneeAgentId: "not-a-uuid" })).resolves.toEqual([]);
+    await expect(svc.list(companyId, { participantAgentId: "also-not-a-uuid" })).resolves.toEqual([]);
+  });
+
+  it("treats invalid issue/comment ids as empty comment lookups", async () => {
+    const companyId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Comment fetch guard",
+      status: "todo",
+      priority: "medium",
+    });
+
+    await db.insert(issueComments).values({
+      companyId,
+      issueId,
+      body: "hello",
+    });
+
+    await expect(svc.getById("not-a-uuid")).resolves.toBeNull();
+    await expect(svc.listComments("not-a-uuid")).resolves.toEqual([]);
+    await expect(svc.listComments(issueId, { afterCommentId: "not-a-uuid" })).resolves.toEqual([]);
+    await expect(svc.getComment("not-a-uuid")).resolves.toBeNull();
+  });
 });
