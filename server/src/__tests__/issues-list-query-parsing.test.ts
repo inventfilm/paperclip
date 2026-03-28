@@ -92,4 +92,12 @@ describe("issues list query parsing", () => {
     expect(res.body.error).toContain("Invalid status filter");
     expect(mockIssueService.list).not.toHaveBeenCalled();
   });
+
+  it("returns 400 for invalid originKind filters instead of passing bad enum values to service", async () => {
+    const res = await request(createApp()).get("/api/companies/company-1/issues?originKind=unexpected");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid originKind filter");
+    expect(mockIssueService.list).not.toHaveBeenCalled();
+  });
 });

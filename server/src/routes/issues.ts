@@ -8,6 +8,7 @@ import {
   createIssueLabelSchema,
   checkoutIssueSchema,
   createIssueSchema,
+  ISSUE_ORIGIN_KINDS,
   ISSUE_STATUSES,
   isUuidLike,
   linkIssueApprovalSchema,
@@ -41,6 +42,7 @@ import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
 const ISSUE_STATUS_SET = new Set(ISSUE_STATUSES);
+const ISSUE_ORIGIN_KIND_SET = new Set(ISSUE_ORIGIN_KINDS);
 
 export function issueRoutes(db: Db, storage: StorageService) {
   const router = Router();
@@ -266,6 +268,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const invalidStatus = normalizedStatuses.find((status) => !ISSUE_STATUS_SET.has(status as typeof ISSUE_STATUSES[number]));
     if (invalidStatus) {
       res.status(400).json({ error: `Invalid status filter: ${invalidStatus}` });
+      return;
+    }
+    if (originKindFilter && !ISSUE_ORIGIN_KIND_SET.has(originKindFilter as typeof ISSUE_ORIGIN_KINDS[number])) {
+      res.status(400).json({ error: `Invalid originKind filter: ${originKindFilter}` });
       return;
     }
     const statusFilterNormalized = normalizedStatuses.length > 0 ? Array.from(new Set(normalizedStatuses)).join(",") : undefined;
