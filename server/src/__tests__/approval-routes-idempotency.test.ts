@@ -107,4 +107,13 @@ describe("approval routes idempotent retries", () => {
     expect(res.status).toBe(200);
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
+
+  it("returns 400 for malformed approval ids on approval issue-link route", async () => {
+    const res = await request(createApp()).get("/api/approvals/not-a-valid-id/issues");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid approval id");
+    expect(mockApprovalService.getById).not.toHaveBeenCalled();
+    expect(mockIssueApprovalService.listIssuesForApproval).not.toHaveBeenCalled();
+  });
 });
