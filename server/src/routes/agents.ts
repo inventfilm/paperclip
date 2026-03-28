@@ -2229,6 +2229,10 @@ export function agentRoutes(db: Db) {
 
   router.get("/issues/:issueId/live-runs", async (req, res) => {
     const rawId = req.params.issueId as string;
+    if (!/^[A-Z]+-\d+$/i.test(rawId) && !isUuidLike(rawId)) {
+      res.status(400).json({ error: "Invalid issue id. Use UUID or identifier like PAP-123." });
+      return;
+    }
     const issueSvc = issueService(db);
     const isIdentifier = /^[A-Z]+-\d+$/i.test(rawId);
     const issue = isIdentifier ? await issueSvc.getByIdentifier(rawId) : await issueSvc.getById(rawId);
@@ -2267,6 +2271,10 @@ export function agentRoutes(db: Db) {
 
   router.get("/issues/:issueId/active-run", async (req, res) => {
     const rawId = req.params.issueId as string;
+    if (!/^[A-Z]+-\d+$/i.test(rawId) && !isUuidLike(rawId)) {
+      res.status(400).json({ error: "Invalid issue id. Use UUID or identifier like PAP-123." });
+      return;
+    }
     const issueSvc = issueService(db);
     const isIdentifier = /^[A-Z]+-\d+$/i.test(rawId);
     const issue = isIdentifier ? await issueSvc.getByIdentifier(rawId) : await issueSvc.getById(rawId);

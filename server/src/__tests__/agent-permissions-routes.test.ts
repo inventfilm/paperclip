@@ -69,6 +69,8 @@ const mockIssueApprovalService = vi.hoisted(() => ({
 
 const mockIssueService = vi.hoisted(() => ({
   list: vi.fn(),
+  getById: vi.fn(),
+  getByIdentifier: vi.fn(),
 }));
 
 const mockSecretService = vi.hoisted(() => ({
@@ -271,5 +273,39 @@ describe("agent permission routes", () => {
     );
     expect(res.body.access.canAssignTasks).toBe(true);
     expect(res.body.access.taskAssignSource).toBe("agent_creator");
+  });
+
+  it("returns 400 for malformed issue ids on issue live-runs route", async () => {
+    const app = createApp({
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+
+    const res = await request(app).get("/api/issues/not-a-valid-ref/live-runs");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid issue id");
+    expect(mockIssueService.getById).not.toHaveBeenCalled();
+    expect(mockIssueService.getByIdentifier).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 for malformed issue ids on issue active-run route", async () => {
+    const app = createApp({
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+
+    const res = await request(app).get("/api/issues/not-a-valid-ref/active-run");
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain("Invalid issue id");
+    expect(mockIssueService.getById).not.toHaveBeenCalled();
+    expect(mockIssueService.getByIdentifier).not.toHaveBeenCalled();
   });
 });
