@@ -25,7 +25,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { buildRoutineTriggerPatch } from "../lib/routine-trigger-patch";
-import { timeAgo } from "../lib/timeAgo";
+import { timeAgo, absoluteDate } from "../lib/timeAgo";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { AgentIcon } from "../components/AgentIconPicker";
@@ -981,7 +981,7 @@ export function RoutineDetail() {
                       </Link>
                     )}
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0 ml-2">{timeAgo(run.triggeredAt)}</span>
+                  <span className="text-xs text-muted-foreground shrink-0 ml-2" title={absoluteDate(run.triggeredAt)}>{timeAgo(run.triggeredAt)}</span>
                 </div>
               ))}
             </div>
@@ -1009,7 +1009,7 @@ export function RoutineDetail() {
                       </span>
                     )}
                   </div>
-                  <span className="text-muted-foreground/60 shrink-0">{timeAgo(event.createdAt)}</span>
+                  <span className="text-muted-foreground/60 shrink-0" title={absoluteDate(event.createdAt)}>{timeAgo(event.createdAt)}</span>
                 </div>
               ))}
             </div>

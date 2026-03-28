@@ -4,6 +4,11 @@ const DAY = 24 * HOUR;
 const WEEK = 7 * DAY;
 const MONTH = 30 * DAY;
 
+/** Return a locale-formatted absolute date string, useful as a title/tooltip. */
+export function absoluteDate(date: Date | string): string {
+  return new Date(date).toLocaleString();
+}
+
 export function timeAgo(date: Date | string): string {
   const now = Date.now();
   const then = new Date(date).getTime();

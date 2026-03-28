@@ -17,7 +17,7 @@ import { StatusIcon } from "../components/StatusIcon";
 
 import { ActivityRow } from "../components/ActivityRow";
 import { Identity } from "../components/Identity";
-import { timeAgo } from "../lib/timeAgo";
+import { timeAgo, absoluteDate } from "../lib/timeAgo";
 import { cn, formatCents } from "../lib/utils";
 import { Bot, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
@@ -367,7 +367,7 @@ export function Dashboard() {
                                 : null;
                             })()}
                             <span className="text-xs text-muted-foreground sm:hidden">&middot;</span>
-                            <span className="text-xs text-muted-foreground shrink-0 sm:order-last">
+                            <span className="text-xs text-muted-foreground shrink-0 sm:order-last" title={absoluteDate(issue.updatedAt)}>
                               {timeAgo(issue.updatedAt)}
                             </span>
                           </span>
