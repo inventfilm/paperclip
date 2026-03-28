@@ -8,6 +8,7 @@ import {
   createIssueLabelSchema,
   checkoutIssueSchema,
   createIssueSchema,
+  isUuidLike,
   linkIssueApprovalSchema,
   issueDocumentKeySchema,
   updateIssueWorkProductSchema,
@@ -64,6 +65,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return first;
     }
     return undefined;
+  }
+
+  function isNonEmptyUuid(value: string | null | undefined): value is string {
+    return typeof value === "string" && value.trim().length > 0 && isUuidLike(value.trim());
   }
 
   function withContentPath<T extends { id: string }>(attachment: T) {
@@ -176,6 +181,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
       if (issue) {
         return issue.id;
       }
+      throw new HttpError(404, "Issue not found");
+    }
+    if (!isUuidLike(rawId)) {
+      throw new HttpError(400, "Invalid issue id. Use UUID or identifier like PAP-123.");
     }
     return rawId;
   }
@@ -274,6 +283,26 @@ export function issueRoutes(db: Db, storage: StorageService) {
     }
     if (unreadForUserFilterRaw === "me" && (!unreadForUserId || req.actor.type !== "board")) {
       res.status(403).json({ error: "unreadForUserId=me requires board authentication" });
+      return;
+    }
+    if (assigneeAgentIdFilter && !isNonEmptyUuid(assigneeAgentIdFilter)) {
+      res.status(400).json({ error: "Invalid assigneeAgentId filter" });
+      return;
+    }
+    if (participantAgentIdFilter && !isNonEmptyUuid(participantAgentIdFilter)) {
+      res.status(400).json({ error: "Invalid participantAgentId filter" });
+      return;
+    }
+    if (projectIdFilter && !isNonEmptyUuid(projectIdFilter)) {
+      res.status(400).json({ error: "Invalid projectId filter" });
+      return;
+    }
+    if (parentIdFilter && !isNonEmptyUuid(parentIdFilter)) {
+      res.status(400).json({ error: "Invalid parentId filter" });
+      return;
+    }
+    if (labelIdFilter && !isNonEmptyUuid(labelIdFilter)) {
+      res.status(400).json({ error: "Invalid labelId filter" });
       return;
     }
 
@@ -397,6 +426,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
       typeof req.query.wakeCommentId === "string" && req.query.wakeCommentId.trim().length > 0
         ? req.query.wakeCommentId.trim()
         : null;
+    if (wakeCommentId && !isUuidLike(wakeCommentId)) {
+      res.status(400).json({ error: "Invalid wakeCommentId query parameter" });
+      return;
+    }
 
     const [{ project, goal }, ancestors, commentCursor, wakeComment] = await Promise.all([
       resolveIssueProjectAndGoal(issue),
@@ -1202,6 +1235,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
         : typeof req.query.afterCommentId === "string" && req.query.afterCommentId.trim().length > 0
           ? req.query.afterCommentId.trim()
           : null;
+    if (afterCommentId && !isUuidLike(afterCommentId)) {
+      res.status(400).json({ error: "Invalid after comment cursor" });
+      return;
+    }
     const order =
       typeof req.query.order === "string" && req.query.order.trim().toLowerCase() === "asc"
         ? "asc"
@@ -1231,6 +1268,10 @@ export function issueRoutes(db: Db, storage: StorageService) {
       return;
     }
     assertCompanyAccess(req, issue.companyId);
+    if (!isUuidLike(commentId)) {
+      res.status(400).json({ error: "Invalid commentId" });
+      return;
+    }
     const comment = await svc.getComment(commentId);
     if (!comment || comment.issueId !== id) {
       res.status(404).json({ error: "Comment not found" });
